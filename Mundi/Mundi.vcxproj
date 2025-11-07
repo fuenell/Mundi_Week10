@@ -785,6 +785,11 @@
         Copy-Item -Path '$(ProjectDir)imgui.ini' -Destination '$(OutDir)' -Force
         };
 
+        if (Test-Path '$(ProjectDir)ThirdParty\Lua\bin\lua54.dll') {
+        Write-Host '[BuildEvent] Copying lua54.dll...';
+        Copy-Item -Path '$(ProjectDir)ThirdParty\Lua\bin\lua54.dll' -Destination '$(OutDir)' -Force
+        };
+
         Write-Host '[BuildEvent] Asset copy successful.';
         exit 0
       </PowerShellScript>
@@ -808,6 +813,11 @@
         if (Test-Path '$(ProjectDir)imgui.ini') {
         Write-Host '[BuildEvent] Copying imgui.ini...';
         Copy-Item -Path '$(ProjectDir)imgui.ini' -Destination '$(OutDir)' -Force
+        };
+
+        if (Test-Path '$(ProjectDir)ThirdParty\Lua\bin\lua54.dll') {
+        Write-Host '[BuildEvent] Copying lua54.dll...';
+        Copy-Item -Path '$(ProjectDir)ThirdParty\Lua\bin\lua54.dll' -Destination '$(OutDir)' -Force
         };
 
         Write-Host '[BuildEvent] Asset copy successful.';
@@ -836,6 +846,11 @@
         Copy-Item -Path '$(ProjectDir)imgui.ini' -Destination '$(OutDir)' -Force
         };
 
+        if (Test-Path '$(ProjectDir)ThirdParty\Lua\bin\lua54.dll') {
+        Write-Host '[BuildEvent] Copying lua54.dll...';
+        Copy-Item -Path '$(ProjectDir)ThirdParty\Lua\bin\lua54.dll' -Destination '$(OutDir)' -Force
+        };
+
         Write-Host '[BuildEvent] Asset copy successful.';
         exit 0
       </PowerShellScript>
@@ -859,6 +874,11 @@
         if (Test-Path '$(ProjectDir)imgui.ini') {
         Write-Host '[BuildEvent] Copying imgui.ini...';
         Copy-Item -Path '$(ProjectDir)imgui.ini' -Destination '$(OutDir)' -Force
+        };
+
+        if (Test-Path '$(ProjectDir)ThirdParty\Lua\bin\lua54.dll') {
+        Write-Host '[BuildEvent] Copying lua54.dll...';
+        Copy-Item -Path '$(ProjectDir)ThirdParty\Lua\bin\lua54.dll' -Destination '$(OutDir)' -Force
         };
 
         Write-Host '[BuildEvent] Asset copy successful.';

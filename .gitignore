@@ -19,6 +19,8 @@
 *.so
 *.dylib
 *.dll
+# Exception: Allow Lua library DLL
+!Mundi/ThirdParty/Lua/bin/lua54.dll
 
 # Fortran module files
 *.mod
