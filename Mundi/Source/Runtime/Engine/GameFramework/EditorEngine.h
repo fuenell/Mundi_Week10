@@ -54,6 +54,7 @@ private:
     void Render();
 
     void HandleUVInput(float DeltaSeconds);
+    void TestFBXImporter();
 
 private:
     //윈도우 핸들

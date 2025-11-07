@@ -4,6 +4,7 @@
 #include "SelectionManager.h"
 #include "FAudioDevice.h"
 #include <ObjManager.h>
+#include "FBXImporter.h"
 
 
 float UEditorEngine::ClientWidth = 1024.0f;
@@ -208,6 +209,9 @@ bool UEditorEngine::Startup(HINSTANCE hInstance)
     // 최근에 사용한 레벨 불러오기를 시도합니다.
     GWorld->TryLoadLastUsedLevel();
 
+    // FBX Importer 테스트
+    TestFBXImporter();
+
     bRunning = true;
     return true;
 }
@@ -390,4 +394,123 @@ void UEditorEngine::EndPIE()
 {
     // 지연 종료 처리 (UEditorEngine::MainLoop에서 종료 처리됨)
     bChangedPieToEditor = true;
+}
+
+void UEditorEngine::TestFBXImporter()
+{
+    UE_LOG("========================================\n");
+    UE_LOG("[FBX Test] Starting FBX Importer Test...\n");
+    UE_LOG("========================================\n");
+
+    // FBX Importer 싱글톤 가져오기
+    UFBXImporter& Importer = UFBXImporter::GetInstance();
+
+    if (!Importer.IsInitialized())
+    {
+        UE_LOG("[FBX Test Error] FBX Importer is not initialized!\n");
+        return;
+    }
+
+    // Data 폴더에서 모든 FBX 파일 찾기
+    std::filesystem::path DataPath = "Data";
+    TArray<std::filesystem::path> FBXFiles;
+
+    try
+    {
+        for (const auto& Entry : std::filesystem::recursive_directory_iterator(DataPath))
+        {
+            if (Entry.is_regular_file() && Entry.path().extension() == ".fbx")
+            {
+                FBXFiles.push_back(Entry.path());
+            }
+        }
+    }
+    catch (const std::exception& e)
+    {
+        UE_LOG("[FBX Test Error] Failed to scan Data folder: %s\n", e.what());
+        return;
+    }
+
+    if (FBXFiles.empty())
+    {
+        UE_LOG("[FBX Test] No FBX files found in Data folder\n");
+        UE_LOG("========================================\n");
+        return;
+    }
+
+    UE_LOG("[FBX Test] Found %d FBX file(s) in Data folder\n\n", static_cast<int32>(FBXFiles.size()));
+
+    int32 SuccessCount = 0;
+    int32 FailCount = 0;
+
+    // 모든 FBX 파일 로드 테스트
+    for (const auto& FilePath : FBXFiles)
+    {
+        FString FilePathStr = FilePath.string();
+        UE_LOG("[FBX Test] Loading: %s\n", FilePathStr.c_str());
+
+        // 스켈레탈 메시로 로드 시도
+        FSkeletalMeshData* SkeletalMeshData = Importer.LoadFBXSkeletalMesh(FilePathStr);
+
+        if (SkeletalMeshData)
+        {
+            UE_LOG("  ✓ SUCCESS (Skeletal Mesh)!\n");
+            UE_LOG("    - Vertices: %d\n", static_cast<int32>(SkeletalMeshData->Vertices.size()));
+            UE_LOG("    - Indices: %d\n", static_cast<int32>(SkeletalMeshData->Indices.size()));
+            UE_LOG("    - Normals: %d\n", static_cast<int32>(SkeletalMeshData->Normal.size()));
+            UE_LOG("    - UVs: %d\n", static_cast<int32>(SkeletalMeshData->UV.size()));
+            UE_LOG("    - Bones: %d\n", static_cast<int32>(SkeletalMeshData->Skeleton.Bones.size()));
+            UE_LOG("    - BoneWeights: %d\n", static_cast<int32>(SkeletalMeshData->BoneWeights.size()));
+
+            // 본 정보 출력
+            if (!SkeletalMeshData->Skeleton.Bones.empty())
+            {
+                UE_LOG("    - Bone Hierarchy:\n");
+                for (size_t i = 0; i < SkeletalMeshData->Skeleton.Bones.size(); ++i)
+                {
+                    const FBoneInfo& Bone = SkeletalMeshData->Skeleton.Bones[i];
+                    UE_LOG("      [%d] %s (Parent: %d)\n",
+                        static_cast<int32>(i), Bone.Name.c_str(), Bone.ParentIndex);
+                }
+            }
+
+            // 첫 번째 정점 정보 출력
+            if (!SkeletalMeshData->Vertices.empty())
+            {
+                FVector& FirstVertex = SkeletalMeshData->Vertices[0];
+                UE_LOG("    - First vertex: (%.2f, %.2f, %.2f)\n",
+                    FirstVertex.X, FirstVertex.Y, FirstVertex.Z);
+
+                // 첫 번째 정점의 본 웨이트 출력
+                if (!SkeletalMeshData->BoneWeights.empty())
+                {
+                    const FBoneWeight& FirstWeight = SkeletalMeshData->BoneWeights[0];
+                    UE_LOG("    - First vertex bone weights:\n");
+                    for (int32 j = 0; j < 4; ++j)
+                    {
+                        if (FirstWeight.Weights[j] > 0.0f)
+                        {
+                            UE_LOG("      Bone[%d]: %.3f\n",
+                                FirstWeight.BoneIndices[j], FirstWeight.Weights[j]);
+                        }
+                    }
+                }
+            }
+
+            delete SkeletalMeshData;
+            SuccessCount++;
+        }
+        else
+        {
+            UE_LOG("  ✗ FAILED!\n");
+            FailCount++;
+        }
+        UE_LOG("\n");
+    }
+
+    UE_LOG("========================================\n");
+    UE_LOG("[FBX Test] Test Complete\n");
+    UE_LOG("[FBX Test] Total: %d | Success: %d | Failed: %d\n",
+        static_cast<int32>(FBXFiles.size()), SuccessCount, FailCount);
+    UE_LOG("========================================\n");
 }

@@ -217,6 +217,106 @@ struct FMeshData
     //
 
 };
+
+// 스켈레탈 메시 관련 구조체
+
+// 본 정보
+struct FBoneInfo
+{
+    FString Name;                   // 본 이름
+    int32 ParentIndex;              // 부모 본 인덱스 (-1이면 루트)
+    DirectX::XMFLOAT4X4 LocalTransform;  // 로컬 변환 행렬
+    DirectX::XMFLOAT4X4 GlobalBindPose;  // 글로벌 바인드 포즈 행렬
+
+    FBoneInfo()
+        : Name("")
+        , ParentIndex(-1)
+    {
+        DirectX::XMStoreFloat4x4(&LocalTransform, DirectX::XMMatrixIdentity());
+        DirectX::XMStoreFloat4x4(&GlobalBindPose, DirectX::XMMatrixIdentity());
+    }
+};
+
+// 정점당 본 영향 정보 (최대 4개 본)
+struct FBoneWeight
+{
+    int32 BoneIndices[4];   // 본 인덱스
+    float Weights[4];       // 가중치
+
+    FBoneWeight()
+    {
+        for (int32 i = 0; i < 4; ++i)
+        {
+            BoneIndices[i] = 0;
+            Weights[i] = 0.0f;
+        }
+    }
+
+    // 가중치 정규화
+    void Normalize()
+    {
+        float TotalWeight = 0.0f;
+        for (int32 i = 0; i < 4; ++i)
+        {
+            TotalWeight += Weights[i];
+        }
+
+        if (TotalWeight > 0.0f)
+        {
+            for (int32 i = 0; i < 4; ++i)
+            {
+                Weights[i] /= TotalWeight;
+            }
+        }
+    }
+};
+
+// 스켈레톤 정보
+struct FSkeleton
+{
+    TArray<FBoneInfo> Bones;        // 모든 본 정보
+    TMap<FString, int32> BoneMap;   // 본 이름 -> 인덱스 맵
+
+    // 본 인덱스 찾기
+    int32 FindBoneIndex(const FString& BoneName) const
+    {
+        auto It = BoneMap.find(BoneName);
+        if (It != BoneMap.end())
+        {
+            return It->second;
+        }
+        return -1;
+    }
+
+    // 본 추가
+    int32 AddBone(const FBoneInfo& BoneInfo)
+    {
+        int32 Index = static_cast<int32>(Bones.size());
+        Bones.push_back(BoneInfo);
+        BoneMap[BoneInfo.Name] = Index;
+        return Index;
+    }
+};
+
+// 스켈레탈 메시 데이터
+struct FSkeletalMeshData
+{
+    // 기본 메시 데이터
+    TArray<FVector> Vertices;
+    TArray<uint32> Indices;
+    TArray<FVector2D> UV;
+    TArray<FVector> Normal;
+
+    // 스켈레탈 데이터
+    FSkeleton Skeleton;                  // 스켈레톤
+    TArray<FBoneWeight> BoneWeights;     // 정점당 본 가중치
+
+    bool HasSkeleton() const
+    {
+        return !Skeleton.Bones.empty() && !BoneWeights.empty();
+    }
+};
+
 enum class EPrimitiveTopology
 {
     PointList,
