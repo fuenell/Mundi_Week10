@@ -447,6 +447,9 @@ GEMINI.md
 .env
 Document/*
 
+# 임시
+2020.3.7/*
+
 # Untracked Data Files
 /Mundi/Data/untracked/**
 /Mundi/DerivedDataCache/**
