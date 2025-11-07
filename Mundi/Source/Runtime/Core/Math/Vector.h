@@ -1444,16 +1444,16 @@ inline FTransform FTransform::Inverse() const
 
 inline void operator*= (TArray<FVector>& Vectors, const FMatrix& Mat)
 {
-	uint32 VectorCount = Vectors.size();
-	for (int i = 0; i < VectorCount; i++)
+	size_t VectorCount = Vectors.size();
+	for (size_t i = 0; i < VectorCount; i++)
 	{
 		Vectors[i] = Vectors[i] * Mat;
 	}
 }
 inline void operator*= (TArray<FVector4>& Vectors, const FMatrix& Mat)
 {
-	uint32 VectorCount = Vectors.size();
-	for (int i = 0; i < VectorCount; i++)
+	size_t VectorCount = Vectors.size();
+	for (size_t i = 0; i < VectorCount; i++)
 	{
 		Vectors[i] = Vectors[i] * Mat;
 	}

@@ -51,7 +51,7 @@ namespace ImGui
         ImVec2 Q[4] = { { 0, 0 }, { P[0], P[1] }, { P[2], P[3] }, { 1, 1 } };
         ImVec2 results[STEPS + 1];
         bezier_table<STEPS>(Q, results);
-        return results[(int)((dt01 < 0 ? 0 : dt01 > 1 ? 1 : dt01) * STEPS)].y;
+        return results[(int)((dt01 < 0 ? 0 : dt01 > 1 ? 1 : dt01) * static_cast<int>(STEPS))].y;
     }
 
     int Bezier(const char* label, float P[5])
@@ -134,7 +134,7 @@ namespace ImGui
                 if (i == 1 || i == 9 || i == 17) ImGui::Separator();
                 if (ImGui::MenuItem(presets[i].name, NULL, P[4] == i))
                 {
-                    P[4] = i;
+                    P[4] = static_cast<float>(i);
                     reload = 1;
                     changed = 1;
                 }
@@ -173,7 +173,7 @@ namespace ImGui
             return false;
 
         // header and spacing
-        changed |= SliderFloat4(label, P, 0, 1, "%.3f", 1.0f);
+        changed = changed | (SliderFloat4(label, P, 0, 1, "%.3f", 0) ? 1 : 0);
         int hovered = IsItemActive() || IsItemHovered(); // IsItemDragged() ?
         Dummy(ImVec2(0, 3));
 
@@ -193,14 +193,14 @@ namespace ImGui
         RenderFrame(bb.Min, bb.Max, GetColorU32(ImGuiCol_FrameBg, 1), true, Style.FrameRounding);
 
         // background grid
-        for (int i = 0; i <= Canvas.x; i += (Canvas.x / 4))
+        for (int i = 0; i <= Canvas.x; i += static_cast<int>(Canvas.x / 4))
         {
             DrawList->AddLine(
                 ImVec2(bb.Min.x + i, bb.Min.y),
                 ImVec2(bb.Min.x + i, bb.Max.y),
                 GetColorU32(ImGuiCol_TextDisabled));
         }
-        for (int i = 0; i <= Canvas.y; i += (Canvas.y / 4))
+        for (int i = 0; i <= Canvas.y; i += static_cast<int>(Canvas.y / 4))
         {
             DrawList->AddLine(
                 ImVec2(bb.Min.x, bb.Min.y + i),
@@ -268,7 +268,7 @@ namespace ImGui
         {
             double now = ((clock() - epoch) / (double)CLOCKS_PER_SEC);
             float delta = ((int)(now * 1000) % 1000) / 1000.f; delta += i / 3.f; if (delta > 1) delta -= 1;
-            int idx = (int)(delta * SMOOTHNESS);
+            int idx = (int)(delta * static_cast<int>(SMOOTHNESS));
             float evalx = results[idx].x; // 
             float evaly = results[idx].y; // ImGui::BezierValue( delta, P );
             ImVec2 p0 = ImVec2(evalx, 1 - 0) * (bb.Max - bb.Min) + bb.Min;

@@ -32,7 +32,7 @@ public:
 	virtual void DuplicateSubObjects() override;
 	DECLARE_DUPLICATE(ULightComponent)
 
-	float GetShadowResolutionScale() const { return ShadowResolutionScale; }
+	int GetShadowResolutionScale() const { return ShadowResolutionScale; }
 	float GetShadowBias() const { return ShadowBias; }
 	float GetShadowSlopeBias() const { return ShadowSlopeBias; }
 	float GetShadowSharpen() const { return ShadowSharpen; }

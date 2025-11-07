@@ -413,7 +413,7 @@ void FLightManager::SetShadowMapData(ULightComponent* Light, int32 SubViewIndex,
 void FLightManager::SetShadowCubeMapData(ULightComponent* Light, int32 SliceIndex)
 {
 	if (!Light) return;
-	if (SliceIndex < 0 || CubeArrayCount <= SliceIndex) return;
+	if (SliceIndex < 0 || CubeArrayCount <= static_cast<uint32>(SliceIndex)) return;
 
 	// TMap에 슬라이스 인덱스 저장
 	ShadowDataCacheCube[Light] = SliceIndex;
@@ -425,7 +425,7 @@ void FLightManager::SetShadowCubeMapData(ULightComponent* Light, int32 SliceInde
 ID3D11DepthStencilView* FLightManager::GetShadowCubeFaceDSV(UINT SliceIndex, UINT FaceIndex) const
 {
 	UINT Index = (SliceIndex * 6) + FaceIndex;
-	if (Index < ShadowCubeFaceDSVs.Num())
+	if (Index < static_cast<UINT>(ShadowCubeFaceDSVs.Num()))
 	{
 		return ShadowCubeFaceDSVs[Index];
 	}
@@ -435,7 +435,7 @@ ID3D11DepthStencilView* FLightManager::GetShadowCubeFaceDSV(UINT SliceIndex, UIN
 ID3D11ShaderResourceView* FLightManager::GetShadowCubeFaceSRV(UINT SliceIndex, UINT FaceIndex) const
 {
 	UINT Index = (SliceIndex * 6) + FaceIndex;
-	if (Index < ShadowCubeFaceSRVs.Num())
+	if (Index < static_cast<UINT>(ShadowCubeFaceSRVs.Num()))
 	{
 		return ShadowCubeFaceSRVs[Index];
 	}
@@ -596,7 +596,7 @@ void FLightManager::AllocateAtlasCubeSlices(TArray<FShadowRenderRequest>& InOutR
 			CurrentLightOwner = Request.LightOwner; // 현재 라이트 갱신
 
 			// 새 라이트가 슬라이스 개수 제한을 초과하는지 확인
-			if (AllocatorCube_CurrentSliceIndex >= CubeArrayCount)
+			if (static_cast<uint32>(AllocatorCube_CurrentSliceIndex) >= CubeArrayCount)
 			{
 				bCurrentLightFailed = true; // 이 라이트는 할당 불가
 			}

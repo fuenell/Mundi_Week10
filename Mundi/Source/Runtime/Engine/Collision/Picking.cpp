@@ -365,7 +365,7 @@ AActor* CPickingSystem::PerformViewportPicking(const TArray<AActor*>& Actors,
 	float PickedT = 1e9f;
 
 	// 퍼포먼스 측정용 카운터 시작
-	FScopeCycleCounter PickCounter;
+	uint64 StartCycles = FPlatformTime::Cycles64();
 
 	// 전체 Picking 횟수 누적
 	++TotalPickCount;
@@ -373,9 +373,10 @@ AActor* CPickingSystem::PerformViewportPicking(const TArray<AActor*>& Actors,
 	// 베스트 퍼스트 탐색으로 가장 가까운 것을 직접 구한다
 	AActor* PickedActor = nullptr;
 	Partition->RayQueryClosest(ray, PickedActor, PickedT);
-	LastPickTime = PickCounter.Finish();
+	uint64 EndCycles = FPlatformTime::Cycles64();
+	LastPickTime = EndCycles - StartCycles;
 	TotalPickTime += LastPickTime;
-	double Milliseconds = ((double)LastPickTime * FPlatformTime::GetSecondsPerCycle()) * 1000.0f;
+	double Milliseconds = ((double)LastPickTime * FPlatformTime::GetSecondsPerCycle()) * 1000.0;
 
 	if (PickedActor)
 	{

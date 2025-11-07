@@ -81,9 +81,9 @@ void UAudioComponent::EndPlay()
 void UAudioComponent::Play()
 {
     // default to first valid slot
-    for (uint32 i = 0; i < Sounds.Num(); ++i)
+    for (int i = 0; i < Sounds.Num(); ++i)
     {
-        if (Sounds[i]) { PlaySlot(i); return; }
+        if (Sounds[i]) { PlaySlot(static_cast<uint32>(i)); return; }
     }
 }
 
