@@ -6,6 +6,32 @@
 #include "Archive.h"
 #include <d3d11.h>
 
+// 본 정보
+struct FBoneInfo
+{
+    FString BoneName;
+    int32 ParentIndex;          // 부모 본 인덱스 (-1이면 루트)
+    FMatrix InverseBindPose;    // Bind Pose의 역행렬
+    FMatrix LocalTransform;     // 부모 기준 로컬 변환 (Bind Pose)
+};
+
+
+// 스켈레톤 구조
+struct FReferenceSkeleton
+{
+    TArray<FBoneInfo> Bones;
+
+    int32 FindBoneIndex(const FString& BoneName) const
+    {
+        for (int32 i = 0; i < Bones.Num(); ++i)
+        {
+            if (Bones[i].BoneName == BoneName)
+                return i;
+        }
+        return -1;
+    }
+};
+
 struct FMaterialInfo
 {
     int32 IlluminationModel = 2;  // illum. Default illumination model to Phong for non-Pbr materials
@@ -287,6 +313,7 @@ enum class ResourceType : uint8
     None,
 
     StaticMesh,
+    SkeletalMesh,
     Quad,
     DynamicMesh,
     Shader,
@@ -411,8 +438,12 @@ enum class EEngineShowFlags : uint64
     SF_Shadows = 1ull << 16,
     SF_ShadowAntiAliasing = 1ull << 17,
 
+    // Skeletal Mesh
+    SF_SkeletalMeshes = 1ull << 18,  // Show/hide skeletal mesh rendering
+    SF_Bones = 1ull << 19,           // Show/hide bone debug visualization
+
     // Default enabled flags
-    SF_DefaultEnabled = SF_Primitives | SF_StaticMeshes | SF_Grid | SF_Lighting | SF_Decals | SF_Fog | SF_FXAA |SF_Billboard | SF_Shadows | SF_ShadowAntiAliasing,
+    SF_DefaultEnabled = SF_Primitives | SF_StaticMeshes | SF_SkeletalMeshes | SF_Grid | SF_Lighting | SF_Decals | SF_Fog | SF_FXAA |SF_Billboard | SF_Shadows | SF_ShadowAntiAliasing,
 
     // All flags (for initialization/reset)
     SF_All = 0xFFFFFFFFFFFFFFFFull

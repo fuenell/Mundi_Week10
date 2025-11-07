@@ -10,6 +10,8 @@ enum class EAttachmentRule
 };
 
 class URenderer;
+class UBillboardComponent;
+
 class USceneComponent : public UActorComponent
 {
 public:

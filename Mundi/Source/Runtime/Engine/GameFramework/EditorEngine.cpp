@@ -4,6 +4,7 @@
 #include "SelectionManager.h"
 #include "FAudioDevice.h"
 #include <ObjManager.h>
+#include "MeshLoader.h"
 
 
 float UEditorEngine::ClientWidth = 1024.0f;
@@ -207,6 +208,70 @@ bool UEditorEngine::Startup(HINSTANCE hInstance)
 
     // 최근에 사용한 레벨 불러오기를 시도합니다.
     GWorld->TryLoadLastUsedLevel();
+
+    // ===== FBX 로더 테스트 =====
+    FString TestFBXPath = GDataDir + "/Model/BoneCH.fbx";
+
+    UE_LOG("===========================================");
+    UE_LOG("[STARTUP] Testing FBX Loader...");
+    UE_LOG("  File: %s", TestFBXPath.c_str());
+    UE_LOG("===========================================");
+
+    FSkeletalMeshAsset* TestAsset = UMeshLoader::GetInstance().LoadFBXSkeletalMesh(TestFBXPath);
+
+    if (TestAsset)
+    {
+        UE_LOG("");
+        UE_LOG("✅ FBX LOAD SUCCESS!");
+        UE_LOG("  Bones: %d", TestAsset->RefSkeleton.Bones.Num());
+        UE_LOG("  Vertices: %d", TestAsset->Vertices.Num());
+        UE_LOG("  Indices: %d", TestAsset->Indices.Num());
+        UE_LOG("  Triangles: %d", TestAsset->Indices.Num() / 3);
+
+        // 첫 3개 본 출력
+        if (TestAsset->RefSkeleton.Bones.Num() > 0)
+        {
+            UE_LOG("");
+            UE_LOG("  First 3 Bones:");
+            int BoneCount = FMath::Min(3, TestAsset->RefSkeleton.Bones.Num());
+            for (int i = 0; i < BoneCount; ++i)
+            {
+                const FBoneInfo& Bone = TestAsset->RefSkeleton.Bones[i];
+                UE_LOG("    [%d] %s (Parent: %d)", i, Bone.BoneName.c_str(), Bone.ParentIndex);
+            }
+        }
+
+        // 첫 3개 정점 출력
+        if (TestAsset->Vertices.Num() > 0)
+        {
+            UE_LOG("");
+            UE_LOG("  First 3 Vertices:");
+            int VertCount = FMath::Min(3, TestAsset->Vertices.Num());
+            for (int i = 0; i < VertCount; ++i)
+            {
+                const FSkinnedVertex& V = TestAsset->Vertices[i];
+                UE_LOG("    Vertex[%d]: Pos(%.2f, %.2f, %.2f)", i, V.Position.X, V.Position.Y, V.Position.Z);
+                UE_LOG("      Bones[%d,%d,%d,%d] Weights[%.3f,%.3f,%.3f,%.3f]",
+                    V.BoneIndices[0], V.BoneIndices[1], V.BoneIndices[2], V.BoneIndices[3],
+                    V.BoneWeights[0], V.BoneWeights[1], V.BoneWeights[2], V.BoneWeights[3]);
+            }
+        }
+
+        UE_LOG("");
+        UE_LOG("✅ All data loaded successfully!");
+        UE_LOG("===========================================");
+
+        delete TestAsset;
+    }
+    else
+    {
+        UE_LOG("");
+        UE_LOG("❌ FBX LOAD FAILED!");
+        UE_LOG("  Check if file exists: %s", TestFBXPath.c_str());
+        UE_LOG("  Check FBX SDK linking");
+        UE_LOG("===========================================");
+    }
+    // ===== FBX 로더 테스트 끝 =====
 
     bRunning = true;
     return true;

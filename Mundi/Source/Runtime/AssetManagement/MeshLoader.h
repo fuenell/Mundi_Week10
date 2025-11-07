@@ -68,6 +68,9 @@ public:
     void AddMeshData(const FString& InName, FMeshData* InMeshData);
     const TMap<FString, FMeshData*>* GetMeshCache();
 
+    // FBX 스켈레탈 메시 로딩
+    struct FSkeletalMeshAsset* LoadFBXSkeletalMesh(const FString& FilePath);
+
     UMeshLoader();
 protected:
     ~UMeshLoader() override;

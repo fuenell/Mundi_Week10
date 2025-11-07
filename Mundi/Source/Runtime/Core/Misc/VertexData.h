@@ -105,3 +105,25 @@ struct FBillboardVertex
     }
 };
 
+// 스켈레탈 메시 정점 (CPU 스키닝용 원본 데이터)
+struct FSkinnedVertex
+{
+    FVector Position;
+    FVector Normal;
+    FVector2D UV;
+    FVector4 Tangent;
+    uint32 BoneIndices[4];  // 영향을 주는 본 인덱스 (최대 4개)
+    float BoneWeights[4];   // 각 본의 가중치 (합이 1.0)
+
+    FSkinnedVertex()
+        : Position(FVector::Zero())
+        , Normal(FVector(0, 0, 1))
+        , UV(FVector2D::Zero())
+        , Tangent(FVector4(1, 0, 0, 1))
+    {
+        BoneIndices[0] = BoneIndices[1] = BoneIndices[2] = BoneIndices[3] = 0;
+        BoneWeights[0] = 1.0f;
+        BoneWeights[1] = BoneWeights[2] = BoneWeights[3] = 0.0f;
+    }
+};
+

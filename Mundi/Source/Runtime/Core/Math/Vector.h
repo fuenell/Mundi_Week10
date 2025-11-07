@@ -1072,6 +1072,15 @@ struct alignas(16) FMatrix
 		float FarClip,
 		float ZoomFactor,
 		enum class ECameraProjectionMode ProjectionMode);
+
+
+	FVector TransformPosition(const FVector& V) const {
+		return {
+			M[0][0]*V.X + M[0][1]*V.X + M[0][2]*V.X + M[0][3],
+			M[1][0]*V.Y + M[1][1]*V.Y + M[1][2]*V.Y + M[1][3],
+			M[2][0]*V.Z + M[2][1]*V.Z + M[2][2]*V.Z + M[2][3]
+		};
+	}
 };
 
 // ─────────────────────────────
