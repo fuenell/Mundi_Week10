@@ -442,6 +442,7 @@ AGENTS.md
 .claude/settings.local.json
 nul
 CLAUDE.md
+ARCHITECTURE.md
 GEMINI.md
 .env
 Document/*
