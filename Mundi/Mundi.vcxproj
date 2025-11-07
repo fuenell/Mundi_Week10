@@ -100,14 +100,14 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Source\Runtime\Core\Object;$(ProjectDir)Source\Runtime\Core\Math;$(ProjectDir)Source\Runtime\Core\Containers;$(ProjectDir)Source\Runtime\Core\Misc;$(ProjectDir)Source\Runtime\Core\Memory;$(ProjectDir)Source\Runtime\Engine\GameFramework;$(ProjectDir)Source\Runtime\Engine\Scripting;$(ProjectDir)Source\Runtime\Engine\Components;$(ProjectDir)Source\Runtime\Engine\Collision;$(ProjectDir)Source\Runtime\Engine\Spatial;$(ProjectDir)Source\Runtime\RHI;$(ProjectDir)Source\Runtime\Renderer;$(ProjectDir)Source\Runtime\AssetManagement;$(ProjectDir)Source\Runtime\InputCore;$(ProjectDir)Source\Editor;$(ProjectDir)Source\Slate;ThirdParty\DirectXTex\include;ThirdParty\DirectXTK\include;ThirdParty\Lua\include;ThirdParty\sol;ThirdParty</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Source\Runtime\Core\Object;$(ProjectDir)Source\Runtime\Core\Math;$(ProjectDir)Source\Runtime\Core\Containers;$(ProjectDir)Source\Runtime\Core\Misc;$(ProjectDir)Source\Runtime\Core\Memory;$(ProjectDir)Source\Runtime\Engine\GameFramework;$(ProjectDir)Source\Runtime\Engine\Scripting;$(ProjectDir)Source\Runtime\Engine\Components;$(ProjectDir)Source\Runtime\Engine\Collision;$(ProjectDir)Source\Runtime\Engine\Spatial;$(ProjectDir)Source\Runtime\RHI;$(ProjectDir)Source\Runtime\Renderer;$(ProjectDir)Source\Runtime\AssetManagement;$(ProjectDir)Source\Runtime\InputCore;$(ProjectDir)Source\Editor;$(ProjectDir)Source\Slate;ThirdParty\FBX\include;ThirdParty\DirectXTex\include;ThirdParty\DirectXTK\include;ThirdParty\Lua\include;ThirdParty\sol;ThirdParty</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 /bigobj %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories);ThirdParty\Lua\lib\$(Configuration)\;ThirdParty\DirectXTex\lib\$(Configuration)\;ThirdParty\DirectXTK\lib\$(Configuration)\</AdditionalLibraryDirectories>
-      <AdditionalDependencies>DirectXTK.lib;DirectXTex.lib;%(AdditionalDependencies);Lua.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories);ThirdParty\FBX\lib\$(Configuration)\;ThirdParty\Lua\lib\$(Configuration)\;ThirdParty\DirectXTex\lib\$(Configuration)\;ThirdParty\DirectXTK\lib\$(Configuration)\</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libfbxsdk-md.lib;libxml2-md.lib;zlib-md.lib;DirectXTK.lib;DirectXTex.lib;%(AdditionalDependencies);Lua.lib</AdditionalDependencies>
       <AdditionalOptions>/IGNORE:4099 %(AdditionalOptions)</AdditionalOptions>
       <LinkTimeCodeGeneration>Default</LinkTimeCodeGeneration>
     </Link>
@@ -125,14 +125,14 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Source\Runtime\Core\Object;$(ProjectDir)Source\Runtime\Core\Math;$(ProjectDir)Source\Runtime\Core\Containers;$(ProjectDir)Source\Runtime\Core\Misc;$(ProjectDir)Source\Runtime\Core\Memory;$(ProjectDir)Source\Runtime\Engine\GameFramework;$(ProjectDir)Source\Runtime\Engine\Scripting;$(ProjectDir)Source\Runtime\Engine\Components;$(ProjectDir)Source\Runtime\Engine\Collision;$(ProjectDir)Source\Runtime\Engine\Spatial;$(ProjectDir)Source\Runtime\RHI;$(ProjectDir)Source\Runtime\Renderer;$(ProjectDir)Source\Runtime\AssetManagement;$(ProjectDir)Source\Runtime\InputCore;$(ProjectDir)Source\Editor;$(ProjectDir)Source\Slate;ThirdParty\DirectXTex\include;ThirdParty\DirectXTK\include;ThirdParty\Lua\include;ThirdParty\sol;ThirdParty</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Source\Runtime\Core\Object;$(ProjectDir)Source\Runtime\Core\Math;$(ProjectDir)Source\Runtime\Core\Containers;$(ProjectDir)Source\Runtime\Core\Misc;$(ProjectDir)Source\Runtime\Core\Memory;$(ProjectDir)Source\Runtime\Engine\GameFramework;$(ProjectDir)Source\Runtime\Engine\Scripting;$(ProjectDir)Source\Runtime\Engine\Components;$(ProjectDir)Source\Runtime\Engine\Collision;$(ProjectDir)Source\Runtime\Engine\Spatial;$(ProjectDir)Source\Runtime\RHI;$(ProjectDir)Source\Runtime\Renderer;$(ProjectDir)Source\Runtime\AssetManagement;$(ProjectDir)Source\Runtime\InputCore;$(ProjectDir)Source\Editor;$(ProjectDir)Source\Slate;ThirdParty\FBX\include;ThirdParty\DirectXTex\include;ThirdParty\DirectXTK\include;ThirdParty\Lua\include;ThirdParty\sol;ThirdParty</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 /bigobj %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories);ThirdParty\Lua\lib\Debug\;ThirdParty\DirectXTex\lib\Debug\;ThirdParty\DirectXTK\lib\Debug\</AdditionalLibraryDirectories>
-      <AdditionalDependencies>DirectXTK.lib;DirectXTex.lib;%(AdditionalDependencies);Lua.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories);ThirdParty\FBX\lib\Debug\;ThirdParty\Lua\lib\Debug\;ThirdParty\DirectXTex\lib\Debug\;ThirdParty\DirectXTK\lib\Debug\</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libfbxsdk-md.lib;libxml2-md.lib;zlib-md.lib;DirectXTK.lib;DirectXTex.lib;%(AdditionalDependencies);Lua.lib</AdditionalDependencies>
       <AdditionalOptions>/IGNORE:4099 %(AdditionalOptions)</AdditionalOptions>
       <LinkTimeCodeGeneration>Default</LinkTimeCodeGeneration>
     </Link>
@@ -152,7 +152,7 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Source\Runtime\Core\Object;$(ProjectDir)Source\Runtime\Core\Math;$(ProjectDir)Source\Runtime\Core\Containers;$(ProjectDir)Source\Runtime\Core\Misc;$(ProjectDir)Source\Runtime\Core\Memory;$(ProjectDir)Source\Runtime\Engine\GameFramework;$(ProjectDir)Source\Runtime\Engine\Scripting;$(ProjectDir)Source\Runtime\Engine\Components;$(ProjectDir)Source\Runtime\Engine\Collision;$(ProjectDir)Source\Runtime\Engine\Spatial;$(ProjectDir)Source\Runtime\RHI;$(ProjectDir)Source\Runtime\Renderer;$(ProjectDir)Source\Runtime\AssetManagement;$(ProjectDir)Source\Runtime\InputCore;$(ProjectDir)Source\Editor;$(ProjectDir)Source\Slate;ThirdParty\DirectXTex\include;ThirdParty\DirectXTK\include;ThirdParty\Lua\include;ThirdParty\sol;ThirdParty</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Source\Runtime\Core\Object;$(ProjectDir)Source\Runtime\Core\Math;$(ProjectDir)Source\Runtime\Core\Containers;$(ProjectDir)Source\Runtime\Core\Misc;$(ProjectDir)Source\Runtime\Core\Memory;$(ProjectDir)Source\Runtime\Engine\GameFramework;$(ProjectDir)Source\Runtime\Engine\Scripting;$(ProjectDir)Source\Runtime\Engine\Components;$(ProjectDir)Source\Runtime\Engine\Collision;$(ProjectDir)Source\Runtime\Engine\Spatial;$(ProjectDir)Source\Runtime\RHI;$(ProjectDir)Source\Runtime\Renderer;$(ProjectDir)Source\Runtime\AssetManagement;$(ProjectDir)Source\Runtime\InputCore;$(ProjectDir)Source\Editor;$(ProjectDir)Source\Slate;ThirdParty\FBX\include;ThirdParty\DirectXTex\include;ThirdParty\DirectXTK\include;ThirdParty\Lua\include;ThirdParty\sol;ThirdParty</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 /bigobj %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
@@ -160,8 +160,8 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories);ThirdParty\Lua\lib\$(Configuration)\;ThirdParty\DirectXTex\lib\$(Configuration)\;ThirdParty\DirectXTK\lib\$(Configuration)\</AdditionalLibraryDirectories>
-      <AdditionalDependencies>DirectXTK.lib;DirectXTex.lib;%(AdditionalDependencies);Lua.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories);ThirdParty\FBX\lib\$(Configuration)\;ThirdParty\Lua\lib\$(Configuration)\;ThirdParty\DirectXTex\lib\$(Configuration)\;ThirdParty\DirectXTK\lib\$(Configuration)\</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libfbxsdk-md.lib;libxml2-md.lib;zlib-md.lib;DirectXTK.lib;DirectXTex.lib;%(AdditionalDependencies);Lua.lib</AdditionalDependencies>
       <AdditionalOptions>/IGNORE:4099 %(AdditionalOptions)</AdditionalOptions>
     </Link>
     <PreBuildEvent>
@@ -180,7 +180,7 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Source\Runtime\Core\Object;$(ProjectDir)Source\Runtime\Core\Math;$(ProjectDir)Source\Runtime\Core\Containers;$(ProjectDir)Source\Runtime\Core\Misc;$(ProjectDir)Source\Runtime\Core\Memory;$(ProjectDir)Source\Runtime\Engine\GameFramework;$(ProjectDir)Source\Runtime\Engine\Scripting;$(ProjectDir)Source\Runtime\Engine\Components;$(ProjectDir)Source\Runtime\Engine\Collision;$(ProjectDir)Source\Runtime\Engine\Spatial;$(ProjectDir)Source\Runtime\RHI;$(ProjectDir)Source\Runtime\Renderer;$(ProjectDir)Source\Runtime\AssetManagement;$(ProjectDir)Source\Runtime\InputCore;$(ProjectDir)Source\Editor;$(ProjectDir)Source\Slate;ThirdParty\DirectXTex\include;ThirdParty\DirectXTK\include;ThirdParty\Lua\include;ThirdParty\sol;ThirdParty</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Source\Runtime\Core\Object;$(ProjectDir)Source\Runtime\Core\Math;$(ProjectDir)Source\Runtime\Core\Containers;$(ProjectDir)Source\Runtime\Core\Misc;$(ProjectDir)Source\Runtime\Core\Memory;$(ProjectDir)Source\Runtime\Engine\GameFramework;$(ProjectDir)Source\Runtime\Engine\Scripting;$(ProjectDir)Source\Runtime\Engine\Components;$(ProjectDir)Source\Runtime\Engine\Collision;$(ProjectDir)Source\Runtime\Engine\Spatial;$(ProjectDir)Source\Runtime\RHI;$(ProjectDir)Source\Runtime\Renderer;$(ProjectDir)Source\Runtime\AssetManagement;$(ProjectDir)Source\Runtime\InputCore;$(ProjectDir)Source\Editor;$(ProjectDir)Source\Slate;ThirdParty\FBX\include;ThirdParty\DirectXTex\include;ThirdParty\DirectXTK\include;ThirdParty\Lua\include;ThirdParty\sol;ThirdParty</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 /bigobj %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
@@ -188,8 +188,8 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories);ThirdParty\Lua\lib\Release\;ThirdParty\DirectXTex\lib\Release\;ThirdParty\DirectXTK\lib\Release\</AdditionalLibraryDirectories>
-      <AdditionalDependencies>DirectXTK.lib;DirectXTex.lib;%(AdditionalDependencies);Lua.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories);ThirdParty\FBX\lib\Release\;ThirdParty\Lua\lib\Release\;ThirdParty\DirectXTex\lib\Release\;ThirdParty\DirectXTK\lib\Release\</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libfbxsdk-md.lib;libxml2-md.lib;zlib-md.lib;DirectXTK.lib;DirectXTex.lib;%(AdditionalDependencies);Lua.lib</AdditionalDependencies>
       <AdditionalOptions>/IGNORE:4099 %(AdditionalOptions)</AdditionalOptions>
     </Link>
     <PreBuildEvent>
@@ -790,6 +790,9 @@
         Copy-Item -Path '$(ProjectDir)ThirdParty\Lua\bin\lua54.dll' -Destination '$(OutDir)' -Force
         };
 
+        Write-Host '[BuildEvent] Copying FBX SDK DLL (Debug)...';
+        Copy-Item -Path '$(ProjectDir)ThirdParty\FBX\bin\Debug\libfbxsdk.dll' -Destination '$(OutDir)' -Force;
+
         Write-Host '[BuildEvent] Asset copy successful.';
         exit 0
       </PowerShellScript>
@@ -819,6 +822,9 @@
         Write-Host '[BuildEvent] Copying lua54.dll...';
         Copy-Item -Path '$(ProjectDir)ThirdParty\Lua\bin\lua54.dll' -Destination '$(OutDir)' -Force
         };
+
+        Write-Host '[BuildEvent] Copying FBX SDK DLL (Debug)...';
+        Copy-Item -Path '$(ProjectDir)ThirdParty\FBX\bin\Debug\libfbxsdk.dll' -Destination '$(OutDir)' -Force;
 
         Write-Host '[BuildEvent] Asset copy successful.';
         exit 0
@@ -851,6 +857,9 @@
         Copy-Item -Path '$(ProjectDir)ThirdParty\Lua\bin\lua54.dll' -Destination '$(OutDir)' -Force
         };
 
+        Write-Host '[BuildEvent] Copying FBX SDK DLL (Release)...';
+        Copy-Item -Path '$(ProjectDir)ThirdParty\FBX\bin\Release\libfbxsdk.dll' -Destination '$(OutDir)' -Force;
+
         Write-Host '[BuildEvent] Asset copy successful.';
         exit 0
       </PowerShellScript>
@@ -880,6 +889,9 @@
         Write-Host '[BuildEvent] Copying lua54.dll...';
         Copy-Item -Path '$(ProjectDir)ThirdParty\Lua\bin\lua54.dll' -Destination '$(OutDir)' -Force
         };
+
+        Write-Host '[BuildEvent] Copying FBX SDK DLL (Release)...';
+        Copy-Item -Path '$(ProjectDir)ThirdParty\FBX\bin\Release\libfbxsdk.dll' -Destination '$(OutDir)' -Force;
 
         Write-Host '[BuildEvent] Asset copy successful.';
         exit 0
