@@ -45,6 +45,7 @@ private:
 	// UI state
 	bool AutoScroll;
 	bool ScrollToBottom;
+	float LastScrollY;  // Track previous scroll position to detect user-initiated scrolls
 	ImGuiTextFilter Filter;
 
 	bool bIsWindowPinned;    // 콘솔 창 고정(핀) 상태

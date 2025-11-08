@@ -23,6 +23,7 @@ UConsoleWidget::UConsoleWidget()
 	, NeedsScrollToBottom(false)
 	, AutoScroll(true)
 	, ScrollToBottom(false)
+	, LastScrollY(0.0f)
 	, bIsWindowPinned(false)
 {
 	memset(InputBuf, 0, sizeof(InputBuf));
@@ -205,25 +206,6 @@ void UConsoleWidget::RenderLogOutput()
 	// Reserve space for input at bottom
 	const float footer_height_to_reserve = ImGui::GetStyle().ItemSpacing.y + ImGui::GetFrameHeightWithSpacing();
 
-	// Build full log text with filtering
-	FString logText;
-	for (const FString& item : Items)
-	{
-		if (!Filter.PassFilter(item.c_str()))
-			continue;
-
-		logText += item;
-		logText += "\n";
-	}
-
-	// Copy to buffer (safely truncate if needed)
-	size_t copyLen = min(logText.length(), LogBufferSize - 1);
-	memcpy(LogBuffer, logText.c_str(), copyLen);
-	LogBuffer[copyLen] = '\0';
-
-	// Use InputTextMultiline for selectable/copyable text
-	ImGuiInputTextFlags flags = ImGuiInputTextFlags_ReadOnly;
-
 	// Get available region size
 	ImVec2 availSize = ImGui::GetContentRegionAvail();
 	availSize.y -= footer_height_to_reserve;
@@ -233,31 +215,39 @@ void UConsoleWidget::RenderLogOutput()
 	ImVec4 logBg = ImVec4(childBg.x * 0.7f, childBg.y * 0.7f, childBg.z * 0.7f, childBg.w);
 	ImGui::PushStyleColor(ImGuiCol_ChildBg, logBg);
 
-	// Use BeginChild to have direct control over scrolling
-	if (ImGui::BeginChild("##LogScrollRegion", availSize, false, ImGuiWindowFlags_HorizontalScrollbar))
+	// Use BeginChild for scrollable region with mouse wheel support
+	if (ImGui::BeginChild("##LogScrollRegion", availSize, false, ImGuiWindowFlags_None))
 	{
-		// Calculate actual rendered text size using ImGui::CalcTextSize
-		// This provides accurate dimensions without manually counting lines
-		ImVec2 textSize = ImGui::CalcTextSize(LogBuffer, NULL, false, availSize.x);
+		// Render each log item using TextUnformatted (fast, no text selection)
+		for (int i = 0; i < Items.Num(); i++)
+		{
+			if (!Filter.PassFilter(Items[i].c_str()))
+				continue;
 
-		// Add small padding to prevent last log from being cut off at bottom
-		float bottomPadding = ImGui::GetTextLineHeightWithSpacing() * 0.5f;
+			ImGui::TextUnformatted(Items[i].c_str());
+		}
 
-		// Hide InputTextMultiline's scrollbar (only use BeginChild's scrollbar)
-		ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 0.0f);
+		// Track scroll position to detect user scrolls
+		float currentScrollY = ImGui::GetScrollY();
+		float maxScrollY = ImGui::GetScrollMaxY();
 
-		// Make InputTextMultiline background transparent to match BeginChild background
-		ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
+		// Detect if user manually scrolled
+		if (currentScrollY != LastScrollY)
+		{
+			// Check if user scrolled to bottom (within small threshold)
+			bool isAtBottom = (maxScrollY - currentScrollY) < 1.0f;
 
-		// Display text with selection support - height includes minimal bottom padding
-		ImGui::InputTextMultiline("##LogOutput",
-			LogBuffer,
-			LogBufferSize,
-			ImVec2(-FLT_MIN, textSize.y + bottomPadding),
-			flags | ImGuiInputTextFlags_NoHorizontalScroll);
-
-		ImGui::PopStyleColor(1);
-		ImGui::PopStyleVar();
+			if (isAtBottom && !AutoScroll)
+			{
+				// User scrolled back to bottom, re-enable auto-scroll
+				AutoScroll = true;
+			}
+			else if (!isAtBottom && currentScrollY < LastScrollY)
+			{
+				// User scrolled up, disable auto-scroll
+				AutoScroll = false;
+			}
+		}
 
 		// Auto-scroll to bottom when new logs are added
 		if (AutoScroll && ScrollToBottom)
@@ -265,6 +255,9 @@ void UConsoleWidget::RenderLogOutput()
 			ImGui::SetScrollHereY(1.0f);
 			ScrollToBottom = false;
 		}
+
+		// Update last scroll position
+		LastScrollY = currentScrollY;
 	}
 	ImGui::EndChild();
 
