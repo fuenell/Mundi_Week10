@@ -205,6 +205,8 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release_StandAlone|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Source\Runtime\Engine\Components\SkinnedMeshComponent.cpp" />
+    <ClCompile Include="Source\Runtime\Engine\Components\SkeletalMeshComponent.cpp" />
     <ClCompile Include="Source\Runtime\Engine\GameFramework\Camera\CamMod_Fade.cpp" />
     <FxCompile Include="Shaders\Materials\Fireball.hlsl">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
@@ -269,6 +271,7 @@
     <ClCompile Include="Source\Runtime\Engine\GameFramework\HeightFogActor.cpp" />
     <ClCompile Include="Source\Runtime\Engine\GameFramework\Info.cpp" />
     <ClCompile Include="Source\Runtime\Engine\GameFramework\PointLightActor.cpp" />
+    <ClCompile Include="Source\Runtime\Engine\GameFramework\SkeletalMeshActor.cpp" />
     <ClCompile Include="Source\Runtime\Engine\GameFramework\SpotLightActor.cpp" />
     <ClCompile Include="Source\Runtime\Engine\Scripting\GameObject.cpp" />
     <ClCompile Include="Source\Runtime\Engine\Scripting\LuaBindHelpers.cpp" />
@@ -335,12 +338,15 @@
     <ClCompile Include="Source\Editor\ObjManager.cpp" />
     <ClCompile Include="Source\Editor\SelectionManager.cpp" />
     <ClCompile Include="Source\Runtime\AssetManagement\DynamicMesh.cpp" />
+    <ClCompile Include="Source\Runtime\AssetManagement\FbxImporter.cpp" />
     <ClCompile Include="Source\Runtime\AssetManagement\Line.cpp" />
     <ClCompile Include="Source\Runtime\AssetManagement\LineDynamicMesh.cpp" />
     <ClCompile Include="Source\Runtime\AssetManagement\MeshLoader.cpp" />
     <ClCompile Include="Source\Runtime\AssetManagement\Quad.cpp" />
     <ClCompile Include="Source\Runtime\AssetManagement\ResourceBase.cpp" />
     <ClCompile Include="Source\Runtime\AssetManagement\ResourceManager.cpp" />
+    <ClCompile Include="Source\Runtime\AssetManagement\Skeleton.cpp" />
+    <ClCompile Include="Source\Runtime\AssetManagement\SkeletalMesh.cpp" />
     <ClCompile Include="Source\Runtime\AssetManagement\StaticMesh.cpp" />
     <ClCompile Include="Source\Runtime\AssetManagement\Texture.cpp" />
     <ClCompile Include="Source\Runtime\AssetManagement\TextureConverter.cpp" />
@@ -554,6 +560,8 @@
     <ClInclude Include="Source\Runtime\Engine\Components\RotatingMovementComponent.h" />
     <ClInclude Include="Source\Runtime\Engine\Components\BoxComponent.h" />
     <ClInclude Include="Source\Runtime\Engine\Components\ShapeComponent.h" />
+    <ClInclude Include="Source\Runtime\Engine\Components\SkinnedMeshComponent.h" />
+    <ClInclude Include="Source\Runtime\Engine\Components\SkeletalMeshComponent.h" />
     <ClInclude Include="Source\Runtime\Engine\Components\SphereComponent.h" />
     <ClInclude Include="Source\Runtime\Engine\GameFramework\AmbientLightActor.h" />
     <ClInclude Include="Source\Runtime\Engine\GameFramework\Camera\CamMod_LetterBox.h" />
@@ -569,6 +577,7 @@
     <ClInclude Include="Source\Runtime\Engine\GameFramework\HeightFogActor.h" />
     <ClInclude Include="Source\Runtime\Engine\GameFramework\Info.h" />
     <ClInclude Include="Source\Runtime\Engine\GameFramework\PointLightActor.h" />
+    <ClInclude Include="Source\Runtime\Engine\GameFramework\SkeletalMeshActor.h" />
     <ClInclude Include="Source\Runtime\Engine\GameFramework\SpotLightActor.h" />
     <ClInclude Include="Source\Runtime\Engine\Scripting\GameObject.h" />
     <ClInclude Include="Source\Runtime\Engine\Scripting\LuaBindHelpers.h" />
@@ -637,12 +646,16 @@
     <ClInclude Include="Source\Editor\SelectionManager.h" />
     <ClInclude Include="Source\Runtime\AssetManagement\Cube.h" />
     <ClInclude Include="Source\Runtime\AssetManagement\DynamicMesh.h" />
+    <ClInclude Include="Source\Runtime\AssetManagement\FbxImporter.h" />
+    <ClInclude Include="Source\Runtime\AssetManagement\FbxImportOptions.h" />
     <ClInclude Include="Source\Runtime\AssetManagement\Line.h" />
     <ClInclude Include="Source\Runtime\AssetManagement\LineDynamicMesh.h" />
     <ClInclude Include="Source\Runtime\AssetManagement\MeshLoader.h" />
     <ClInclude Include="Source\Runtime\AssetManagement\Quad.h" />
     <ClInclude Include="Source\Runtime\AssetManagement\ResourceBase.h" />
     <ClInclude Include="Source\Runtime\AssetManagement\ResourceManager.h" />
+    <ClInclude Include="Source\Runtime\AssetManagement\Skeleton.h" />
+    <ClInclude Include="Source\Runtime\AssetManagement\SkeletalMesh.h" />
     <ClInclude Include="Source\Runtime\AssetManagement\StaticMesh.h" />
     <ClInclude Include="Source\Runtime\AssetManagement\Texture.h" />
     <ClInclude Include="Source\Runtime\AssetManagement\TextureConverter.h" />
