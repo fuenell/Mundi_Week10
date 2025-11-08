@@ -228,6 +228,11 @@ void UConsoleWidget::RenderLogOutput()
 	ImVec2 availSize = ImGui::GetContentRegionAvail();
 	availSize.y -= footer_height_to_reserve;
 
+	// Apply darker background for log region to make it distinguishable
+	ImVec4 childBg = ImGui::GetStyleColorVec4(ImGuiCol_ChildBg);
+	ImVec4 logBg = ImVec4(childBg.x * 0.7f, childBg.y * 0.7f, childBg.z * 0.7f, childBg.w);
+	ImGui::PushStyleColor(ImGuiCol_ChildBg, logBg);
+
 	// Use BeginChild to have direct control over scrolling
 	if (ImGui::BeginChild("##LogScrollRegion", availSize, false, ImGuiWindowFlags_HorizontalScrollbar))
 	{
@@ -241,6 +246,9 @@ void UConsoleWidget::RenderLogOutput()
 		// Hide InputTextMultiline's scrollbar (only use BeginChild's scrollbar)
 		ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 0.0f);
 
+		// Make InputTextMultiline background transparent to match BeginChild background
+		ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
+
 		// Display text with selection support - height includes minimal bottom padding
 		ImGui::InputTextMultiline("##LogOutput",
 			LogBuffer,
@@ -248,6 +256,7 @@ void UConsoleWidget::RenderLogOutput()
 			ImVec2(-FLT_MIN, textSize.y + bottomPadding),
 			flags | ImGuiInputTextFlags_NoHorizontalScroll);
 
+		ImGui::PopStyleColor(1);
 		ImGui::PopStyleVar();
 
 		// Auto-scroll to bottom when new logs are added
@@ -258,6 +267,8 @@ void UConsoleWidget::RenderLogOutput()
 		}
 	}
 	ImGui::EndChild();
+
+	ImGui::PopStyleColor(1); // Pop log background color
 }
 
 void UConsoleWidget::RenderCommandInput()
