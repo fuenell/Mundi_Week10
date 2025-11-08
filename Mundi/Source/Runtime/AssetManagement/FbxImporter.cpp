@@ -2,6 +2,7 @@
 #include "FbxImporter.h"
 #include "Skeleton.h"
 #include "SkeletalMesh.h"
+#include "ResourceManager.h"
 #include "GlobalConsole.h"
 
 FFbxImporter::FFbxImporter()
@@ -253,6 +254,20 @@ USkeletalMesh* FFbxImporter::ImportSkeletalMesh(const FString& FilePath, const F
 	if (!ExtractBindPose(Scene, skeleton))
 	{
 		SetError("Failed to extract bind pose");
+		return nullptr;
+	}
+
+	// 11. GPU 리소스 생성 (Vertex Buffer, Index Buffer)
+	ID3D11Device* Device = UResourceManager::GetInstance().GetDevice();
+	if (!Device)
+	{
+		SetError("Failed to get D3D11 Device for GPU resource creation");
+		return nullptr;
+	}
+
+	if (!skeletalMesh->CreateGPUResources(Device))
+	{
+		SetError("Failed to create GPU resources (Vertex/Index buffers)");
 		return nullptr;
 	}
 

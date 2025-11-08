@@ -42,15 +42,36 @@ bool USkeletalMesh::CreateGPUResources(ID3D11Device* Device)
 	// 기존 리소스 정리
 	ReleaseGPUResources();
 
-	// Vertex Buffer 생성
+	// === Dual-Buffer Approach ===
+	// CPU는 FSkinnedVertex (80 bytes)를 유지하고,
+	// GPU는 FNormalVertex (64 bytes)로 변환하여 전송
+	// 이를 통해 UberLit.hlsl 셰이더와 호환 가능 + GPU 메모리 절약
+
+	// 1. FSkinnedVertex → FNormalVertex 변환
+	TArray<FNormalVertex> GPUVertices;
+	GPUVertices.reserve(VertexCount);
+
+	for (const FSkinnedVertex& SkinnedVert : Vertices)
+	{
+		FNormalVertex NormalVert;
+		NormalVert.pos = SkinnedVert.Position;
+		NormalVert.normal = SkinnedVert.Normal;
+		NormalVert.tex = SkinnedVert.UV;
+		NormalVert.Tangent = SkinnedVert.Tangent;
+		NormalVert.color = FVector4(1.0f, 1.0f, 1.0f, 1.0f); // 기본 흰색
+
+		GPUVertices.push_back(NormalVert);
+	}
+
+	// 2. Vertex Buffer 생성 (FNormalVertex 기준)
 	D3D11_BUFFER_DESC vbDesc = {};
 	vbDesc.Usage = D3D11_USAGE_DEFAULT;
-	vbDesc.ByteWidth = sizeof(FSkinnedVertex) * VertexCount;
+	vbDesc.ByteWidth = sizeof(FNormalVertex) * VertexCount;
 	vbDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 	vbDesc.CPUAccessFlags = 0;
 
 	D3D11_SUBRESOURCE_DATA vbData = {};
-	vbData.pSysMem = Vertices.data();
+	vbData.pSysMem = GPUVertices.data();
 
 	HRESULT hr = Device->CreateBuffer(&vbDesc, &vbData, &VertexBuffer);
 	if (FAILED(hr))
@@ -59,7 +80,7 @@ bool USkeletalMesh::CreateGPUResources(ID3D11Device* Device)
 		return false;
 	}
 
-	// Index Buffer 생성
+	// 3. Index Buffer 생성
 	D3D11_BUFFER_DESC ibDesc = {};
 	ibDesc.Usage = D3D11_USAGE_DEFAULT;
 	ibDesc.ByteWidth = sizeof(uint32) * IndexCount;
@@ -79,6 +100,7 @@ bool USkeletalMesh::CreateGPUResources(ID3D11Device* Device)
 
 	UE_LOG("[SkeletalMesh] GPU resources created successfully (%u vertices, %u indices)",
 		VertexCount, IndexCount);
+	UE_LOG("[SkeletalMesh] Dual-buffer approach: CPU (80 bytes/vertex), GPU (64 bytes/vertex)");
 
 	return true;
 }

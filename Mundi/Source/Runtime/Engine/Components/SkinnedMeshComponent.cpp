@@ -50,6 +50,7 @@ void USkinnedMeshComponent::CollectMeshBatches(TArray<FMeshBatchElement>& OutMes
 {
 	if (!SkeletalMesh)
 	{
+		UE_LOG("USkinnedMeshComponent::CollectMeshBatches - No SkeletalMesh");
 		return;
 	}
 
@@ -59,6 +60,7 @@ void USkinnedMeshComponent::CollectMeshBatches(TArray<FMeshBatchElement>& OutMes
 
 	if (!VertexBuffer || !IndexBuffer)
 	{
+		UE_LOG("USkinnedMeshComponent::CollectMeshBatches - No GPU buffers (VB=%p, IB=%p)", VertexBuffer, IndexBuffer);
 		return;
 	}
 
@@ -101,6 +103,11 @@ void USkinnedMeshComponent::CollectMeshBatches(TArray<FMeshBatchElement>& OutMes
 		BatchElement.VertexShader = ShaderVariant->VertexShader;
 		BatchElement.PixelShader = ShaderVariant->PixelShader;
 		BatchElement.InputLayout = ShaderVariant->InputLayout;
+	}
+	else
+	{
+		UE_LOG("USkinnedMeshComponent::CollectMeshBatches - ShaderVariant is nullptr");
+		return;
 	}
 
 	BatchElement.Material = Material;

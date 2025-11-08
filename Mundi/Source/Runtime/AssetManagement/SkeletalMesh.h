@@ -79,6 +79,11 @@ struct FSkinnedVertex
  * - Skinned Vertex 데이터 관리 (Bone Weights 포함)
  * - Skeleton 참조
  * - GPU 버퍼 관리 (Vertex Buffer, Index Buffer)
+ *
+ * Dual-Buffer 구조:
+ * - CPU: FSkinnedVertex (80 bytes) - Bone 데이터 포함, CPU Skinning 계산용
+ * - GPU: FNormalVertex (64 bytes) - Bone 데이터 제외, 렌더링 전용 (UberLit.hlsl 호환)
+ * - 이를 통해 GPU 메모리 절약 및 기존 셰이더 재사용 가능
  */
 class USkeletalMesh : public UResourceBase
 {
@@ -150,10 +155,13 @@ public:
 	ID3D11Buffer* GetIndexBuffer() const { return IndexBuffer; }
 
 	/**
-	 * Vertex Stride 반환
-	 * @return Vertex 크기 (바이트)
+	 * Vertex Stride 반환 (GPU 버퍼용)
+	 * @return Vertex 크기 (바이트) - FNormalVertex 기준 (64 bytes)
+	 *
+	 * NOTE: CPU는 FSkinnedVertex(80 bytes)를 유지하지만,
+	 *       GPU 버퍼는 FNormalVertex(64 bytes)로 변환하여 전송
 	 */
-	uint32 GetVertexStride() const { return sizeof(FSkinnedVertex); }
+	uint32 GetVertexStride() const { return sizeof(FNormalVertex); }
 
 	// === Serialization ===
 
