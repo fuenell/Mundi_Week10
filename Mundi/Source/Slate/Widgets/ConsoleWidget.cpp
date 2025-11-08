@@ -4,6 +4,7 @@
 #include "GlobalConsole.h"
 #include "StatsOverlayD2D.h"
 #include "USlateManager.h"
+#include "ImGui/imgui_internal.h"
 #include <windows.h>
 #include <cstdarg>
 #include <cctype>
@@ -18,11 +19,15 @@ IMPLEMENT_CLASS(UConsoleWidget)
 UConsoleWidget::UConsoleWidget()
 	: UWidget("Console Widget")
 	, HistoryPos(-1)
+	, LogBufferSize(256 * 1024) // 256KB buffer
+	, NeedsScrollToBottom(false)
 	, AutoScroll(true)
 	, ScrollToBottom(false)
 	, bIsWindowPinned(false)
 {
 	memset(InputBuf, 0, sizeof(InputBuf));
+	LogBuffer = new char[LogBufferSize];
+	memset(LogBuffer, 0, LogBufferSize);
 }
 
 UConsoleWidget::~UConsoleWidget()
@@ -32,6 +37,9 @@ UConsoleWidget::~UConsoleWidget()
 	{
 		UGlobalConsole::SetConsoleWidget(nullptr);
 	}
+
+	// Free log buffer
+	delete[] LogBuffer;
 }
 
 void UConsoleWidget::Initialize()
@@ -104,7 +112,53 @@ void UConsoleWidget::RenderToolbar()
 	}
 	ImGui::SameLine();
 
-	bool copy_to_clipboard = ImGui::SmallButton("Copy");
+	if (ImGui::SmallButton("Copy"))
+	{
+		// Build full log text
+		FString logText;
+		for (const FString& item : Items)
+		{
+			logText += item;
+			logText += "\n";
+		}
+
+		// Copy to clipboard using Windows API
+		if (OpenClipboard(nullptr))
+		{
+			EmptyClipboard();
+
+			size_t size = (logText.length() + 1) * sizeof(char);
+			HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, size);
+
+			if (hMem)
+			{
+				char* pMem = (char*)GlobalLock(hMem);
+				if (pMem)
+				{
+					strcpy_s(pMem, size, logText.c_str());
+					GlobalUnlock(hMem);
+					SetClipboardData(CF_TEXT, hMem);
+
+					AddLog("[info] Copied %d lines to clipboard", Items.Num());
+				}
+				else
+				{
+					GlobalFree(hMem);
+					AddLog("[error] Failed to lock clipboard memory");
+				}
+			}
+			else
+			{
+				AddLog("[error] Failed to allocate clipboard memory");
+			}
+
+			CloseClipboard();
+		}
+		else
+		{
+			AddLog("[error] Failed to open clipboard");
+		}
+	}
 
 	ImGui::SameLine();
 
@@ -151,55 +205,57 @@ void UConsoleWidget::RenderLogOutput()
 	// Reserve space for input at bottom
 	const float footer_height_to_reserve = ImGui::GetStyle().ItemSpacing.y + ImGui::GetFrameHeightWithSpacing();
 
-	if (ImGui::BeginChild("ScrollingRegion", ImVec2(0, -footer_height_to_reserve),
-		ImGuiChildFlags_NavFlattened, ImGuiWindowFlags_HorizontalScrollbar))
+	// Build full log text with filtering
+	FString logText;
+	for (const FString& item : Items)
 	{
-		if (ImGui::BeginPopupContextWindow())
-		{
-			if (ImGui::Selectable("Clear")) ClearLog();
-			ImGui::EndPopup();
-		}
+		if (!Filter.PassFilter(item.c_str()))
+			continue;
 
-		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 1)); // Tighten spacing
+		logText += item;
+		logText += "\n";
+	}
 
-		for (const FString& item : Items)
-		{
-			if (!Filter.PassFilter(item.c_str()))
-				continue;
+	// Copy to buffer (safely truncate if needed)
+	size_t copyLen = min(logText.length(), LogBufferSize - 1);
+	memcpy(LogBuffer, logText.c_str(), copyLen);
+	LogBuffer[copyLen] = '\0';
 
-			// Color coding for different log levels
-			ImVec4 color;
-			bool has_color = false;
+	// Use InputTextMultiline for selectable/copyable text
+	ImGuiInputTextFlags flags = ImGuiInputTextFlags_ReadOnly;
 
-			if (item.find("[error]") != std::string::npos)
-			{
-				color = ImVec4(1.0f, 0.4f, 0.4f, 1.0f);
-				has_color = true;
-			}
-			else if (item.find("[warning]") != std::string::npos)
-			{
-				color = ImVec4(1.0f, 0.8f, 0.0f, 1.0f);
-				has_color = true;
-			}
-			else if (item.find("[info]") != std::string::npos)
-			{
-				color = ImVec4(0.0f, 0.8f, 1.0f, 1.0f);
-				has_color = true;
-			}
+	// Get available region size
+	ImVec2 availSize = ImGui::GetContentRegionAvail();
+	availSize.y -= footer_height_to_reserve;
 
-			if (has_color)
-				ImGui::PushStyleColor(ImGuiCol_Text, color);
-			ImGui::TextUnformatted(item.c_str());
-			if (has_color)
-				ImGui::PopStyleColor();
-		}
+	// Use BeginChild to have direct control over scrolling
+	if (ImGui::BeginChild("##LogScrollRegion", availSize, false, ImGuiWindowFlags_HorizontalScrollbar))
+	{
+		// Calculate actual rendered text size using ImGui::CalcTextSize
+		// This provides accurate dimensions without manually counting lines
+		ImVec2 textSize = ImGui::CalcTextSize(LogBuffer, NULL, false, availSize.x);
 
-		// Auto scroll to bottom
-		if (ScrollToBottom || (AutoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY()))
-			ImGui::SetScrollHereY(1.0f);
-		ScrollToBottom = false;
+		// Add small padding to prevent last log from being cut off at bottom
+		float bottomPadding = ImGui::GetTextLineHeightWithSpacing() * 0.5f;
+
+		// Hide InputTextMultiline's scrollbar (only use BeginChild's scrollbar)
+		ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 0.0f);
+
+		// Display text with selection support - height includes minimal bottom padding
+		ImGui::InputTextMultiline("##LogOutput",
+			LogBuffer,
+			LogBufferSize,
+			ImVec2(-FLT_MIN, textSize.y + bottomPadding),
+			flags | ImGuiInputTextFlags_NoHorizontalScroll);
 
 		ImGui::PopStyleVar();
+
+		// Auto-scroll to bottom when new logs are added
+		if (AutoScroll && ScrollToBottom)
+		{
+			ImGui::SetScrollHereY(1.0f);
+			ScrollToBottom = false;
+		}
 	}
 	ImGui::EndChild();
 }
@@ -402,6 +458,25 @@ int UConsoleWidget::TextEditCallbackStub(ImGuiInputTextCallbackData* data)
 {
 	UConsoleWidget* console = (UConsoleWidget*)data->UserData;
 	return console->TextEditCallback(data);
+}
+
+int UConsoleWidget::LogScrollCallbackStub(ImGuiInputTextCallbackData* data)
+{
+	UConsoleWidget* console = (UConsoleWidget*)data->UserData;
+	return console->LogScrollCallback(data);
+}
+
+int UConsoleWidget::LogScrollCallback(ImGuiInputTextCallbackData* data)
+{
+	// Auto-scroll to bottom when new logs are added
+	if (AutoScroll && ScrollToBottom)
+	{
+		// Move cursor to the end of the text, which will cause ImGui to scroll to bottom
+		data->CursorPos = data->BufTextLen;
+		data->SelectionStart = data->SelectionEnd = data->BufTextLen;
+		ScrollToBottom = false;
+	}
+	return 0;
 }
 
 int UConsoleWidget::TextEditCallback(ImGuiInputTextCallbackData* data)

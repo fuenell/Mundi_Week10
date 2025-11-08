@@ -248,6 +248,9 @@ void USlateManager::Render()
                 bIsPinned = ConsoleWidget->IsWindowPinned();
             }
 
+            // Auto-hide behavior removed - console stays visible when losing focus
+            // Users can manually close the console with Alt+` or pin it
+            /*
             // 2. '핀'이 활성화되지 않았을 때만 포커스를 잃으면 닫기
             if (!bIsPinned &&
                 !ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
@@ -256,6 +259,7 @@ void USlateManager::Render()
             {
                 ToggleConsole(); // 콘솔 닫기
             }
+            */
             
             // 둥근 모서리가 있는 반투명 배경 추가
             ImDrawList* DrawList = ImGui::GetWindowDrawList();
@@ -483,6 +487,12 @@ void USlateManager::ToggleConsole()
     if (bIsConsoleVisible)
     {
         bConsoleShouldFocus = true;
+
+        // 콘솔을 열 때 스크롤을 가장 아래로 이동
+        if (ConsoleWindow && ConsoleWindow->GetConsoleWidget())
+        {
+            ConsoleWindow->GetConsoleWidget()->SetScrollToBottom();
+        }
     }
 }
 
