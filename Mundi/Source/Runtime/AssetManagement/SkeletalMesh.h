@@ -151,6 +151,16 @@ public:
 	}
 
 	/**
+	 * Indices 배열 참조 반환 (Direct Access)
+	 * ExtractSkinWeights에서 Winding Order를 수정할 때 사용
+	 * @return Indices 배열 참조
+	 */
+	TArray<uint32>& GetIndicesRef()
+	{
+		return Indices;
+	}
+
+	/**
 	 * Vertex 개수 반환
 	 * @return Vertex 개수
 	 */
