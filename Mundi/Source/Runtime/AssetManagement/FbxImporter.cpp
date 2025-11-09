@@ -1,4 +1,4 @@
-ï»¿#include "pch.h"
+#include "pch.h"
 #include "FbxImporter.h"
 #include "Skeleton.h"
 #include "SkeletalMesh.h"
@@ -10,7 +10,7 @@ FFbxImporter::FFbxImporter()
 	, Scene(nullptr)
 	, Importer(nullptr)
 {
-	// FBX SDK Manager ì´ˆê¸°í™”
+	// FBX SDK Manager ÃÊ±âÈ­
 	SdkManager = FbxManager::Create();
 	if (!SdkManager)
 	{
@@ -18,7 +18,7 @@ FFbxImporter::FFbxImporter()
 		return;
 	}
 
-	// IO Settings ìƒì„±
+	// IO Settings »ı¼º
 	FbxIOSettings* IOSettings = FbxIOSettings::Create(SdkManager, IOSROOT);
 	SdkManager->SetIOSettings(IOSettings);
 
@@ -29,7 +29,7 @@ FFbxImporter::~FFbxImporter()
 {
 	ReleaseScene();
 
-	// FBX SDK Manager ì •ë¦¬
+	// FBX SDK Manager Á¤¸®
 	if (SdkManager)
 	{
 		SdkManager->Destroy();
@@ -41,10 +41,10 @@ FFbxImporter::~FFbxImporter()
 
 bool FFbxImporter::LoadScene(const FString& FilePath)
 {
-	// ê¸°ì¡´ Scene ì •ë¦¬
+	// ±âÁ¸ Scene Á¤¸®
 	ReleaseScene();
 
-	// Scene ìƒì„±
+	// Scene »ı¼º
 	Scene = FbxScene::Create(SdkManager, "ImportScene");
 	if (!Scene)
 	{
@@ -52,7 +52,7 @@ bool FFbxImporter::LoadScene(const FString& FilePath)
 		return false;
 	}
 
-	// Importer ìƒì„±
+	// Importer »ı¼º
 	Importer = FbxImporter::Create(SdkManager, "");
 	if (!Importer)
 	{
@@ -60,7 +60,7 @@ bool FFbxImporter::LoadScene(const FString& FilePath)
 		return false;
 	}
 
-	// FBX íŒŒì¼ ë¡œë“œ
+	// FBX ÆÄÀÏ ·Îµå
 	if (!Importer->Initialize(FilePath.c_str(), -1, SdkManager->GetIOSettings()))
 	{
 		FString error = "Failed to initialize FBX Importer: ";
@@ -69,7 +69,7 @@ bool FFbxImporter::LoadScene(const FString& FilePath)
 		return false;
 	}
 
-	// Sceneìœ¼ë¡œ Import
+	// SceneÀ¸·Î Import
 	if (!Importer->Import(Scene))
 	{
 		FString error = "Failed to import FBX file: ";
@@ -88,7 +88,7 @@ void FFbxImporter::ConvertScene()
 	if (!Scene)
 		return;
 
-	// Mundi ì—”ì§„ì˜ ì¢Œí‘œê³„: Z-Up, X-Forward, Y-Right, Left-Handed
+	// Mundi ¿£ÁøÀÇ ÁÂÇ¥°è: Z-Up, X-Forward, Y-Right, Left-Handed
 	FbxAxisSystem mundiAxis(
 		FbxAxisSystem::eZAxis,       // Z-Up
 		FbxAxisSystem::eParityEven,  // X-Forward (ParityEven = positive X axis)
@@ -115,8 +115,8 @@ void FFbxImporter::ConvertSceneUnit(float ScaleFactor)
 
 	FbxSystemUnit sceneUnit = Scene->GetGlobalSettings().GetSystemUnit();
 
-	// Unreal Engine ë°©ì‹: Scene Unitì„ ìë™ìœ¼ë¡œ m (meter) ë‹¨ìœ„ë¡œ ë³€í™˜
-	// FBX íŒŒì¼ì€ ë³´í†µ cm ë‹¨ìœ„ë¡œ ì €ì¥ë¨ (100cm = 1m)
+	// Unreal Engine ¹æ½Ä: Scene UnitÀ» ÀÚµ¿À¸·Î m (meter) ´ÜÀ§·Î º¯È¯
+	// FBX ÆÄÀÏÀº º¸Åë cm ´ÜÀ§·Î ÀúÀåµÊ (100cm = 1m)
 	if (sceneUnit != FbxSystemUnit::m)
 	{
 		double sceneScale = sceneUnit.GetScaleFactor();
@@ -129,7 +129,7 @@ void FFbxImporter::ConvertSceneUnit(float ScaleFactor)
 		UE_LOG("[FBX] Scene already uses meter unit (1.0)");
 	}
 
-	// ì¶”ê°€ ì‚¬ìš©ì ì§€ì • ìŠ¤ì¼€ì¼ ì ìš©
+	// Ãß°¡ »ç¿ëÀÚ ÁöÁ¤ ½ºÄÉÀÏ Àû¿ë
 	if (ScaleFactor != 1.0f)
 	{
 		FbxSystemUnit customUnit(ScaleFactor);
@@ -158,10 +158,10 @@ void FFbxImporter::TraverseNode(FbxNode* Node, std::function<void(FbxNode*)> Pro
 	if (!Node)
 		return;
 
-	// í˜„ì¬ ë…¸ë“œ ì²˜ë¦¬
+	// ÇöÀç ³ëµå Ã³¸®
 	ProcessFunc(Node);
 
-	// ìì‹ ë…¸ë“œ ì¬ê·€ íƒìƒ‰
+	// ÀÚ½Ä ³ëµå Àç±Í Å½»ö
 	for (int i = 0; i < Node->GetChildCount(); i++)
 	{
 		TraverseNode(Node->GetChild(i), ProcessFunc);
@@ -173,15 +173,15 @@ FbxNode* FFbxImporter::FindFirstMeshNode(FbxNode* Node)
 	if (!Scene)
 		return nullptr;
 
-	// ì‹œì‘ ë…¸ë“œê°€ ì—†ìœ¼ë©´ Rootë¶€í„°
+	// ½ÃÀÛ ³ëµå°¡ ¾øÀ¸¸é RootºÎÅÍ
 	if (!Node)
 		Node = Scene->GetRootNode();
 
-	// Mesh ì†ì„±ì´ ìˆëŠ”ì§€ í™•ì¸
+	// Mesh ¼Ó¼ºÀÌ ÀÖ´ÂÁö È®ÀÎ
 	if (Node->GetMesh())
 		return Node;
 
-	// ìì‹ ë…¸ë“œì—ì„œ ì°¾ê¸°
+	// ÀÚ½Ä ³ëµå¿¡¼­ Ã£±â
 	for (int i = 0; i < Node->GetChildCount(); i++)
 	{
 		FbxNode* meshNode = FindFirstMeshNode(Node->GetChild(i));
@@ -196,24 +196,24 @@ USkeletalMesh* FFbxImporter::ImportSkeletalMesh(const FString& FilePath, const F
 {
 	CurrentOptions = Options;
 
-	// 1. Scene ë¡œë“œ
+	// 1. Scene ·Îµå
 	if (!LoadScene(FilePath))
 	{
 		return nullptr;
 	}
 
-	// 2. ë‹¨ìœ„ ë³€í™˜ (ë¨¼ì € ìˆ˜í–‰ - Unreal Engine ë°©ì‹)
-	// ConvertSceneUnit()ì€ ìë™ìœ¼ë¡œ Scene Unitì„ më¡œ ë³€í™˜í•˜ê³ ,
-	// í•„ìš”ì‹œ ì¶”ê°€ ì‚¬ìš©ì ì§€ì • ìŠ¤ì¼€ì¼ì„ ì ìš©
+	// 2. ´ÜÀ§ º¯È¯ (¸ÕÀú ¼öÇà - Unreal Engine ¹æ½Ä)
+	// ConvertSceneUnit()Àº ÀÚµ¿À¸·Î Scene UnitÀ» m·Î º¯È¯ÇÏ°í,
+	// ÇÊ¿ä½Ã Ãß°¡ »ç¿ëÀÚ ÁöÁ¤ ½ºÄÉÀÏÀ» Àû¿ë
 	ConvertSceneUnit(CurrentOptions.ImportScale);
 
-	// 3. ì¢Œí‘œê³„ ë³€í™˜ (Unit ë³€í™˜ ì´í›„ ìˆ˜í–‰)
+	// 3. ÁÂÇ¥°è º¯È¯ (Unit º¯È¯ ÀÌÈÄ ¼öÇà)
 	if (CurrentOptions.bConvertScene)
 	{
 		ConvertScene();
 	}
 
-	// 4. Scene ì „ì²˜ë¦¬ (Triangulate, ì¤‘ë³µ ì œê±° ë“±)
+	// 4. Scene ÀüÃ³¸® (Triangulate, Áßº¹ Á¦°Å µî)
 	FbxGeometryConverter geometryConverter(SdkManager);
 	geometryConverter.Triangulate(Scene, true);
 
@@ -222,7 +222,7 @@ USkeletalMesh* FFbxImporter::ImportSkeletalMesh(const FString& FilePath, const F
 		geometryConverter.RemoveBadPolygonsFromMeshes(Scene);
 	}
 
-	// 5. Mesh Node ì°¾ê¸°
+	// 5. Mesh Node Ã£±â
 	FbxNode* meshNode = FindFirstMeshNode();
 	if (!meshNode)
 	{
@@ -230,7 +230,7 @@ USkeletalMesh* FFbxImporter::ImportSkeletalMesh(const FString& FilePath, const F
 		return nullptr;
 	}
 
-	// 6. Skeleton ì¶”ì¶œ
+	// 6. Skeleton ÃßÃâ
 	USkeleton* skeleton = ExtractSkeleton(Scene->GetRootNode());
 	if (!skeleton)
 	{
@@ -238,7 +238,7 @@ USkeletalMesh* FFbxImporter::ImportSkeletalMesh(const FString& FilePath, const F
 		return nullptr;
 	}
 
-	// 7. SkeletalMesh ìƒì„±
+	// 7. SkeletalMesh »ı¼º
 	USkeletalMesh* skeletalMesh = ObjectFactory::NewObject<USkeletalMesh>();
 	if (!skeletalMesh)
 	{
@@ -246,26 +246,26 @@ USkeletalMesh* FFbxImporter::ImportSkeletalMesh(const FString& FilePath, const F
 		return nullptr;
 	}
 
-	// Skeleton ì—°ê²°
+	// Skeleton ¿¬°á
 	skeletalMesh->SetSkeleton(skeleton);
 
-	// 8. Mesh ë°ì´í„° ì¶”ì¶œ (Vertex, Normal, UV, Index)
+	// 8. Mesh µ¥ÀÌÅÍ ÃßÃâ (Vertex, Normal, UV, Index)
 	if (!ExtractMeshData(meshNode, skeletalMesh))
 	{
 		SetError("Failed to extract mesh data");
 		return nullptr;
 	}
 
-	// 9. Skin Weights ë° Bind Pose ì¶”ì¶œ
-	// ExtractSkinWeights()ì—ì„œ FbxClusterë¥¼ í†µí•´ Inverse Bind Poseë„ í•¨ê»˜ ì¶”ì¶œ
+	// 9. Skin Weights ¹× Bind Pose ÃßÃâ
+	// ExtractSkinWeights()¿¡¼­ FbxCluster¸¦ ÅëÇØ Inverse Bind Poseµµ ÇÔ²² ÃßÃâ
 	if (!ExtractSkinWeights(meshNode->GetMesh(), skeletalMesh))
 	{
 		SetError("Failed to extract skin weights and bind pose");
 		return nullptr;
 	}
 
-	// 10. GPU ë¦¬ì†ŒìŠ¤ ìƒì„± (Dynamic Vertex Buffer, Index Buffer)
-	// CPU Skinningì„ ìœ„í•´ Dynamic Buffer ì‚¬ìš©
+	// 10. GPU ¸®¼Ò½º »ı¼º (Dynamic Vertex Buffer, Index Buffer)
+	// CPU SkinningÀ» À§ÇØ Dynamic Buffer »ç¿ë
 	ID3D11Device* Device = UResourceManager::GetInstance().GetDevice();
 	if (!Device)
 	{
@@ -286,9 +286,9 @@ USkeletalMesh* FFbxImporter::ImportSkeletalMesh(const FString& FilePath, const F
 
 UStaticMesh* FFbxImporter::ImportStaticMesh(const FString& FilePath, const FFbxImportOptions& Options)
 {
-	// TODO: Phase 4ì—ì„œ êµ¬í˜„ ì˜ˆì •
+	// TODO: Phase 4¿¡¼­ ±¸Çö ¿¹Á¤
 	SetError("ImportStaticMesh is not implemented yet");
-	UE_LOG("[FBX] ImportStaticMesh: TODO - Phase 4ì—ì„œ êµ¬í˜„ ì˜ˆì •");
+	UE_LOG("[FBX] ImportStaticMesh: TODO - Phase 4¿¡¼­ ±¸Çö ¿¹Á¤");
 	return nullptr;
 }
 
@@ -300,7 +300,7 @@ USkeleton* FFbxImporter::ExtractSkeleton(FbxNode* RootNode)
 		return nullptr;
 	}
 
-	// Skeleton ê°ì²´ ìƒì„±
+	// Skeleton °´Ã¼ »ı¼º
 	USkeleton* skeleton = ObjectFactory::NewObject<USkeleton>();
 	if (!skeleton)
 	{
@@ -310,39 +310,39 @@ USkeleton* FFbxImporter::ExtractSkeleton(FbxNode* RootNode)
 
 	UE_LOG("[FBX] Extracting skeleton hierarchy...");
 
-	// FbxNode* â†’ Mundi Bone Index ë§¤í•‘ (FBX ë…¸ë“œ í¬ì¸í„°ë¥¼ í‚¤ë¡œ ì‚¬ìš©)
+	// FbxNode* ¡æ Mundi Bone Index ¸ÅÇÎ (FBX ³ëµå Æ÷ÀÎÅÍ¸¦ Å°·Î »ç¿ë)
 	TMap<FbxNode*, int32> nodeToIndexMap;
 
-	// ì¬ê·€ì ìœ¼ë¡œ Skeleton ë…¸ë“œ ì¶”ì¶œ
+	// Àç±ÍÀûÀ¸·Î Skeleton ³ëµå ÃßÃâ
 	std::function<void(FbxNode*, int32)> extractBoneHierarchy;
 	extractBoneHierarchy = [&](FbxNode* Node, int32 ParentIndex)
 	{
 		if (!Node)
 			return;
 
-		// í˜„ì¬ ë…¸ë“œê°€ Skeleton ë…¸ë“œì¸ì§€ í™•ì¸
+		// ÇöÀç ³ëµå°¡ Skeleton ³ëµåÀÎÁö È®ÀÎ
 		FbxNodeAttribute* attr = Node->GetNodeAttribute();
 		bool bIsBone = false;
 		int32 currentIndex = -1;
 
 		if (attr && attr->GetAttributeType() == FbxNodeAttribute::eSkeleton)
 		{
-			// Boneìœ¼ë¡œ ì¶”ê°€
+			// BoneÀ¸·Î Ãß°¡
 			FString boneName = Node->GetName();
 			currentIndex = skeleton->AddBone(boneName, ParentIndex);
 
 			if (currentIndex >= 0)
 			{
-				// ë§¤í•‘ ì €ì¥
+				// ¸ÅÇÎ ÀúÀå
 				nodeToIndexMap[Node] = currentIndex;
 
-				// Local Transform ì¶”ì¶œ
+				// Local Transform ÃßÃâ
 				FbxAMatrix localMatrix = Node->EvaluateLocalTransform();
 
-				// FbxAMatrix â†’ FTransform ë³€í™˜
+				// FbxAMatrix ¡æ FTransform º¯È¯
 				FTransform localTransform = ConvertFbxTransform(localMatrix);
 
-				// Bind Pose Transform ì„¤ì •
+				// Bind Pose Transform ¼³Á¤
 				skeleton->SetBindPoseTransform(currentIndex, localTransform);
 
 				bIsBone = true;
@@ -352,8 +352,8 @@ USkeleton* FFbxImporter::ExtractSkeleton(FbxNode* RootNode)
 			}
 		}
 
-		// ìì‹ ë…¸ë“œ ì¬ê·€ íƒìƒ‰
-		// Boneì¸ ê²½ìš° í˜„ì¬ ì¸ë±ìŠ¤ë¥¼, ì•„ë‹Œ ê²½ìš° ë¶€ëª¨ ì¸ë±ìŠ¤ë¥¼ ì „ë‹¬
+		// ÀÚ½Ä ³ëµå Àç±Í Å½»ö
+		// BoneÀÎ °æ¿ì ÇöÀç ÀÎµ¦½º¸¦, ¾Æ´Ñ °æ¿ì ºÎ¸ğ ÀÎµ¦½º¸¦ Àü´Ş
 		int32 childParentIndex = bIsBone ? currentIndex : ParentIndex;
 
 		for (int i = 0; i < Node->GetChildCount(); i++)
@@ -362,21 +362,21 @@ USkeleton* FFbxImporter::ExtractSkeleton(FbxNode* RootNode)
 		}
 	};
 
-	// Rootë¶€í„° íƒìƒ‰ ì‹œì‘ (Root ìì²´ëŠ” Boneì´ ì•„ë‹ ìˆ˜ ìˆìœ¼ë¯€ë¡œ -1ë¡œ ì‹œì‘)
+	// RootºÎÅÍ Å½»ö ½ÃÀÛ (Root ÀÚÃ¼´Â BoneÀÌ ¾Æ´Ò ¼ö ÀÖÀ¸¹Ç·Î -1·Î ½ÃÀÛ)
 	extractBoneHierarchy(RootNode, -1);
 
-	// Skeleton ìµœì¢…í™”
+	// Skeleton ÃÖÁ¾È­
 	skeleton->FinalizeBones();
 
 	return skeleton;
 }
 
-// Helper: FbxAMatrix â†’ FTransform ë³€í™˜
+// Helper: FbxAMatrix ¡æ FTransform º¯È¯
 FTransform FFbxImporter::ConvertFbxTransform(const FbxAMatrix& fbxMatrix)
 {
 	FTransform transform;
 
-	// Translation ì¶”ì¶œ
+	// Translation ÃßÃâ
 	FbxVector4 fbxTranslation = fbxMatrix.GetT();
 	transform.Translation = FVector(
 		static_cast<float>(fbxTranslation[0]),
@@ -384,7 +384,7 @@ FTransform FFbxImporter::ConvertFbxTransform(const FbxAMatrix& fbxMatrix)
 		static_cast<float>(fbxTranslation[2])
 	);
 
-	// Rotation ì¶”ì¶œ (Quaternion)
+	// Rotation ÃßÃâ (Quaternion)
 	FbxQuaternion fbxRotation = fbxMatrix.GetQ();
 	transform.Rotation = FQuat(
 		static_cast<float>(fbxRotation[0]),  // X
@@ -393,7 +393,7 @@ FTransform FFbxImporter::ConvertFbxTransform(const FbxAMatrix& fbxMatrix)
 		static_cast<float>(fbxRotation[3])   // W
 	);
 
-	// Scale ì¶”ì¶œ
+	// Scale ÃßÃâ
 	FbxVector4 fbxScale = fbxMatrix.GetS();
 	transform.Scale3D = FVector(
 		static_cast<float>(fbxScale[0]),
@@ -421,7 +421,7 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletal
 
 	UE_LOG("[FBX] Extracting mesh data...");
 
-	// Vertex ë° Index ë°ì´í„° ì¤€ë¹„
+	// Vertex ¹× Index µ¥ÀÌÅÍ ÁØºñ
 	int32 vertexCount = fbxMesh->GetControlPointsCount();
 	int32 polygonCount = fbxMesh->GetPolygonCount();
 
@@ -433,83 +433,69 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletal
 
 	UE_LOG("[FBX] Mesh has %d control points, %d polygons", vertexCount, polygonCount);
 
-	// FBXëŠ” Polygonë‹¹ 3ê°œì˜ vertexë¥¼ ê°€ì§ (Triangulated)
-	// FBXëŠ” ê° í´ë¦¬ê³¤ vertexë§ˆë‹¤ ë³„ë„ì˜ normal/UVë¥¼ ê°€ì§ˆ ìˆ˜ ìˆìŒ
+	// FBX´Â Polygon´ç 3°³ÀÇ vertex¸¦ °¡Áü (Triangulated)
+	// FBX´Â °¢ Æú¸®°ï vertex¸¶´Ù º°µµÀÇ normal/UV¸¦ °¡Áú ¼ö ÀÖÀ½
 	TArray<FSkinnedVertex> vertices;
 	TArray<uint32> indices;
 
-	// Vertex â†’ Control Point ë§¤í•‘ ë°°ì—´
-	// ExtractSkinWeightsì—ì„œ Bone Weightsë¥¼ ì ìš©í•  ë•Œ ì‚¬ìš©
+	// Vertex ¡æ Control Point ¸ÅÇÎ ¹è¿­
+	// ExtractSkinWeights¿¡¼­ Bone Weights¸¦ Àû¿ëÇÒ ¶§ »ç¿ë
 	TArray<int32> vertexToControlPointMap;
 
-	// FBX Control Points (ìœ„ì¹˜ ì •ë³´)
+	// FBX Control Points (À§Ä¡ Á¤º¸)
 	FbxVector4* controlPoints = fbxMesh->GetControlPoints();
 
-	// Mesh Nodeì˜ Global Transform ê°€ì ¸ì˜¤ê¸° (ConvertScene ì ìš© í›„)
-	// ì´ê²ƒì„ Vertexì— ì ìš©í•˜ì—¬ ì¢Œí‘œê³„ ë³€í™˜ íš¨ê³¼ë¥¼ ì ìš©
+	// UNREAL ENGINE ¹æ½Ä: Vertex´Â ¿øº» ±×´ë·Î À¯Áö (Mesh Local Space)
+	// ÁÂÇ¥°è º¯È¯Àº InverseBindPose¿¡¼­ Ã³¸®
 	FbxNode* meshNode = fbxMesh->GetNode();
-	FbxAMatrix meshGlobalTransform = meshNode->EvaluateGlobalTransform();
 
-	// Geometry Transformë„ í•¨ê»˜ ì ìš©
-	FbxVector4 geoTranslation = meshNode->GetGeometricTranslation(FbxNode::eSourcePivot);
-	FbxVector4 geoRotation = meshNode->GetGeometricRotation(FbxNode::eSourcePivot);
-	FbxVector4 geoScaling = meshNode->GetGeometricScaling(FbxNode::eSourcePivot);
-	FbxAMatrix geometryTransform(geoTranslation, geoRotation, geoScaling);
-
-	// ìµœì¢… Transform = MeshGlobal Ã— Geometry
-	FbxAMatrix totalTransform = meshGlobalTransform * geometryTransform;
-
-	// Normal/Tangentìš© ë³€í™˜ (Translation ì œì™¸, Rotationë§Œ)
-	FbxAMatrix normalTransform = totalTransform;
-	normalTransform.SetT(FbxVector4(0, 0, 0, 0));
-
-	// Normal, UV Element ê°€ì ¸ì˜¤ê¸°
+	// Normal, UV Element °¡Á®¿À±â
 	FbxGeometryElementNormal* normalElement = fbxMesh->GetElementNormal();
 	FbxGeometryElementUV* uvElement = fbxMesh->GetElementUV();
 	FbxGeometryElementTangent* tangentElement = fbxMesh->GetElementTangent();
 
-	// Polygon ìˆœíšŒ (ê° Triangle)
+	// Polygon ¼øÈ¸ (°¢ Triangle)
 	int32 vertexIndexCounter = 0;
 
 	for (int32 polyIndex = 0; polyIndex < polygonCount; polyIndex++)
 	{
 		int32 polygonSize = fbxMesh->GetPolygonSize(polyIndex);
 
-		// Triangulateë˜ì—ˆìœ¼ë¯€ë¡œ ëª¨ë“  polygonì€ triangleì´ì–´ì•¼ í•¨
+		// TriangulateµÇ¾úÀ¸¹Ç·Î ¸ğµç polygonÀº triangleÀÌ¾î¾ß ÇÔ
 		if (polygonSize != 3)
 		{
 			UE_LOG("[FBX] Warning: Polygon %d has %d vertices (expected 3)", polyIndex, polygonSize);
 			continue;
 		}
 
-		// Triangleì˜ 3ê°œ vertex ì²˜ë¦¬
+		// TriangleÀÇ 3°³ vertex Ã³¸®
 		for (int32 vertInPoly = 0; vertInPoly < 3; vertInPoly++)
 		{
 			FSkinnedVertex vertex;
 
-			// Control Point Index ê°€ì ¸ì˜¤ê¸°
+			// Control Point Index °¡Á®¿À±â
 			int32 controlPointIndex = fbxMesh->GetPolygonVertex(polyIndex, vertInPoly);
 
-			// Position ì¶”ì¶œ ë° ë³€í™˜ ì ìš©
+			// Position ÃßÃâ (¿øº» Local Space À¯Áö)
+			// ÁÂÇ¥°è º¯È¯Àº InverseBindPose¿¡¼­ Ã³¸®µÊ
 			FbxVector4 fbxPos = controlPoints[controlPointIndex];
-			FbxVector4 transformedPos = totalTransform.MultT(fbxPos);
 			vertex.Position = FVector(
-				static_cast<float>(transformedPos[0]),
-				static_cast<float>(transformedPos[1]),
-				static_cast<float>(transformedPos[2])
+				static_cast<float>(fbxPos[0]),
+				static_cast<float>(fbxPos[1]),
+				static_cast<float>(fbxPos[2])
 			);
 
-			// Normal ì¶”ì¶œ ë° ë³€í™˜ ì ìš©
+			// Normal ÃßÃâ (¿øº» Local Space À¯Áö)
+			// ÁÂÇ¥°è º¯È¯Àº InverseBindPose¿¡¼­ Ã³¸®µÊ
 			if (normalElement)
 			{
 				FbxVector4 fbxNormal;
 				fbxMesh->GetPolygonVertexNormal(polyIndex, vertInPoly, fbxNormal);
-				FbxVector4 transformedNormal = normalTransform.MultT(fbxNormal);
-				transformedNormal.Normalize();
+				fbxNormal.Normalize();
 				vertex.Normal = FVector(
-					static_cast<float>(transformedNormal[0]),
-					static_cast<float>(transformedNormal[1]),
-					static_cast<float>(transformedNormal[2])
+					static_cast<float>(fbxNormal[0]),
+					static_cast<float>(fbxNormal[1]),
+					static_cast<float>(fbxNormal[2])
 				);
 			}
 			else
@@ -517,7 +503,7 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletal
 				vertex.Normal = FVector(0, 0, 1); // Default normal
 			}
 
-			// UV ì¶”ì¶œ
+			// UV ÃßÃâ
 			if (uvElement)
 			{
 				FbxVector2 fbxUV;
@@ -533,7 +519,8 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletal
 				vertex.UV = FVector2D(0, 0); // Default UV
 			}
 
-			// Tangent ì¶”ì¶œ ë° ë³€í™˜ ì ìš© (ì„ íƒì )
+			// Tangent ÃßÃâ (¿øº» Local Space À¯Áö, ¼±ÅÃÀû)
+			// ÁÂÇ¥°è º¯È¯Àº InverseBindPose¿¡¼­ Ã³¸®µÊ
 			if (tangentElement)
 			{
 				int32 tangentIndex = 0;
@@ -547,13 +534,12 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletal
 				}
 
 				FbxVector4 fbxTangent = tangentElement->GetDirectArray().GetAt(tangentIndex);
-				FbxVector4 transformedTangent = normalTransform.MultT(fbxTangent);
-				transformedTangent.Normalize();
+				fbxTangent.Normalize();
 				vertex.Tangent = FVector4(
-					static_cast<float>(transformedTangent[0]),
-					static_cast<float>(transformedTangent[1]),
-					static_cast<float>(transformedTangent[2]),
-					static_cast<float>(fbxTangent[3])  // W ì„±ë¶„ì€ ì›ë³¸ ìœ ì§€ (handedness)
+					static_cast<float>(fbxTangent[0]),
+					static_cast<float>(fbxTangent[1]),
+					static_cast<float>(fbxTangent[2]),
+					static_cast<float>(fbxTangent[3])  // W ¼ººĞÀº ¿øº» À¯Áö (handedness)
 				);
 			}
 			else
@@ -561,18 +547,18 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletal
 				vertex.Tangent = FVector4(1, 0, 0, 1); // Default tangent
 			}
 
-			// Bone WeightsëŠ” ë‚˜ì¤‘ì— ExtractSkinWeightsì—ì„œ ì„¤ì •
+			// Bone Weights´Â ³ªÁß¿¡ ExtractSkinWeights¿¡¼­ ¼³Á¤
 			for (int i = 0; i < 4; ++i)
 			{
 				vertex.BoneIndices[i] = 0;
 				vertex.BoneWeights[i] = 0.0f;
 			}
 
-			// Vertex ì¶”ê°€
+			// Vertex Ãß°¡
 			vertices.push_back(vertex);
 			indices.push_back(vertexIndexCounter);
 
-			// Control Point Index ë§¤í•‘ ì €ì¥
+			// Control Point Index ¸ÅÇÎ ÀúÀå
 			vertexToControlPointMap.push_back(controlPointIndex);
 
 			vertexIndexCounter++;
@@ -581,11 +567,11 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletal
 
 	UE_LOG("[FBX] Extracted %zu vertices, %zu indices", vertices.size(), indices.size());
 
-	// SkeletalMeshì— ë°ì´í„° ì„¤ì •
+	// SkeletalMesh¿¡ µ¥ÀÌÅÍ ¼³Á¤
 	OutSkeletalMesh->SetVertices(vertices);
 	OutSkeletalMesh->SetIndices(indices);
 
-	// Vertex â†’ Control Point ë§¤í•‘ ì €ì¥
+	// Vertex ¡æ Control Point ¸ÅÇÎ ÀúÀå
 	OutSkeletalMesh->SetVertexToControlPointMap(vertexToControlPointMap);
 
 	UE_LOG("[FBX] Stored vertex to control point mapping (%zu entries)", vertexToControlPointMap.size());
@@ -610,15 +596,15 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkelet
 
 	UE_LOG("[FBX] Extracting skin weights...");
 
-	// Skin Deformer ê°€ì ¸ì˜¤ê¸°
+	// Skin Deformer °¡Á®¿À±â
 	int32 deformerCount = fbxMesh->GetDeformerCount(FbxDeformer::eSkin);
 	if (deformerCount == 0)
 	{
 		UE_LOG("[FBX] Warning: Mesh has no skin deformer. All vertices will use bone index 0.");
-		return true; // ì—ëŸ¬ëŠ” ì•„ë‹ˆì§€ë§Œ skin weightsê°€ ì—†ìŒ
+		return true; // ¿¡·¯´Â ¾Æ´ÏÁö¸¸ skin weights°¡ ¾øÀ½
 	}
 
-	// ì²« ë²ˆì§¸ Skin Deformer ì‚¬ìš©
+	// Ã¹ ¹øÂ° Skin Deformer »ç¿ë
 	FbxSkin* fbxSkin = static_cast<FbxSkin*>(fbxMesh->GetDeformer(0, FbxDeformer::eSkin));
 	if (!fbxSkin)
 	{
@@ -629,8 +615,8 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkelet
 	int32 clusterCount = fbxSkin->GetClusterCount();
 	UE_LOG("[FBX] Skin has %d clusters (bones)", clusterCount);
 
-	// IMPORTANT: Geometry Transform ì¶”ì¶œ (Unreal Engine ë°©ì‹)
-	// Mesh Nodeì˜ Geometric Translation/Rotation/Scaling
+	// IMPORTANT: Geometry Transform ÃßÃâ (Unreal Engine ¹æ½Ä)
+	// Mesh NodeÀÇ Geometric Translation/Rotation/Scaling
 	FbxNode* meshNode = fbxMesh->GetNode();
 	FbxVector4 geoTranslation = meshNode->GetGeometricTranslation(FbxNode::eSourcePivot);
 	FbxVector4 geoRotation = meshNode->GetGeometricRotation(FbxNode::eSourcePivot);
@@ -642,13 +628,13 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkelet
 		geoRotation[0], geoRotation[1], geoRotation[2],
 		geoScaling[0], geoScaling[1], geoScaling[2]);
 
-	// Control Point â†’ Bone Influences ë§¤í•‘
-	// FBXëŠ” Control Point ê¸°ì¤€ìœ¼ë¡œ Bone Weightë¥¼ ì €ì¥
-	// í•˜ì§€ë§Œ ìš°ë¦¬ëŠ” Polygon Vertex ê¸°ì¤€ìœ¼ë¡œ ì €ì¥í•´ì•¼ í•¨
+	// Control Point ¡æ Bone Influences ¸ÅÇÎ
+	// FBX´Â Control Point ±âÁØÀ¸·Î Bone Weight¸¦ ÀúÀå
+	// ÇÏÁö¸¸ ¿ì¸®´Â Polygon Vertex ±âÁØÀ¸·Î ÀúÀåÇØ¾ß ÇÔ
 
 	int32 controlPointCount = fbxMesh->GetControlPointsCount();
 
-	// Control Pointë³„ Bone Influences ì €ì¥
+	// Control Pointº° Bone Influences ÀúÀå
 	struct FControlPointInfluence
 	{
 		TArray<int32> BoneIndices;
@@ -658,14 +644,19 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkelet
 	TArray<FControlPointInfluence> controlPointInfluences;
 	controlPointInfluences.resize(controlPointCount);
 
-	// ê° Cluster(Bone) ìˆœíšŒ
+	// CRITICAL: Mesh TransformÀ» »ç¿ëÇØ Vertex¸¦ Global Space·Î º¯È¯
+	// Ã¹ ¹øÂ° Cluster¿¡¼­ Mesh TransformÀ» °¡Á®¿Í¼­ ¸ğµç Vertex¿¡ Àû¿ë
+	FbxAMatrix meshGlobalTransform;
+	bool bMeshTransformExtracted = false;
+
+	// °¢ Cluster(Bone) ¼øÈ¸
 	for (int32 clusterIndex = 0; clusterIndex < clusterCount; clusterIndex++)
 	{
 		FbxCluster* cluster = fbxSkin->GetCluster(clusterIndex);
 		if (!cluster)
 			continue;
 
-		// Clusterê°€ ì˜í–¥ì„ ì£¼ëŠ” Bone ì°¾ê¸°
+		// Cluster°¡ ¿µÇâÀ» ÁÖ´Â Bone Ã£±â
 		FbxNode* linkNode = cluster->GetLink();
 		if (!linkNode)
 			continue;
@@ -679,19 +670,22 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkelet
 			continue;
 		}
 
-		// CRITICAL FIX: ConvertScene() í›„ì˜ Transform ì‚¬ìš©
-		// EvaluateGlobalTransform()ì€ ConvertScene() ì ìš© í›„ì˜ ìµœì¢… Transform ë°˜í™˜
-		// ì´ë ‡ê²Œ í•˜ë©´ Vertexì™€ Boneì´ ê°™ì€ ì¢Œí‘œê³„ë¥¼ ì‚¬ìš©í•˜ê²Œ ë¨
-		FbxAMatrix transformLinkMatrix = linkNode->EvaluateGlobalTransform();  // Bone Global (ConvertScene í›„)
-		FbxAMatrix transformMatrix = meshNode->EvaluateGlobalTransform();      // Mesh Global (ConvertScene í›„)
+		// UNREAL ENGINE ¹æ½Ä: Cluster API¿¡¼­ Bind Pose Transform °¡Á®¿À±â
+		// cluster->GetTransformLinkMatrix()´Â Bind Pose ½ÃÁ¡ÀÇ Bone Global Transform
+		// cluster->GetTransformMatrix()´Â Bind Pose ½ÃÁ¡ÀÇ Mesh Global Transform
+		// ÀÌ °ªµéÀº ConvertScene() ÈÄÀÇ °ªÀÌ´Ù (FBX SDK°¡ ÀÚµ¿ Ã³¸®)
+		FbxAMatrix transformLinkMatrix;
+		FbxAMatrix transformMatrix;
+		cluster->GetTransformLinkMatrix(transformLinkMatrix);  // Bone Global at Bind Pose
+		cluster->GetTransformMatrix(transformMatrix);          // Mesh Global at Bind Pose
 
-		// ë””ë²„ê·¸: ì²« ë²ˆì§¸ Boneì˜ ë³€í™˜ëœ Transform ì¶œë ¥
+		// µğ¹ö±×: Ã¹ ¹øÂ° BoneÀÇ º¯È¯µÈ Transform Ãâ·Â
 		if (boneIndex == 0)
 		{
 			UE_LOG("[FBX DEBUG] === First Bone Cluster Transform Analysis ===");
 			UE_LOG("[FBX DEBUG] Bone Name: %s", boneName.c_str());
 
-			// TransformLinkMatrix (Bone Global Transform) ì¶œë ¥
+			// TransformLinkMatrix (Bone Global Transform) Ãâ·Â
 			UE_LOG("[FBX DEBUG] TransformLinkMatrix (Bone Global):");
 			for (int row = 0; row < 4; row++)
 			{
@@ -703,7 +697,7 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkelet
 					transformLinkMatrix.Get(row, 3));
 			}
 
-			// TransformMatrix (Mesh Global Transform) ì¶œë ¥
+			// TransformMatrix (Mesh Global Transform) Ãâ·Â
 			UE_LOG("[FBX DEBUG] TransformMatrix (Mesh Global):");
 			for (int row = 0; row < 4; row++)
 			{
@@ -714,13 +708,86 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkelet
 					transformMatrix.Get(row, 2),
 					transformMatrix.Get(row, 3));
 			}
+
+			// GeometryTransform Ãâ·Â
+			UE_LOG("[FBX DEBUG] GeometryTransform:");
+			for (int row = 0; row < 4; row++)
+			{
+				UE_LOG("[FBX DEBUG]   Row %d: (%.6f, %.6f, %.6f, %.6f)",
+					row,
+					geometryTransform.Get(row, 0),
+					geometryTransform.Get(row, 1),
+					geometryTransform.Get(row, 2),
+					geometryTransform.Get(row, 3));
+			}
 		}
 
-		// Global Bind Pose Matrix ì €ì¥ (CPU Skinningì—ì„œ ì§ì ‘ ì‚¬ìš©)
+		// Ã¹ ¹øÂ° Cluster Ã³¸® ½Ã: Vertex¸¦ Mesh Global Space·Î º¯È¯
+		if (!bMeshTransformExtracted)
+		{
+			meshGlobalTransform = transformMatrix;
+			bMeshTransformExtracted = true;
+
+			// CRITICAL: VertexµéÀ» Mesh Global Space·Î º¯È¯
+			// transformMatrix´Â Bind Pose¿¡¼­ÀÇ Mesh Global Transform
+			// geometryTransformÀº MeshÀÇ Pivot/Geometry Offset
+			// Vertex´Â ÇöÀç Component Space (Raw FBX)¿¡ ÀÖÀ¸¹Ç·Î
+			// (transformMatrix ¡¿ geometryTransform)À» Àû¿ëÇØ¼­ Global Space·Î ÀÌµ¿
+			FbxAMatrix totalTransform = transformMatrix * geometryTransform;
+
+			// Normal/Tangent¿ë Transform (Translation Á¦°Å)
+			FbxAMatrix normalTransform = totalTransform;
+			normalTransform.SetT(FbxVector4(0, 0, 0, 0));
+
+			UE_LOG("[FBX] Transforming vertices to Mesh Global Space using transformMatrix ¡¿ geometryTransform");
+
+			TArray<FSkinnedVertex>& vertices = OutSkeletalMesh->GetVerticesRef();
+
+			for (auto& vertex : vertices)
+			{
+				// Position º¯È¯
+				FbxVector4 fbxPos(vertex.Position.X, vertex.Position.Y, vertex.Position.Z, 1.0);
+				FbxVector4 transformedPos = totalTransform.MultT(fbxPos);
+
+				FVector originalPos = vertex.Position;
+				vertex.Position = FVector(
+					static_cast<float>(transformedPos[0]),
+					static_cast<float>(transformedPos[1]),
+					static_cast<float>(transformedPos[2])
+				);
+
+				// Normal º¯È¯
+				FbxVector4 fbxNormal(vertex.Normal.X, vertex.Normal.Y, vertex.Normal.Z, 0.0);
+				FbxVector4 transformedNormal = normalTransform.MultT(fbxNormal);
+				transformedNormal.Normalize();
+
+				vertex.Normal = FVector(
+					static_cast<float>(transformedNormal[0]),
+					static_cast<float>(transformedNormal[1]),
+					static_cast<float>(transformedNormal[2])
+				);
+
+				// Tangent º¯È¯
+				FbxVector4 fbxTangent(vertex.Tangent.X, vertex.Tangent.Y, vertex.Tangent.Z, 0.0);
+				FbxVector4 transformedTangent = normalTransform.MultT(fbxTangent);
+				transformedTangent.Normalize();
+
+				vertex.Tangent = FVector4(
+					static_cast<float>(transformedTangent[0]),
+					static_cast<float>(transformedTangent[1]),
+					static_cast<float>(transformedTangent[2]),
+				vertex.Tangent.W
+			);
+			}
+
+			UE_LOG("[FBX] Vertex transformation complete. Vertex count: %d", vertices.size());
+		}
+
+		// Global Bind Pose Matrix ÀúÀå (CPU Skinning¿¡¼­ Á÷Á¢ »ç¿ë)
 		FMatrix globalBindPoseMatrix = ConvertFbxMatrix(FbxMatrix(transformLinkMatrix));
 		skeleton->SetGlobalBindPoseMatrix(boneIndex, globalBindPoseMatrix);
 
-		// ë””ë²„ê·¸: ë³€í™˜ëœ GlobalBindPoseMatrix ì¶œë ¥
+		// µğ¹ö±×: º¯È¯µÈ GlobalBindPoseMatrix Ãâ·Â
 		if (boneIndex == 0)
 		{
 			UE_LOG("[FBX DEBUG] After ConvertFbxMatrix - GlobalBindPoseMatrix:");
@@ -735,17 +802,23 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkelet
 			}
 		}
 
-		// Inverse Bind Pose Matrix ê³„ì‚°
-		// Vertexì— ì´ë¯¸ (MeshGlobal Ã— Geometry) Transformì„ ì ìš©í–ˆìœ¼ë¯€ë¡œ
-		// InverseBindPoseëŠ” ë‹¨ìˆœíˆ BoneGlobalì˜ ì—­í–‰ë ¬
-		// ì´ë ‡ê²Œ í•˜ë©´ Bind Poseì—ì„œ InverseBindPose Ã— BoneGlobal = Identity
+		// Inverse Bind Pose Matrix °è»ê
+		//
+		// UNREAL ENGINE ¹æ½Ä: Vertex´Â Mesh Global Space¿¡ ÀÖÀ½
+		// À§¿¡¼­ transformMatrix ¡¿ geometryTransformÀ» Vertex¿¡ Àû¿ëÇßÀ½
+		// µû¶ó¼­ InverseBindPose = BoneGlobal^-1 (´Ü¼ø ¿ªÇà·Ä)
+		//
+		// Skinning °ø½Ä: SkinnedVertex = GlobalSpaceVertex ¡¿ (InverseBindPose ¡¿ BoneTransform)
+		//
+		// Bind Pose °ËÁõ:
+		// InverseBindPose ¡¿ GlobalBindPose = BoneGlobal^-1 ¡¿ BoneGlobal = Identity
 		FbxAMatrix inverseBindMatrix = transformLinkMatrix.Inverse();
 
-		// Skeletonì— Inverse Bind Pose Matrix ì„¤ì •
+		// Skeleton¿¡ Inverse Bind Pose Matrix ¼³Á¤
 		FMatrix inverseBindPoseMatrix = ConvertFbxMatrix(FbxMatrix(inverseBindMatrix));
 		skeleton->SetInverseBindPoseMatrix(boneIndex, inverseBindPoseMatrix);
 
-		// ë””ë²„ê·¸: ë³€í™˜ëœ InverseBindPoseMatrix ì¶œë ¥
+		// µğ¹ö±×: º¯È¯µÈ InverseBindPoseMatrix Ãâ·Â
 		if (boneIndex == 0)
 		{
 			UE_LOG("[FBX DEBUG] After ConvertFbxMatrix - InverseBindPoseMatrix:");
@@ -759,9 +832,12 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkelet
 					inverseBindPoseMatrix.M[row][3]);
 			}
 
-			// InverseBindPose Ã— GlobalBindPose ê³„ì‚° (ì´ë¡ ìƒ Identityì—¬ì•¼ í•¨)
+			// InverseBindPose ¡¿ GlobalBindPose °è»ê
+			// µğ¹ö±× ¸ñÀû: Bind Pose¿¡¼­ ¾î¶² º¯È¯ÀÌ Àû¿ëµÇ´ÂÁö È®ÀÎ
+			// InverseBindPose ¡¿ BoneGlobal = BoneGlobal^-1 ¡¿ BoneGlobal = Identity (ÀÌ·ĞÀûÀ¸·Î)
 			FMatrix testMatrix = inverseBindPoseMatrix * globalBindPoseMatrix;
-			UE_LOG("[FBX DEBUG] InverseBindPose Ã— GlobalBindPose (should be Identity):");
+			UE_LOG("[FBX DEBUG] InverseBindPose ¡¿ GlobalBindPose (should be Identity):");
+
 			for (int row = 0; row < 4; row++)
 			{
 				UE_LOG("[FBX DEBUG]   Row %d: (%.6f, %.6f, %.6f, %.6f)",
@@ -775,12 +851,12 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkelet
 
 		UE_LOG("[FBX] Set bind poses for bone [%d]: %s (Global + Inverse from Cluster)", boneIndex, boneName.c_str());
 
-		// Clusterì˜ Control Point Indicesì™€ Weights ê°€ì ¸ì˜¤ê¸°
+		// ClusterÀÇ Control Point Indices¿Í Weights °¡Á®¿À±â
 		int32* controlPointIndices = cluster->GetControlPointIndices();
 		double* weights = cluster->GetControlPointWeights();
 		int32 indexCount = cluster->GetControlPointIndicesCount();
 
-		// Control Pointë³„ë¡œ Bone Influence ì¶”ê°€
+		// Control Pointº°·Î Bone Influence Ãß°¡
 		for (int32 i = 0; i < indexCount; i++)
 		{
 			int32 cpIndex = controlPointIndices[i];
@@ -794,14 +870,14 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkelet
 		}
 	}
 
-	// ì´ì œ SkeletalMeshì˜ ê° Vertexì— Bone Weight ì ìš©
-	// ExtractMeshDataì—ì„œ ìƒì„±í•œ Vertexë“¤ì„ ê°€ì ¸ì™€ì„œ Bone Weightsë¥¼ ì ìš©
+	// ÀÌÁ¦ SkeletalMeshÀÇ °¢ Vertex¿¡ Bone Weight Àû¿ë
+	// ExtractMeshData¿¡¼­ »ı¼ºÇÑ VertexµéÀ» °¡Á®¿Í¼­ Bone Weights¸¦ Àû¿ë
 
-	// ê¸°ì¡´ Vertices ê°€ì ¸ì˜¤ê¸° (ìˆ˜ì • ê°€ëŠ¥)
+	// ±âÁ¸ Vertices °¡Á®¿À±â (¼öÁ¤ °¡´É)
 	TArray<FSkinnedVertex>& vertices = OutSkeletalMesh->GetVerticesRef();
 	const TArray<int32>& vertexToControlPointMap = OutSkeletalMesh->GetVertexToControlPointMap();
 
-	// ë§¤í•‘ ë°ì´í„° ê²€ì¦
+	// ¸ÅÇÎ µ¥ÀÌÅÍ °ËÁõ
 	if (vertices.size() != vertexToControlPointMap.size())
 	{
 		SetError("ExtractSkinWeights: Vertex count mismatch with control point map");
@@ -814,38 +890,38 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkelet
 		return true;
 	}
 
-	// ê° Vertexì— Bone Weights ì ìš©
+	// °¢ Vertex¿¡ Bone Weights Àû¿ë
 	for (size_t vertIndex = 0; vertIndex < vertices.size(); vertIndex++)
 	{
 		int32 controlPointIndex = vertexToControlPointMap[vertIndex];
 
-		// Control Point Index ë²”ìœ„ ê²€ì¦
+		// Control Point Index ¹üÀ§ °ËÁõ
 		if (controlPointIndex < 0 || controlPointIndex >= controlPointCount)
 		{
 			UE_LOG("[FBX] Warning: Invalid control point index %d for vertex %zu", controlPointIndex, vertIndex);
 			continue;
 		}
 
-		// ì´ Control Pointì˜ Bone Influences ê°€ì ¸ì˜¤ê¸°
+		// ÀÌ Control PointÀÇ Bone Influences °¡Á®¿À±â
 		const FControlPointInfluence& influence = controlPointInfluences[controlPointIndex];
 
-		// ìµœëŒ€ 4ê°œì˜ Bone Influenceë§Œ ì‚¬ìš©
+		// ÃÖ´ë 4°³ÀÇ Bone Influence¸¸ »ç¿ë
 		int32 influenceCount = std::min(static_cast<int32>(influence.BoneIndices.size()), 4);
 
-		// Weight ì •ê·œí™”ë¥¼ ìœ„í•œ ì´í•© ê³„ì‚°
+		// Weight Á¤±ÔÈ­¸¦ À§ÇÑ ÃÑÇÕ °è»ê
 		float totalWeight = 0.0f;
 		for (int32 i = 0; i < influenceCount; i++)
 		{
 			totalWeight += influence.Weights[i];
 		}
 
-		// Bone Indicesì™€ Weights ì„¤ì •
+		// Bone Indices¿Í Weights ¼³Á¤
 		for (int32 i = 0; i < 4; i++)
 		{
 			if (i < influenceCount && totalWeight > 0.0f)
 			{
 				vertices[vertIndex].BoneIndices[i] = influence.BoneIndices[i];
-				vertices[vertIndex].BoneWeights[i] = influence.Weights[i] / totalWeight; // ì •ê·œí™”
+				vertices[vertIndex].BoneWeights[i] = influence.Weights[i] / totalWeight; // Á¤±ÔÈ­
 			}
 			else
 			{
@@ -870,18 +946,18 @@ bool FFbxImporter::ExtractBindPose(FbxScene* Scene, USkeleton* OutSkeleton)
 
 	UE_LOG("[FBX] Extracting bind pose...");
 
-	// FBX Sceneì˜ Bind Pose ê°œìˆ˜ í™•ì¸
+	// FBX SceneÀÇ Bind Pose °³¼ö È®ÀÎ
 	int32 poseCount = Scene->GetPoseCount();
 
 	if (poseCount == 0)
 	{
 		UE_LOG("[FBX] Warning: No bind pose found in scene");
-		return true; // Bind Poseê°€ ì—†ì–´ë„ ì—ëŸ¬ëŠ” ì•„ë‹˜ (Local Transform ì‚¬ìš©)
+		return true; // Bind Pose°¡ ¾ø¾îµµ ¿¡·¯´Â ¾Æ´Ô (Local Transform »ç¿ë)
 	}
 
 	UE_LOG("[FBX] Scene has %d poses", poseCount);
 
-	// ì²« ë²ˆì§¸ Bind Pose ì‚¬ìš© (ë³´í†µ í•˜ë‚˜ë§Œ ì¡´ì¬)
+	// Ã¹ ¹øÂ° Bind Pose »ç¿ë (º¸Åë ÇÏ³ª¸¸ Á¸Àç)
 	FbxPose* bindPose = nullptr;
 
 	for (int32 i = 0; i < poseCount; i++)
@@ -901,7 +977,7 @@ bool FFbxImporter::ExtractBindPose(FbxScene* Scene, USkeleton* OutSkeleton)
 		return true;
 	}
 
-	// Bind Poseì˜ ê° Nodeì— ëŒ€í•œ Transform ì •ë³´ ì¶”ì¶œ
+	// Bind PoseÀÇ °¢ Node¿¡ ´ëÇÑ Transform Á¤º¸ ÃßÃâ
 	int32 poseNodeCount = bindPose->GetCount();
 	UE_LOG("[FBX] Bind pose has %d nodes", poseNodeCount);
 
@@ -913,28 +989,28 @@ bool FFbxImporter::ExtractBindPose(FbxScene* Scene, USkeleton* OutSkeleton)
 
 		FString nodeName = node->GetName();
 
-		// Skeletonì—ì„œ ì´ Bone ì°¾ê¸°
+		// Skeleton¿¡¼­ ÀÌ Bone Ã£±â
 		int32 boneIndex = OutSkeleton->FindBoneIndex(nodeName);
 		if (boneIndex < 0)
 		{
-			// Skeletonì— ì—†ëŠ” ë…¸ë“œëŠ” ë¬´ì‹œ (Boneì´ ì•„ë‹ ìˆ˜ ìˆìŒ)
+			// Skeleton¿¡ ¾ø´Â ³ëµå´Â ¹«½Ã (BoneÀÌ ¾Æ´Ò ¼ö ÀÖÀ½)
 			continue;
 		}
 
-		// Bind Pose Matrix ê°€ì ¸ì˜¤ê¸°
-		// IMPORTANT: ConvertScene() ì ìš© í›„ì˜ Transform ì‚¬ìš©
-		// bindPose->GetMatrix(i)ëŠ” ë³€í™˜ ì „ ì›ë³¸ ë°ì´í„°ì´ë¯€ë¡œ ì‚¬ìš©í•˜ì§€ ì•ŠìŒ
-		// node->EvaluateGlobalTransform()ì€ ConvertScene() ì ìš© í›„ì˜ Global Transform
+		// Bind Pose Matrix °¡Á®¿À±â
+		// IMPORTANT: ConvertScene() Àû¿ë ÈÄÀÇ Transform »ç¿ë
+		// bindPose->GetMatrix(i)´Â º¯È¯ Àü ¿øº» µ¥ÀÌÅÍÀÌ¹Ç·Î »ç¿ëÇÏÁö ¾ÊÀ½
+		// node->EvaluateGlobalTransform()Àº ConvertScene() Àû¿ë ÈÄÀÇ Global Transform
 		FbxAMatrix fbxBindMatrix = node->EvaluateGlobalTransform();
 
-		// Inverse Bind Pose Matrix ê³„ì‚°
-		// Skinning ì‹œ Vertexë¥¼ Bone Spaceë¡œ ë³€í™˜í•˜ëŠ”ë° ì‚¬ìš©
+		// Inverse Bind Pose Matrix °è»ê
+		// Skinning ½Ã Vertex¸¦ Bone Space·Î º¯È¯ÇÏ´Âµ¥ »ç¿ë
 		FbxAMatrix fbxInverseBindMatrix = fbxBindMatrix.Inverse();
 
-		// FbxAMatrixë¥¼ Mundi FMatrixë¡œ ë³€í™˜ (Row-Major)
+		// FbxAMatrix¸¦ Mundi FMatrix·Î º¯È¯ (Row-Major)
 		FMatrix inverseBindPoseMatrix = ConvertFbxMatrix(FbxMatrix(fbxInverseBindMatrix));
 
-		// Skeletonì— Inverse Bind Pose Matrix ì„¤ì •
+		// Skeleton¿¡ Inverse Bind Pose Matrix ¼³Á¤
 		OutSkeleton->SetInverseBindPoseMatrix(boneIndex, inverseBindPoseMatrix);
 
 		UE_LOG("[FBX] Set inverse bind pose for bone [%d]: %s", boneIndex, nodeName.c_str());
@@ -944,12 +1020,12 @@ bool FFbxImporter::ExtractBindPose(FbxScene* Scene, USkeleton* OutSkeleton)
 	return true;
 }
 
-// Helper: FbxMatrix â†’ FMatrix ë³€í™˜
+// Helper: FbxMatrix ¡æ FMatrix º¯È¯
 FMatrix FFbxImporter::ConvertFbxMatrix(const FbxMatrix& fbxMatrix)
 {
 	FMatrix matrix;
 
-	// FBXëŠ” Row-Major, Mundië„ Row-Majorì´ë¯€ë¡œ ì§ì ‘ ë³µì‚¬ ê°€ëŠ¥
+	// FBX´Â Row-Major, Mundiµµ Row-MajorÀÌ¹Ç·Î Á÷Á¢ º¹»ç °¡´É
 	for (int32 row = 0; row < 4; row++)
 	{
 		for (int32 col = 0; col < 4; col++)
@@ -967,3 +1043,4 @@ void FFbxImporter::SetError(const FString& Message)
 	FString errorMsg = "[FBX ERROR] " + Message + "\n";
 	OutputDebugStringA(errorMsg.c_str());
 }
+
