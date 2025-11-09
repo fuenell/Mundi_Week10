@@ -430,6 +430,10 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletal
 	TArray<FSkinnedVertex> vertices;
 	TArray<uint32> indices;
 
+	// Vertex → Control Point 매핑 배열
+	// ExtractSkinWeights에서 Bone Weights를 적용할 때 사용
+	TArray<int32> vertexToControlPointMap;
+
 	// FBX Control Points (위치 정보)
 	FbxVector4* controlPoints = fbxMesh->GetControlPoints();
 
@@ -536,6 +540,10 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletal
 			// Vertex 추가
 			vertices.push_back(vertex);
 			indices.push_back(vertexIndexCounter);
+
+			// Control Point Index 매핑 저장
+			vertexToControlPointMap.push_back(controlPointIndex);
+
 			vertexIndexCounter++;
 		}
 	}
@@ -545,6 +553,11 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletal
 	// SkeletalMesh에 데이터 설정
 	OutSkeletalMesh->SetVertices(vertices);
 	OutSkeletalMesh->SetIndices(indices);
+
+	// Vertex → Control Point 매핑 저장
+	OutSkeletalMesh->SetVertexToControlPointMap(vertexToControlPointMap);
+
+	UE_LOG("[FBX] Stored vertex to control point mapping (%zu entries)", vertexToControlPointMap.size());
 
 	return true;
 }
@@ -642,66 +655,67 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkelet
 	}
 
 	// 이제 SkeletalMesh의 각 Vertex에 Bone Weight 적용
-	// ExtractMeshData에서 생성한 Vertex들은 Polygon Vertex 순서대로 저장되어 있음
+	// ExtractMeshData에서 생성한 Vertex들을 가져와서 Bone Weights를 적용
 
-	int32 polygonCount = fbxMesh->GetPolygonCount();
-	int32 vertexIndexCounter = 0;
+	// 기존 Vertices 가져오기 (수정 가능)
+	TArray<FSkinnedVertex>& vertices = OutSkeletalMesh->GetVerticesRef();
+	const TArray<int32>& vertexToControlPointMap = OutSkeletalMesh->GetVertexToControlPointMap();
 
-	// SkeletalMesh의 Vertex 데이터 가져오기 (수정을 위해)
-	// 주의: TArray는 직접 수정 불가능하므로, 복사 후 다시 설정해야 함
-	TArray<FSkinnedVertex> vertices;
-
-	for (int32 polyIndex = 0; polyIndex < polygonCount; polyIndex++)
+	// 매핑 데이터 검증
+	if (vertices.size() != vertexToControlPointMap.size())
 	{
-		int32 polygonSize = fbxMesh->GetPolygonSize(polyIndex);
+		SetError("ExtractSkinWeights: Vertex count mismatch with control point map");
+		return false;
+	}
 
-		for (int32 vertInPoly = 0; vertInPoly < polygonSize && vertInPoly < 3; vertInPoly++)
+	if (vertices.empty())
+	{
+		UE_LOG("[FBX] Warning: No vertices to apply skin weights");
+		return true;
+	}
+
+	// 각 Vertex에 Bone Weights 적용
+	for (size_t vertIndex = 0; vertIndex < vertices.size(); vertIndex++)
+	{
+		int32 controlPointIndex = vertexToControlPointMap[vertIndex];
+
+		// Control Point Index 범위 검증
+		if (controlPointIndex < 0 || controlPointIndex >= controlPointCount)
 		{
-			int32 controlPointIndex = fbxMesh->GetPolygonVertex(polyIndex, vertInPoly);
+			UE_LOG("[FBX] Warning: Invalid control point index %d for vertex %zu", controlPointIndex, vertIndex);
+			continue;
+		}
 
-			// 이 Control Point의 Bone Influences 가져오기
-			const FControlPointInfluence& influence = controlPointInfluences[controlPointIndex];
+		// 이 Control Point의 Bone Influences 가져오기
+		const FControlPointInfluence& influence = controlPointInfluences[controlPointIndex];
 
-			// 최대 4개의 Bone Influence만 사용
-			int32 influenceCount = std::min(static_cast<int32>(influence.BoneIndices.size()), 4);
+		// 최대 4개의 Bone Influence만 사용
+		int32 influenceCount = std::min(static_cast<int32>(influence.BoneIndices.size()), 4);
 
-			// Weight 정규화를 위한 총합 계산
-			float totalWeight = 0.0f;
-			for (int32 i = 0; i < influenceCount; i++)
+		// Weight 정규화를 위한 총합 계산
+		float totalWeight = 0.0f;
+		for (int32 i = 0; i < influenceCount; i++)
+		{
+			totalWeight += influence.Weights[i];
+		}
+
+		// Bone Indices와 Weights 설정
+		for (int32 i = 0; i < 4; i++)
+		{
+			if (i < influenceCount && totalWeight > 0.0f)
 			{
-				totalWeight += influence.Weights[i];
+				vertices[vertIndex].BoneIndices[i] = influence.BoneIndices[i];
+				vertices[vertIndex].BoneWeights[i] = influence.Weights[i] / totalWeight; // 정규화
 			}
-
-			// Vertex 생성 (이미 ExtractMeshData에서 생성된 데이터 기반)
-			// 여기서는 Bone Weights만 설정
-			FSkinnedVertex vertex; // 임시 vertex (실제로는 기존 데이터 복사 필요)
-
-			// Bone Indices와 Weights 설정
-			for (int32 i = 0; i < 4; i++)
+			else
 			{
-				if (i < influenceCount && totalWeight > 0.0f)
-				{
-					vertex.BoneIndices[i] = influence.BoneIndices[i];
-					vertex.BoneWeights[i] = influence.Weights[i] / totalWeight; // 정규화
-				}
-				else
-				{
-					vertex.BoneIndices[i] = 0;
-					vertex.BoneWeights[i] = 0.0f;
-				}
+				vertices[vertIndex].BoneIndices[i] = 0;
+				vertices[vertIndex].BoneWeights[i] = 0.0f;
 			}
-
-			vertices.push_back(vertex);
-			vertexIndexCounter++;
 		}
 	}
 
 	UE_LOG("[FBX] Applied skin weights to %zu vertices", vertices.size());
-
-	// 주의: 이 구현은 완전하지 않습니다.
-	// ExtractMeshData에서 생성한 vertex 데이터와 여기서 생성한 bone weight 데이터를
-	// 병합하는 추가 로직이 필요합니다.
-	// 현재는 개념 증명(PoC) 수준의 구현입니다.
 
 	return true;
 }

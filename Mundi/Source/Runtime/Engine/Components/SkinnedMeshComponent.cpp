@@ -153,6 +153,12 @@ void USkinnedMeshComponent::SetSkeletalMesh(USkeletalMesh* InSkeletalMesh)
 
 		UE_LOG("USkinnedMeshComponent: SkeletalMesh set with %d vertices, %d indices",
 			SkeletalMesh->GetVertexCount(), SkeletalMesh->GetIndexCount());
+
+		// Bone Transform 업데이트
+		if (SkeletalMesh->GetSkeleton())
+		{
+			UpdateBoneTransforms();
+		}
 	}
 
 	MarkWorldPartitionDirty();
@@ -350,4 +356,60 @@ void USkinnedMeshComponent::DuplicateSubObjects()
 	{
 		MaterialSlots.push_back(Mat);
 	}
+}
+
+// === Bone Transform 관리 ===
+
+void USkinnedMeshComponent::UpdateBoneTransforms()
+{
+	if (!SkeletalMesh || !SkeletalMesh->GetSkeleton())
+	{
+		return;
+	}
+
+	USkeleton* Skeleton = SkeletalMesh->GetSkeleton();
+	int32 BoneCount = Skeleton->GetBoneCount();
+
+	if (BoneCount == 0)
+	{
+		return;
+	}
+
+	// Bone Matrices 초기화
+	BoneMatrices.resize(BoneCount);
+
+	// 각 Bone의 Component Space Transform 계산
+	for (int32 BoneIndex = 0; BoneIndex < BoneCount; BoneIndex++)
+	{
+		const FBoneInfo& BoneInfo = Skeleton->GetBone(BoneIndex);
+
+		// Phase 1: Bind Pose만 사용 (Animation은 Phase 6+)
+		FMatrix LocalMatrix = BoneInfo.BindPoseTransform.ToMatrix();
+
+		// Parent Transform 누적 (계층 구조)
+		if (BoneInfo.ParentIndex >= 0 && BoneInfo.ParentIndex < BoneCount)
+		{
+			FMatrix ParentMatrix = BoneMatrices[BoneInfo.ParentIndex];
+			BoneMatrices[BoneIndex] = LocalMatrix * ParentMatrix;
+		}
+		else
+		{
+			// Root Bone
+			BoneMatrices[BoneIndex] = LocalMatrix;
+		}
+
+		// Inverse Bind Pose 적용 (Skinning을 위해)
+		BoneMatrices[BoneIndex] = BoneInfo.InverseBindPoseMatrix * BoneMatrices[BoneIndex];
+	}
+
+	bNeedsBoneTransformUpdate = false;
+
+	UE_LOG("USkinnedMeshComponent: Updated %d bone transforms", BoneCount);
+}
+
+void USkinnedMeshComponent::SetBoneTransform(int32 BoneIndex, const FTransform& Transform)
+{
+	// TODO: 향후 Animation 시스템에서 사용
+	// 현재는 플래그만 설정
+	bNeedsBoneTransformUpdate = true;
 }

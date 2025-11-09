@@ -75,6 +75,27 @@ public:
 	void DuplicateSubObjects() override;
 	DECLARE_DUPLICATE(USkinnedMeshComponent)
 
+	// === Bone Transform 관리 (CPU Skinning용) ===
+
+	/**
+	 * Bone Transforms 업데이트
+	 * 현재는 Bind Pose만 사용하지만, 향후 Animation 시스템에서 사용
+	 */
+	void UpdateBoneTransforms();
+
+	/**
+	 * Bone Matrices 가져오기 (Component Space)
+	 * @return Bone Matrices 배열 (읽기 전용)
+	 */
+	const TArray<FMatrix>& GetBoneMatrices() const { return BoneMatrices; }
+
+	/**
+	 * 특정 Bone의 Transform 설정 (향후 Animation용)
+	 * @param BoneIndex - Bone 인덱스
+	 * @param Transform - 설정할 Transform
+	 */
+	void SetBoneTransform(int32 BoneIndex, const FTransform& Transform);
+
 protected:
 	void OnTransformUpdated() override;
 	void MarkWorldPartitionDirty();
@@ -85,4 +106,13 @@ protected:
 
 	// 동적 머티리얼 인스턴스 (런타임에 생성되는 머티리얼)
 	TArray<UMaterialInstanceDynamic*> DynamicMaterialInstances;
+
+	// === Bone Transform 데이터 (CPU Skinning용) ===
+
+	// Runtime Bone Transforms (Component Space)
+	// InverseBindPose * BoneTransform 형태로 저장
+	TArray<FMatrix> BoneMatrices;
+
+	// Bone Transform 업데이트 필요 여부
+	bool bNeedsBoneTransformUpdate = true;
 };

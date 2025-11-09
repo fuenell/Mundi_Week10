@@ -122,6 +122,35 @@ public:
 	void SetIndices(const TArray<uint32>& InIndices);
 
 	/**
+	 * Vertex to Control Point 매핑 데이터 설정
+	 * FBX Import 시 Polygon Vertex Index → Control Point Index 매핑을 저장
+	 * @param InMap - 매핑 배열 (각 Vertex의 Control Point Index)
+	 */
+	void SetVertexToControlPointMap(const TArray<int32>& InMap)
+	{
+		VertexToControlPointMap = InMap;
+	}
+
+	/**
+	 * Vertex to Control Point 매핑 데이터 가져오기
+	 * @return 매핑 배열 (읽기 전용)
+	 */
+	const TArray<int32>& GetVertexToControlPointMap() const
+	{
+		return VertexToControlPointMap;
+	}
+
+	/**
+	 * Vertices 배열 참조 가져오기 (수정 가능)
+	 * ExtractSkinWeights에서 Bone Weights를 적용할 때 사용
+	 * @return Vertices 배열 참조
+	 */
+	TArray<FSkinnedVertex>& GetVerticesRef()
+	{
+		return Vertices;
+	}
+
+	/**
 	 * Vertex 개수 반환
 	 * @return Vertex 개수
 	 */
@@ -185,6 +214,10 @@ private:
 	// CPU Mesh 데이터
 	TArray<FSkinnedVertex> Vertices;
 	TArray<uint32> Indices;
+
+	// Vertex → Control Point 매핑 (FBX Import용)
+	// Skin Weights를 적용할 때 사용
+	TArray<int32> VertexToControlPointMap;
 
 	// GPU 리소스
 	ID3D11Buffer* VertexBuffer = nullptr;
