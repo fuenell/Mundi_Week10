@@ -27,6 +27,7 @@ public:
 	~UConsoleWidget() override;
 
 	bool IsWindowPinned() const { return bIsWindowPinned; }
+	void SetScrollToBottom() { ScrollToBottom = true; }
 
 private:
 	// Console data
@@ -36,9 +37,15 @@ private:
 	TArray<FString> History;         // Command history
 	int32 HistoryPos;                // -1: new line, 0..History.Size-1 browsing history
 
+	// Log buffer for InputTextMultiline
+	char* LogBuffer;
+	size_t LogBufferSize;
+	bool NeedsScrollToBottom;
+
 	// UI state
 	bool AutoScroll;
 	bool ScrollToBottom;
+	float LastScrollY;  // Track previous scroll position to detect user-initiated scrolls
 	ImGuiTextFilter Filter;
 
 	bool bIsWindowPinned;    // 콘솔 창 고정(핀) 상태
@@ -46,6 +53,8 @@ private:
 	// Helper methods
 	static int TextEditCallbackStub(ImGuiInputTextCallbackData* data);
 	int TextEditCallback(ImGuiInputTextCallbackData* data);
+	static int LogScrollCallbackStub(ImGuiInputTextCallbackData* data);
+	int LogScrollCallback(ImGuiInputTextCallbackData* data);
 
 	// String utilities
 	static int Stricmp(const char* s1, const char* s2);

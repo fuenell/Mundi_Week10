@@ -4,6 +4,7 @@
 #include "GlobalConsole.h"
 #include "StatsOverlayD2D.h"
 #include "USlateManager.h"
+#include "ImGui/imgui_internal.h"
 #include <windows.h>
 #include <cstdarg>
 #include <cctype>
@@ -18,11 +19,16 @@ IMPLEMENT_CLASS(UConsoleWidget)
 UConsoleWidget::UConsoleWidget()
 	: UWidget("Console Widget")
 	, HistoryPos(-1)
+	, LogBufferSize(256 * 1024) // 256KB buffer
+	, NeedsScrollToBottom(false)
 	, AutoScroll(true)
 	, ScrollToBottom(false)
+	, LastScrollY(0.0f)
 	, bIsWindowPinned(false)
 {
 	memset(InputBuf, 0, sizeof(InputBuf));
+	LogBuffer = new char[LogBufferSize];
+	memset(LogBuffer, 0, LogBufferSize);
 }
 
 UConsoleWidget::~UConsoleWidget()
@@ -32,6 +38,9 @@ UConsoleWidget::~UConsoleWidget()
 	{
 		UGlobalConsole::SetConsoleWidget(nullptr);
 	}
+
+	// Free log buffer
+	delete[] LogBuffer;
 }
 
 void UConsoleWidget::Initialize()
@@ -104,7 +113,53 @@ void UConsoleWidget::RenderToolbar()
 	}
 	ImGui::SameLine();
 
-	bool copy_to_clipboard = ImGui::SmallButton("Copy");
+	if (ImGui::SmallButton("Copy"))
+	{
+		// Build full log text
+		FString logText;
+		for (const FString& item : Items)
+		{
+			logText += item;
+			logText += "\n";
+		}
+
+		// Copy to clipboard using Windows API
+		if (OpenClipboard(nullptr))
+		{
+			EmptyClipboard();
+
+			size_t size = (logText.length() + 1) * sizeof(char);
+			HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, size);
+
+			if (hMem)
+			{
+				char* pMem = (char*)GlobalLock(hMem);
+				if (pMem)
+				{
+					strcpy_s(pMem, size, logText.c_str());
+					GlobalUnlock(hMem);
+					SetClipboardData(CF_TEXT, hMem);
+
+					AddLog("[info] Copied %d lines to clipboard", Items.Num());
+				}
+				else
+				{
+					GlobalFree(hMem);
+					AddLog("[error] Failed to lock clipboard memory");
+				}
+			}
+			else
+			{
+				AddLog("[error] Failed to allocate clipboard memory");
+			}
+
+			CloseClipboard();
+		}
+		else
+		{
+			AddLog("[error] Failed to open clipboard");
+		}
+	}
 
 	ImGui::SameLine();
 
@@ -151,57 +206,62 @@ void UConsoleWidget::RenderLogOutput()
 	// Reserve space for input at bottom
 	const float footer_height_to_reserve = ImGui::GetStyle().ItemSpacing.y + ImGui::GetFrameHeightWithSpacing();
 
-	if (ImGui::BeginChild("ScrollingRegion", ImVec2(0, -footer_height_to_reserve),
-		ImGuiChildFlags_NavFlattened, ImGuiWindowFlags_HorizontalScrollbar))
+	// Get available region size
+	ImVec2 availSize = ImGui::GetContentRegionAvail();
+	availSize.y -= footer_height_to_reserve;
+
+	// Apply darker background for log region to make it distinguishable
+	ImVec4 childBg = ImGui::GetStyleColorVec4(ImGuiCol_ChildBg);
+	ImVec4 logBg = ImVec4(childBg.x * 0.7f, childBg.y * 0.7f, childBg.z * 0.7f, childBg.w);
+	ImGui::PushStyleColor(ImGuiCol_ChildBg, logBg);
+
+	// Use BeginChild for scrollable region with mouse wheel support
+	if (ImGui::BeginChild("##LogScrollRegion", availSize, false, ImGuiWindowFlags_None))
 	{
-		if (ImGui::BeginPopupContextWindow())
+		// Render each log item using TextUnformatted (fast, no text selection)
+		for (int i = 0; i < Items.Num(); i++)
 		{
-			if (ImGui::Selectable("Clear")) ClearLog();
-			ImGui::EndPopup();
-		}
-
-		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 1)); // Tighten spacing
-
-		for (const FString& item : Items)
-		{
-			if (!Filter.PassFilter(item.c_str()))
+			if (!Filter.PassFilter(Items[i].c_str()))
 				continue;
 
-			// Color coding for different log levels
-			ImVec4 color;
-			bool has_color = false;
-
-			if (item.find("[error]") != std::string::npos)
-			{
-				color = ImVec4(1.0f, 0.4f, 0.4f, 1.0f);
-				has_color = true;
-			}
-			else if (item.find("[warning]") != std::string::npos)
-			{
-				color = ImVec4(1.0f, 0.8f, 0.0f, 1.0f);
-				has_color = true;
-			}
-			else if (item.find("[info]") != std::string::npos)
-			{
-				color = ImVec4(0.0f, 0.8f, 1.0f, 1.0f);
-				has_color = true;
-			}
-
-			if (has_color)
-				ImGui::PushStyleColor(ImGuiCol_Text, color);
-			ImGui::TextUnformatted(item.c_str());
-			if (has_color)
-				ImGui::PopStyleColor();
+			ImGui::TextUnformatted(Items[i].c_str());
 		}
 
-		// Auto scroll to bottom
-		if (ScrollToBottom || (AutoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY()))
-			ImGui::SetScrollHereY(1.0f);
-		ScrollToBottom = false;
+		// Track scroll position to detect user scrolls
+		float currentScrollY = ImGui::GetScrollY();
+		float maxScrollY = ImGui::GetScrollMaxY();
 
-		ImGui::PopStyleVar();
+		// Detect if user manually scrolled
+		if (currentScrollY != LastScrollY)
+		{
+			// Check if user scrolled to bottom (within small threshold)
+			bool isAtBottom = (maxScrollY - currentScrollY) < 1.0f;
+
+			if (isAtBottom && !AutoScroll)
+			{
+				// User scrolled back to bottom, re-enable auto-scroll
+				AutoScroll = true;
+			}
+			else if (!isAtBottom && currentScrollY < LastScrollY)
+			{
+				// User scrolled up, disable auto-scroll
+				AutoScroll = false;
+			}
+		}
+
+		// Auto-scroll to bottom when new logs are added
+		if (AutoScroll && ScrollToBottom)
+		{
+			ImGui::SetScrollHereY(1.0f);
+			ScrollToBottom = false;
+		}
+
+		// Update last scroll position
+		LastScrollY = currentScrollY;
 	}
 	ImGui::EndChild();
+
+	ImGui::PopStyleColor(1); // Pop log background color
 }
 
 void UConsoleWidget::RenderCommandInput()
@@ -402,6 +462,25 @@ int UConsoleWidget::TextEditCallbackStub(ImGuiInputTextCallbackData* data)
 {
 	UConsoleWidget* console = (UConsoleWidget*)data->UserData;
 	return console->TextEditCallback(data);
+}
+
+int UConsoleWidget::LogScrollCallbackStub(ImGuiInputTextCallbackData* data)
+{
+	UConsoleWidget* console = (UConsoleWidget*)data->UserData;
+	return console->LogScrollCallback(data);
+}
+
+int UConsoleWidget::LogScrollCallback(ImGuiInputTextCallbackData* data)
+{
+	// Auto-scroll to bottom when new logs are added
+	if (AutoScroll && ScrollToBottom)
+	{
+		// Move cursor to the end of the text, which will cause ImGui to scroll to bottom
+		data->CursorPos = data->BufTextLen;
+		data->SelectionStart = data->SelectionEnd = data->BufTextLen;
+		ScrollToBottom = false;
+	}
+	return 0;
 }
 
 int UConsoleWidget::TextEditCallback(ImGuiInputTextCallbackData* data)
