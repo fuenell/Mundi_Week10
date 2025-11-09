@@ -47,6 +47,9 @@ public:
 	void DuplicateSubObjects() override;
 	DECLARE_DUPLICATE(USkinnedMeshComponent)
 
+	// CPU Skinning 업데이트
+	void UpdateSkinning(ID3D11DeviceContext* DeviceContext);
+
 protected:
 	void OnTransformUpdated() override;
 	void MarkWorldPartitionDirty();
@@ -55,4 +58,8 @@ protected:
 	USkeletalMesh* SkeletalMesh = nullptr;
 	TArray<UMaterialInterface*> MaterialSlots;
 	TArray<UMaterialInstanceDynamic*> DynamicMaterialInstances;
+
+	// 본 Transform 배열 (현재는 BindPose 사용, 나중에 애니메이션 추가 시 수정)
+	TArray<FMatrix> BoneTransforms;
+	void CalculateBoneTransforms();
 };

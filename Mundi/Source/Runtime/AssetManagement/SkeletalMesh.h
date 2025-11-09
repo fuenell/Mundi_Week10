@@ -25,6 +25,9 @@ public:
 	FSkeletalMeshData* GetSkeletalMeshData() const { return SkeletalMeshData; }
 	const FSkeleton& GetSkeleton() const { return SkeletalMeshData->Skeleton; }
 
+	// CPU Skinning
+	void UpdateCPUSkinning(const TArray<FMatrix>& BoneTransforms, ID3D11DeviceContext* DeviceContext);
+
 private:
 	void CreateVertexBuffer(FSkeletalMeshData* InData, ID3D11Device* InDevice);
 	void CreateIndexBuffer(FSkeletalMeshData* InData, ID3D11Device* InDevice);
@@ -39,4 +42,8 @@ private:
 
 	// CPU 리소스
 	FSkeletalMeshData* SkeletalMeshData = nullptr;
+
+	// CPU Skinning용 원본 정점 데이터
+	TArray<FVertexDynamic> OriginalVertices;
+	TArray<FVertexDynamic> SkinnedVertices;
 };

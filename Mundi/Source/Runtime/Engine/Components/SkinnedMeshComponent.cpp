@@ -16,7 +16,7 @@ IMPLEMENT_CLASS(USkinnedMeshComponent)
 
 BEGIN_PROPERTIES(USkinnedMeshComponent)
 	MARK_AS_COMPONENT("스킨드 메시 컴포넌트", "스켈레탈 메시를 렌더링하는 기본 컴포넌트입니다.")
-	// ADD_PROPERTY_SKELETALMESH(USkeletalMesh*, SkeletalMesh, "Skeletal Mesh", true)
+	ADD_PROPERTY_SKELETALMESH(USkeletalMesh*, SkeletalMesh, "Skeletal Mesh", true)
 	ADD_PROPERTY_ARRAY(EPropertyType::Material, MaterialSlots, "Materials", true)
 END_PROPERTIES()
 
@@ -41,10 +41,19 @@ void USkinnedMeshComponent::ClearDynamicMaterials()
 
 void USkinnedMeshComponent::CollectMeshBatches(TArray<FMeshBatchElement>& OutMeshBatchElements, const FSceneView* View)
 {
+	// ShowFlag 체크
+	if (View && View->RenderSettings && !View->RenderSettings->IsShowFlagEnabled(EEngineShowFlags::SF_SkeletalMeshes))
+	{
+		return;
+	}
+
 	if (!SkeletalMesh || !SkeletalMesh->GetSkeletalMeshData())
 	{
 		return;
 	}
+
+	// CPU Skinning 업데이트 (DeviceContext는 나중에 전달받도록 수정 필요)
+	// UpdateSkinning(DeviceContext);
 
 	// 스켈레탈 메시는 섹션이 없으므로 하나의 배치로 처리
 	auto DetermineMaterialAndShader = [&](uint32 SectionIndex) -> TPair<UMaterialInterface*, UShader*>
@@ -346,6 +355,58 @@ void USkinnedMeshComponent::DuplicateSubObjects()
 			MaterialSlots[i] = NewMID;
 		}
 	}
+}
+
+void USkinnedMeshComponent::CalculateBoneTransforms()
+{
+	if (!SkeletalMesh || !SkeletalMesh->GetSkeletalMeshData())
+	{
+		return;
+	}
+
+	const FSkeleton& Skeleton = SkeletalMesh->GetSkeleton();
+	const TArray<FBoneInfo>& Bones = Skeleton.Bones;
+
+	BoneTransforms.SetNum(Bones.Num());
+
+	// 각 본의 Transform 계산
+	for (int32 BoneIndex = 0; BoneIndex < Bones.Num(); ++BoneIndex)
+	{
+		const FBoneInfo& Bone = Bones[BoneIndex];
+
+		// DirectX::XMFLOAT4X4를 FMatrix로 변환
+		FMatrix BindPoseMatrix;
+		for (int32 Row = 0; Row < 4; ++Row)
+		{
+			for (int32 Col = 0; Col < 4; ++Col)
+			{
+				BindPoseMatrix.M[Row][Col] = Bone.GlobalBindPose.m[Row][Col];
+			}
+		}
+
+		// BindPose의 역행렬 계산
+		FMatrix InvBindPose = BindPoseMatrix.InverseAffine();
+
+		// 현재는 BindPose만 사용 (애니메이션 추가 시 수정)
+		FMatrix CurrentTransform = BindPoseMatrix;
+
+		// 최종 Transform = InvBindPose * CurrentTransform
+		BoneTransforms[BoneIndex] = InvBindPose * CurrentTransform;
+	}
+}
+
+void USkinnedMeshComponent::UpdateSkinning(ID3D11DeviceContext* DeviceContext)
+{
+	if (!SkeletalMesh || !DeviceContext)
+	{
+		return;
+	}
+
+	// 본 Transform 계산
+	CalculateBoneTransforms();
+
+	// CPU Skinning 수행
+	SkeletalMesh->UpdateCPUSkinning(BoneTransforms, DeviceContext);
 }
 
 void USkinnedMeshComponent::Serialize(const bool bInIsLoading, JSON& InOutHandle)

@@ -380,6 +380,7 @@
     <ClCompile Include="Source\Runtime\Engine\GameFramework\FakeSpotLightActor.cpp" />
     <ClCompile Include="Source\Runtime\Engine\GameFramework\Level.cpp" />
     <ClCompile Include="Source\Runtime\Engine\GameFramework\StaticMeshActor.cpp" />
+    <ClCompile Include="Source\Runtime\Engine\GameFramework\SkeletalMeshActor.cpp" />
     <ClCompile Include="Source\Runtime\Engine\GameFramework\World.cpp" />
     <ClCompile Include="Source\Runtime\Engine\GameFramework\WorldPartitionManager.cpp" />
     <ClCompile Include="Source\Runtime\Engine\Spatial\BVHierarchy.cpp" />
@@ -418,6 +419,7 @@
     <ClCompile Include="Source\Slate\Windows\ControlPanelWindow.cpp" />
     <ClCompile Include="Source\Slate\Windows\ExperimentalFeatureWindow.cpp" />
     <ClCompile Include="Source\Slate\Windows\PropertyWindow.cpp" />
+    <ClCompile Include="Source\Slate\Windows\SkeletalMeshViewerWindow.cpp" />
     <ClCompile Include="Source\Slate\Windows\SceneWindow.cpp" />
     <ClCompile Include="Source\Slate\Windows\SControlPanel.cpp" />
     <ClCompile Include="Source\Slate\Windows\SDetailsWindow.cpp" />
@@ -695,6 +697,7 @@
     <ClInclude Include="Source\Runtime\Engine\GameFramework\FakeSpotLightActor.h" />
     <ClInclude Include="Source\Runtime\Engine\GameFramework\Level.h" />
     <ClInclude Include="Source\Runtime\Engine\GameFramework\StaticMeshActor.h" />
+    <ClInclude Include="Source\Runtime\Engine\GameFramework\SkeletalMeshActor.h" />
     <ClInclude Include="Source\Runtime\Engine\GameFramework\World.h" />
     <ClInclude Include="Source\Runtime\Engine\Spatial\BVHierarchy.h" />
     <ClInclude Include="Source\Runtime\Engine\Spatial\MeshBVH.h" />
@@ -735,6 +738,7 @@
     <ClInclude Include="Source\Slate\Windows\ControlPanelWindow.h" />
     <ClInclude Include="Source\Slate\Windows\ExperimentalFeatureWindow.h" />
     <ClInclude Include="Source\Slate\Windows\PropertyWindow.h" />
+    <ClInclude Include="Source\Slate\Windows\SkeletalMeshViewerWindow.h" />
     <ClInclude Include="Source\Slate\Windows\SceneWindow.h" />
     <ClInclude Include="Source\Slate\Windows\SControlPanel.h" />
     <ClInclude Include="Source\Slate\Windows\SDetailsWindow.h" />

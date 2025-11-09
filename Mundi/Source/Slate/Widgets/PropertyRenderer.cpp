@@ -7,20 +7,26 @@
 #include "ResourceManager.h"
 #include "Texture.h"
 #include "StaticMesh.h"
+#include "SkeletalMesh.h"
 #include "Material.h"
 #include "BillboardComponent.h"
 #include "DecalComponent.h"
 #include "StaticMeshComponent.h"
+#include "SkinnedMeshComponent.h"
 #include "LightComponentBase.h"
 #include "LightComponent.h"
 #include "PointLightComponent.h"
 #include "SpotLightComponent.h"
 #include "PlatformProcess.h"
 #include "ImGui/imgui_curve.hpp"
+#include "Windows/SkeletalMeshViewerWindow.h"
+#include "UIManager.h"
 
 // 정적 멤버 변수 초기화
 TArray<FString> UPropertyRenderer::CachedStaticMeshPaths;
 TArray<const char*> UPropertyRenderer::CachedStaticMeshItems;
+TArray<FString> UPropertyRenderer::CachedSkeletalMeshPaths;
+TArray<const char*> UPropertyRenderer::CachedSkeletalMeshItems;
 TArray<FString> UPropertyRenderer::CachedMaterialPaths;
 TArray<const char*> UPropertyRenderer::CachedMaterialItems;
 TArray<FString> UPropertyRenderer::CachedShaderPaths;
@@ -83,6 +89,10 @@ bool UPropertyRenderer::RenderProperty(const FProperty& Property, void* ObjectIn
 
 	case EPropertyType::StaticMesh:
 		bChanged = RenderStaticMeshProperty(Property, ObjectInstance);
+		break;
+
+	case EPropertyType::SkeletalMesh:
+		bChanged = RenderSkeletalMeshProperty(Property, ObjectInstance);
 		break;
 
 	case EPropertyType::Material:
@@ -297,7 +307,19 @@ void UPropertyRenderer::CacheResources()
 		CachedStaticMeshItems.Insert("None", 0);
 	}
 
-	// 2. 머티리얼
+	// 2. 스켈레탈 메시
+	if (CachedSkeletalMeshPaths.IsEmpty() && CachedSkeletalMeshItems.IsEmpty())
+	{
+		CachedSkeletalMeshPaths = ResMgr.GetAllFilePaths<USkeletalMesh>();
+		for (const FString& path : CachedSkeletalMeshPaths)
+		{
+			CachedSkeletalMeshItems.push_back(path.c_str());
+		}
+		CachedSkeletalMeshPaths.Insert("", 0);
+		CachedSkeletalMeshItems.Insert("None", 0);
+	}
+
+	// 3. 머티리얼
 	if (CachedMaterialPaths.IsEmpty() && CachedTexturePaths.IsEmpty())
 	{
 		CachedMaterialPaths = ResMgr.GetAllFilePaths<UMaterial>();
@@ -376,6 +398,8 @@ void UPropertyRenderer::ClearResourcesCache()
 {
 	CachedStaticMeshPaths.Empty();
 	CachedStaticMeshItems.Empty();
+	CachedSkeletalMeshPaths.Empty();
+	CachedSkeletalMeshItems.Empty();
 	CachedMaterialPaths.Empty();
 	CachedMaterialItems.Empty();
 	CachedShaderPaths.Empty();
@@ -1053,6 +1077,80 @@ bool UPropertyRenderer::RenderStaticMeshProperty(const FProperty& Prop, void* In
 	}
 
 	return false;
+}
+
+bool UPropertyRenderer::RenderSkeletalMeshProperty(const FProperty& Prop, void* Instance)
+{
+	USkeletalMesh** MeshPtr = Prop.GetValuePtr<USkeletalMesh*>(Instance);
+
+	FString CurrentPath;
+	if (*MeshPtr)
+	{
+		CurrentPath = (*MeshPtr)->GetFilePath();
+	}
+
+	if (CachedSkeletalMeshPaths.empty())
+	{
+		ImGui::Text("%s: <No Skeletal Meshes>", Prop.Name);
+		return false;
+	}
+
+	int SelectedIdx = -1;
+	for (int i = 0; i < static_cast<int>(CachedSkeletalMeshPaths.size()); ++i)
+	{
+		if (CachedSkeletalMeshPaths[i] == CurrentPath)
+		{
+			SelectedIdx = i;
+			break;
+		}
+	}
+
+	bool bChanged = false;
+
+	ImGui::SetNextItemWidth(200);
+	if (ImGui::Combo(Prop.Name, &SelectedIdx, CachedSkeletalMeshItems.data(), static_cast<int>(CachedSkeletalMeshItems.size())))
+	{
+		if (SelectedIdx >= 0 && SelectedIdx < static_cast<int>(CachedSkeletalMeshPaths.size()))
+		{
+			// 컴포넌트별 Setter 호출
+			UObject* Object = static_cast<UObject*>(Instance);
+			if (USkinnedMeshComponent* SkinnedMeshComponent = Cast<USkinnedMeshComponent>(Object))
+			{
+				SkinnedMeshComponent->SetSkeletalMesh(CachedSkeletalMeshPaths[SelectedIdx]);
+			}
+			else
+			{
+				*MeshPtr = UResourceManager::GetInstance().Load<USkeletalMesh>(CachedSkeletalMeshPaths[SelectedIdx]);
+			}
+			bChanged = true;
+		}
+	}
+
+	// 닫힌 콤보박스 '텍스트' 부분에 마우스를 올렸을 때 전체 경로 툴팁
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::BeginTooltip();
+		ImGui::TextUnformatted(CurrentPath.c_str());
+		ImGui::EndTooltip();
+	}
+
+	// "Open Viewer" 버튼 추가
+	ImGui::SameLine();
+	if (ImGui::Button("Open Viewer"))
+	{
+		if (*MeshPtr)
+		{
+			// SkeletalMeshViewerWindow 생성
+			USkeletalMeshViewerWindow* ViewerWindow = new USkeletalMeshViewerWindow();
+			ViewerWindow->Initialize();
+			ViewerWindow->SetSkeletalMesh(*MeshPtr);
+
+			// UIManager에 등록
+			UUIManager::GetInstance().RegisterUIWindow(ViewerWindow);
+		}
+	}
+
+	return bChanged;
 }
 
 bool UPropertyRenderer::RenderMaterialProperty(const FProperty& Prop, void* Instance)
