@@ -114,12 +114,27 @@ void FFbxImporter::ConvertSceneUnit(float ScaleFactor)
 		return;
 
 	FbxSystemUnit sceneUnit = Scene->GetGlobalSettings().GetSystemUnit();
-	FbxSystemUnit targetUnit(ScaleFactor);
 
-	if (sceneUnit != targetUnit)
+	// Unreal Engine 방식: Scene Unit을 자동으로 m (meter) 단위로 변환
+	// FBX 파일은 보통 cm 단위로 저장됨 (100cm = 1m)
+	if (sceneUnit != FbxSystemUnit::m)
 	{
-		UE_LOG("[FBX] Converting scene unit (scale factor: %.2f)", ScaleFactor);
-		targetUnit.ConvertScene(Scene);
+		double sceneScale = sceneUnit.GetScaleFactor();
+		UE_LOG("[FBX] Scene uses non-meter unit (scale: %.6f). Converting to meters...", sceneScale);
+		FbxSystemUnit::m.ConvertScene(Scene);
+		UE_LOG("[FBX] Scene unit converted to meters (1.0)");
+	}
+	else
+	{
+		UE_LOG("[FBX] Scene already uses meter unit (1.0)");
+	}
+
+	// 추가 사용자 지정 스케일 적용
+	if (ScaleFactor != 1.0f)
+	{
+		FbxSystemUnit customUnit(ScaleFactor);
+		UE_LOG("[FBX] Applying additional custom scale: %.2f", ScaleFactor);
+		customUnit.ConvertScene(Scene);
 	}
 }
 
@@ -187,16 +202,15 @@ USkeletalMesh* FFbxImporter::ImportSkeletalMesh(const FString& FilePath, const F
 		return nullptr;
 	}
 
-	// 2. 좌표계 변환
+	// 2. 단위 변환 (먼저 수행 - Unreal Engine 방식)
+	// ConvertSceneUnit()은 자동으로 Scene Unit을 m로 변환하고,
+	// 필요시 추가 사용자 지정 스케일을 적용
+	ConvertSceneUnit(CurrentOptions.ImportScale);
+
+	// 3. 좌표계 변환 (Unit 변환 이후 수행)
 	if (CurrentOptions.bConvertScene)
 	{
 		ConvertScene();
-	}
-
-	// 3. 단위 변환
-	if (CurrentOptions.ImportScale != 1.0f)
-	{
-		ConvertSceneUnit(CurrentOptions.ImportScale);
 	}
 
 	// 4. Scene 전처리 (Triangulate, 중복 제거 등)
@@ -242,22 +256,16 @@ USkeletalMesh* FFbxImporter::ImportSkeletalMesh(const FString& FilePath, const F
 		return nullptr;
 	}
 
-	// 9. Skin Weights 추출
-	// 주의: 현재 구현은 PoC 수준으로, 추가 리팩토링이 필요합니다
+	// 9. Skin Weights 및 Bind Pose 추출
+	// ExtractSkinWeights()에서 FbxCluster를 통해 Inverse Bind Pose도 함께 추출
 	if (!ExtractSkinWeights(meshNode->GetMesh(), skeletalMesh))
 	{
-		SetError("Failed to extract skin weights");
+		SetError("Failed to extract skin weights and bind pose");
 		return nullptr;
 	}
 
-	// 10. Bind Pose 추출
-	if (!ExtractBindPose(Scene, skeleton))
-	{
-		SetError("Failed to extract bind pose");
-		return nullptr;
-	}
-
-	// 11. GPU 리소스 생성 (Vertex Buffer, Index Buffer)
+	// 10. GPU 리소스 생성 (Dynamic Vertex Buffer, Index Buffer)
+	// CPU Skinning을 위해 Dynamic Buffer 사용
 	ID3D11Device* Device = UResourceManager::GetInstance().GetDevice();
 	if (!Device)
 	{
@@ -265,13 +273,13 @@ USkeletalMesh* FFbxImporter::ImportSkeletalMesh(const FString& FilePath, const F
 		return nullptr;
 	}
 
-	if (!skeletalMesh->CreateGPUResources(Device))
+	if (!skeletalMesh->CreateDynamicGPUResources(Device))
 	{
-		SetError("Failed to create GPU resources (Vertex/Index buffers)");
+		SetError("Failed to create Dynamic GPU resources (Vertex/Index buffers)");
 		return nullptr;
 	}
 
-	UE_LOG("[FBX] ImportSkeletalMesh: Completed successfully");
+	UE_LOG("[FBX] ImportSkeletalMesh: Completed successfully (Dynamic Buffer for CPU Skinning)");
 
 	return skeletalMesh;
 }
@@ -598,6 +606,19 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkelet
 	int32 clusterCount = fbxSkin->GetClusterCount();
 	UE_LOG("[FBX] Skin has %d clusters (bones)", clusterCount);
 
+	// IMPORTANT: Geometry Transform 추출 (Unreal Engine 방식)
+	// Mesh Node의 Geometric Translation/Rotation/Scaling
+	FbxNode* meshNode = fbxMesh->GetNode();
+	FbxVector4 geoTranslation = meshNode->GetGeometricTranslation(FbxNode::eSourcePivot);
+	FbxVector4 geoRotation = meshNode->GetGeometricRotation(FbxNode::eSourcePivot);
+	FbxVector4 geoScaling = meshNode->GetGeometricScaling(FbxNode::eSourcePivot);
+	FbxAMatrix geometryTransform(geoTranslation, geoRotation, geoScaling);
+
+	UE_LOG("[FBX] Geometry Transform - T:(%.3f, %.3f, %.3f) R:(%.3f, %.3f, %.3f) S:(%.3f, %.3f, %.3f)",
+		geoTranslation[0], geoTranslation[1], geoTranslation[2],
+		geoRotation[0], geoRotation[1], geoRotation[2],
+		geoScaling[0], geoScaling[1], geoScaling[2]);
+
 	// Control Point → Bone Influences 매핑
 	// FBX는 Control Point 기준으로 Bone Weight를 저장
 	// 하지만 우리는 Polygon Vertex 기준으로 저장해야 함
@@ -634,6 +655,103 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkelet
 			UE_LOG("[FBX] Warning: Bone '%s' not found in skeleton", boneName.c_str());
 			continue;
 		}
+
+		// CRITICAL FIX: ConvertScene() 후의 Transform 사용
+		// cluster->GetTransformLinkMatrix()는 ConvertScene() 이전의 원본 데이터를 반환
+		// 따라서 Node의 EvaluateGlobalTransform()을 사용해야 함
+		// 이것은 ConvertScene() 적용 후의 최종 Transform을 반환
+		FbxAMatrix transformLinkMatrix = linkNode->EvaluateGlobalTransform();  // Bone Global (ConvertScene 후)
+		FbxAMatrix transformMatrix = meshNode->EvaluateGlobalTransform();      // Mesh Global (ConvertScene 후)
+
+		// 디버그: 첫 번째 Bone의 원본 Cluster Transform 출력
+		if (boneIndex == 0)
+		{
+			UE_LOG("[FBX DEBUG] === First Bone Cluster Transform Analysis ===");
+			UE_LOG("[FBX DEBUG] Bone Name: %s", boneName.c_str());
+
+			// TransformLinkMatrix (Bone Global Transform) 출력
+			UE_LOG("[FBX DEBUG] TransformLinkMatrix (Bone Global):");
+			for (int row = 0; row < 4; row++)
+			{
+				UE_LOG("[FBX DEBUG]   Row %d: (%.6f, %.6f, %.6f, %.6f)",
+					row,
+					transformLinkMatrix.Get(row, 0),
+					transformLinkMatrix.Get(row, 1),
+					transformLinkMatrix.Get(row, 2),
+					transformLinkMatrix.Get(row, 3));
+			}
+
+			// TransformMatrix (Mesh Global Transform) 출력
+			UE_LOG("[FBX DEBUG] TransformMatrix (Mesh Global):");
+			for (int row = 0; row < 4; row++)
+			{
+				UE_LOG("[FBX DEBUG]   Row %d: (%.6f, %.6f, %.6f, %.6f)",
+					row,
+					transformMatrix.Get(row, 0),
+					transformMatrix.Get(row, 1),
+					transformMatrix.Get(row, 2),
+					transformMatrix.Get(row, 3));
+			}
+		}
+
+		// Global Bind Pose Matrix 저장 (CPU Skinning에서 직접 사용)
+		FMatrix globalBindPoseMatrix = ConvertFbxMatrix(FbxMatrix(transformLinkMatrix));
+		skeleton->SetGlobalBindPoseMatrix(boneIndex, globalBindPoseMatrix);
+
+		// 디버그: 변환된 GlobalBindPoseMatrix 출력
+		if (boneIndex == 0)
+		{
+			UE_LOG("[FBX DEBUG] After ConvertFbxMatrix - GlobalBindPoseMatrix:");
+			for (int row = 0; row < 4; row++)
+			{
+				UE_LOG("[FBX DEBUG]   Row %d: (%.6f, %.6f, %.6f, %.6f)",
+					row,
+					globalBindPoseMatrix.M[row][0],
+					globalBindPoseMatrix.M[row][1],
+					globalBindPoseMatrix.M[row][2],
+					globalBindPoseMatrix.M[row][3]);
+			}
+		}
+
+		// Inverse Bind Pose Matrix 계산 (Unreal Engine 공식)
+		// InverseBindPose = (BoneGlobalTransform)^-1 × MeshGlobalTransform × GeometryTransform
+		// GeometryTransform은 Mesh Node의 Pivot Offset을 고려
+		// 이것은 Vertex를 Mesh Space → Bone Space로 변환하는 Matrix
+		FbxAMatrix inverseBindMatrix = transformLinkMatrix.Inverse() * transformMatrix * geometryTransform;
+
+		// Skeleton에 Inverse Bind Pose Matrix 설정
+		FMatrix inverseBindPoseMatrix = ConvertFbxMatrix(FbxMatrix(inverseBindMatrix));
+		skeleton->SetInverseBindPoseMatrix(boneIndex, inverseBindPoseMatrix);
+
+		// 디버그: 변환된 InverseBindPoseMatrix 출력
+		if (boneIndex == 0)
+		{
+			UE_LOG("[FBX DEBUG] After ConvertFbxMatrix - InverseBindPoseMatrix:");
+			for (int row = 0; row < 4; row++)
+			{
+				UE_LOG("[FBX DEBUG]   Row %d: (%.6f, %.6f, %.6f, %.6f)",
+					row,
+					inverseBindPoseMatrix.M[row][0],
+					inverseBindPoseMatrix.M[row][1],
+					inverseBindPoseMatrix.M[row][2],
+					inverseBindPoseMatrix.M[row][3]);
+			}
+
+			// InverseBindPose × GlobalBindPose 계산 (이론상 Identity여야 함)
+			FMatrix testMatrix = inverseBindPoseMatrix * globalBindPoseMatrix;
+			UE_LOG("[FBX DEBUG] InverseBindPose × GlobalBindPose (should be Identity):");
+			for (int row = 0; row < 4; row++)
+			{
+				UE_LOG("[FBX DEBUG]   Row %d: (%.6f, %.6f, %.6f, %.6f)",
+					row,
+					testMatrix.M[row][0],
+					testMatrix.M[row][1],
+					testMatrix.M[row][2],
+					testMatrix.M[row][3]);
+			}
+		}
+
+		UE_LOG("[FBX] Set bind poses for bone [%d]: %s (Global + Inverse from Cluster)", boneIndex, boneName.c_str());
 
 		// Cluster의 Control Point Indices와 Weights 가져오기
 		int32* controlPointIndices = cluster->GetControlPointIndices();
@@ -782,14 +900,17 @@ bool FFbxImporter::ExtractBindPose(FbxScene* Scene, USkeleton* OutSkeleton)
 		}
 
 		// Bind Pose Matrix 가져오기
-		FbxMatrix fbxBindMatrix = bindPose->GetMatrix(i);
+		// IMPORTANT: ConvertScene() 적용 후의 Transform 사용
+		// bindPose->GetMatrix(i)는 변환 전 원본 데이터이므로 사용하지 않음
+		// node->EvaluateGlobalTransform()은 ConvertScene() 적용 후의 Global Transform
+		FbxAMatrix fbxBindMatrix = node->EvaluateGlobalTransform();
 
 		// Inverse Bind Pose Matrix 계산
 		// Skinning 시 Vertex를 Bone Space로 변환하는데 사용
-		FbxMatrix fbxInverseBindMatrix = fbxBindMatrix.Inverse();
+		FbxAMatrix fbxInverseBindMatrix = fbxBindMatrix.Inverse();
 
-		// FbxMatrix를 Mundi FMatrix로 변환 (Row-Major)
-		FMatrix inverseBindPoseMatrix = ConvertFbxMatrix(fbxInverseBindMatrix);
+		// FbxAMatrix를 Mundi FMatrix로 변환 (Row-Major)
+		FMatrix inverseBindPoseMatrix = ConvertFbxMatrix(FbxMatrix(fbxInverseBindMatrix));
 
 		// Skeleton에 Inverse Bind Pose Matrix 설정
 		OutSkeleton->SetInverseBindPoseMatrix(boneIndex, inverseBindPoseMatrix);

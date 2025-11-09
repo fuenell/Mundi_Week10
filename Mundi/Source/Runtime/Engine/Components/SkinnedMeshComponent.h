@@ -75,6 +75,15 @@ public:
 	void DuplicateSubObjects() override;
 	DECLARE_DUPLICATE(USkinnedMeshComponent)
 
+	// === Component Lifecycle ===
+
+	/**
+	 * 매 프레임 업데이트
+	 * Bone Transform 업데이트 및 CPU Skinning 수행
+	 * @param DeltaTime - 프레임 시간 (초)
+	 */
+	void TickComponent(float DeltaTime) override;
+
 	// === Bone Transform 관리 (CPU Skinning용) ===
 
 	/**
@@ -96,6 +105,26 @@ public:
 	 */
 	void SetBoneTransform(int32 BoneIndex, const FTransform& Transform);
 
+	// === CPU Skinning 관리 ===
+
+	/**
+	 * CPU Skinning 수행
+	 * Bone Transforms를 사용하여 Vertex 위치 계산
+	 */
+	void PerformCPUSkinning();
+
+	/**
+	 * CPU Skinning 활성화/비활성화
+	 * @param bEnable - true인 경우 활성화
+	 */
+	void SetEnableCPUSkinning(bool bEnable) { bEnableCPUSkinning = bEnable; }
+
+	/**
+	 * CPU Skinning 활성화 여부 확인
+	 * @return CPU Skinning 활성화 여부
+	 */
+	bool IsCPUSkinningEnabled() const { return bEnableCPUSkinning; }
+
 protected:
 	void OnTransformUpdated() override;
 	void MarkWorldPartitionDirty();
@@ -115,4 +144,12 @@ protected:
 
 	// Bone Transform 업데이트 필요 여부
 	bool bNeedsBoneTransformUpdate = true;
+
+	// === CPU Skinning 데이터 ===
+
+	// CPU Skinning 결과 (GPU 전송용 - FNormalVertex 형식)
+	TArray<FNormalVertex> SkinnedVertices;
+
+	// CPU Skinning 활성화 여부
+	bool bEnableCPUSkinning = true;
 };

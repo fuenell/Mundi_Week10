@@ -18,6 +18,11 @@ struct FBoneInfo
 	// 초기 상태에서 부모 본 기준의 상대 Transform
 	FTransform BindPoseTransform;
 
+	// Global Bind Pose Matrix (Global Space)
+	// FBX Cluster의 GetTransformLinkMatrix()에서 추출
+	// CPU Skinning 시 이 값을 직접 사용
+	FMatrix GlobalBindPoseMatrix;
+
 	// Inverse Bind Pose Matrix (Global Space)
 	// Skinning 시 사용 (Vertex를 Bone Space로 변환)
 	FMatrix InverseBindPoseMatrix;
@@ -27,6 +32,7 @@ struct FBoneInfo
 		: Name("")
 		, ParentIndex(-1)
 		, BindPoseTransform(FTransform())
+		, GlobalBindPoseMatrix(FMatrix::Identity())
 		, InverseBindPoseMatrix(FMatrix::Identity())
 	{
 	}
@@ -36,6 +42,7 @@ struct FBoneInfo
 		: Name(InName)
 		, ParentIndex(InParentIndex)
 		, BindPoseTransform(FTransform())
+		, GlobalBindPoseMatrix(FMatrix::Identity())
 		, InverseBindPoseMatrix(FMatrix::Identity())
 	{
 	}
@@ -117,6 +124,14 @@ public:
 	 * @param Transform - Bind Pose Transform
 	 */
 	void SetBindPoseTransform(int32 BoneIndex, const FTransform& Transform);
+
+	/**
+	 * Bone의 Global Bind Pose Matrix 설정 (Global Space)
+	 * FBX Cluster의 GetTransformLinkMatrix()에서 추출
+	 * @param BoneIndex - Bone 인덱스
+	 * @param Matrix - Global Bind Pose Matrix
+	 */
+	void SetGlobalBindPoseMatrix(int32 BoneIndex, const FMatrix& Matrix);
 
 	/**
 	 * Bone의 Inverse Bind Pose Matrix 설정 (Global Space)

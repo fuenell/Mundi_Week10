@@ -104,6 +104,17 @@ void USkeleton::SetBindPoseTransform(int32 BoneIndex, const FTransform& Transfor
 	Bones[BoneIndex].BindPoseTransform = Transform;
 }
 
+void USkeleton::SetGlobalBindPoseMatrix(int32 BoneIndex, const FMatrix& Matrix)
+{
+	if (BoneIndex < 0 || BoneIndex >= static_cast<int32>(Bones.size()))
+	{
+		UE_LOG("[Skeleton] Invalid bone index for SetGlobalBindPoseMatrix: %d", BoneIndex);
+		return;
+	}
+
+	Bones[BoneIndex].GlobalBindPoseMatrix = Matrix;
+}
+
 void USkeleton::SetInverseBindPoseMatrix(int32 BoneIndex, const FMatrix& Matrix)
 {
 	if (BoneIndex < 0 || BoneIndex >= static_cast<int32>(Bones.size()))

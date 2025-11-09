@@ -166,10 +166,38 @@ public:
 
 	/**
 	 * GPU 버퍼 생성 (Vertex Buffer, Index Buffer)
+	 * Static Buffer (Bind Pose 렌더링용)
 	 * @param Device - D3D11 Device
 	 * @return 성공 여부
 	 */
 	bool CreateGPUResources(ID3D11Device* Device);
+
+	/**
+	 * Dynamic GPU 버퍼 생성 (CPU Skinning용)
+	 * @param Device - D3D11 Device
+	 * @return 성공 여부
+	 */
+	bool CreateDynamicGPUResources(ID3D11Device* Device);
+
+	/**
+	 * Vertex Buffer 업데이트 (Dynamic Buffer 전용)
+	 * @param Context - D3D11 Device Context
+	 * @param NewVertices - 새로운 Vertex 데이터
+	 * @return 성공 여부
+	 */
+	bool UpdateVertexBuffer(ID3D11DeviceContext* Context, const TArray<FNormalVertex>& NewVertices);
+
+	/**
+	 * Dynamic Buffer 사용 여부 설정
+	 * @param bDynamic - true인 경우 Dynamic Buffer 사용
+	 */
+	void SetUseDynamicBuffer(bool bDynamic) { bUseDynamicBuffer = bDynamic; }
+
+	/**
+	 * Dynamic Buffer 사용 여부 확인
+	 * @return Dynamic Buffer 사용 여부
+	 */
+	bool UsesDynamicBuffer() const { return bUseDynamicBuffer; }
 
 	/**
 	 * Vertex Buffer 가져오기
@@ -224,4 +252,7 @@ private:
 	ID3D11Buffer* IndexBuffer = nullptr;
 	uint32 VertexCount = 0;
 	uint32 IndexCount = 0;
+
+	// Dynamic Buffer 사용 여부 (CPU Skinning용)
+	bool bUseDynamicBuffer = false;
 };

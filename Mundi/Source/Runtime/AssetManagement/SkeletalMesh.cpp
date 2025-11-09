@@ -29,13 +29,13 @@ bool USkeletalMesh::CreateGPUResources(ID3D11Device* Device)
 {
 	if (!Device)
 	{
-		OutputDebugStringA("[SkeletalMesh] CreateGPUResources failed: Device is null\n");
+		UE_LOG("[error] CreateGPUResources failed: Device is null");
 		return false;
 	}
 
 	if (Vertices.empty() || Indices.empty())
 	{
-		OutputDebugStringA("[SkeletalMesh] CreateGPUResources failed: No vertex/index data\n");
+		UE_LOG("[error] CreateGPUResources failed: No vertex/index data");
 		return false;
 	}
 
@@ -64,36 +64,36 @@ bool USkeletalMesh::CreateGPUResources(ID3D11Device* Device)
 	}
 
 	// 2. Vertex Buffer 생성 (FNormalVertex 기준)
-	D3D11_BUFFER_DESC vbDesc = {};
-	vbDesc.Usage = D3D11_USAGE_DEFAULT;
-	vbDesc.ByteWidth = sizeof(FNormalVertex) * VertexCount;
-	vbDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-	vbDesc.CPUAccessFlags = 0;
+	D3D11_BUFFER_DESC VbDesc = {};
+	VbDesc.Usage = D3D11_USAGE_DEFAULT;
+	VbDesc.ByteWidth = sizeof(FNormalVertex) * VertexCount;
+	VbDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+	VbDesc.CPUAccessFlags = 0;
 
-	D3D11_SUBRESOURCE_DATA vbData = {};
-	vbData.pSysMem = GPUVertices.data();
+	D3D11_SUBRESOURCE_DATA VbData = {};
+	VbData.pSysMem = GPUVertices.data();
 
-	HRESULT hr = Device->CreateBuffer(&vbDesc, &vbData, &VertexBuffer);
-	if (FAILED(hr))
+	HRESULT Hr = Device->CreateBuffer(&VbDesc, &VbData, &VertexBuffer);
+	if (FAILED(Hr))
 	{
-		OutputDebugStringA("[SkeletalMesh] Failed to create Vertex Buffer\n");
+		UE_LOG("[error] Failed to create Vertex Buffer");
 		return false;
 	}
 
 	// 3. Index Buffer 생성
-	D3D11_BUFFER_DESC ibDesc = {};
-	ibDesc.Usage = D3D11_USAGE_DEFAULT;
-	ibDesc.ByteWidth = sizeof(uint32) * IndexCount;
-	ibDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
-	ibDesc.CPUAccessFlags = 0;
+	D3D11_BUFFER_DESC IbDesc = {};
+	IbDesc.Usage = D3D11_USAGE_DEFAULT;
+	IbDesc.ByteWidth = sizeof(uint32) * IndexCount;
+	IbDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+	IbDesc.CPUAccessFlags = 0;
 
-	D3D11_SUBRESOURCE_DATA ibData = {};
-	ibData.pSysMem = Indices.data();
+	D3D11_SUBRESOURCE_DATA IbData = {};
+	IbData.pSysMem = Indices.data();
 
-	hr = Device->CreateBuffer(&ibDesc, &ibData, &IndexBuffer);
-	if (FAILED(hr))
+	Hr = Device->CreateBuffer(&IbDesc, &IbData, &IndexBuffer);
+	if (FAILED(Hr))
 	{
-		OutputDebugStringA("[SkeletalMesh] Failed to create Index Buffer\n");
+		UE_LOG("[error] Failed to create Index Buffer");
 		ReleaseGPUResources();
 		return false;
 	}
@@ -101,6 +101,120 @@ bool USkeletalMesh::CreateGPUResources(ID3D11Device* Device)
 	UE_LOG("[SkeletalMesh] GPU resources created successfully (%u vertices, %u indices)",
 		VertexCount, IndexCount);
 	UE_LOG("[SkeletalMesh] Dual-buffer approach: CPU (80 bytes/vertex), GPU (64 bytes/vertex)");
+
+	return true;
+}
+
+bool USkeletalMesh::CreateDynamicGPUResources(ID3D11Device* Device)
+{
+	if (!Device)
+	{
+		UE_LOG("[error] CreateDynamicGPUResources: Device is null");
+		return false;
+	}
+
+	if (Vertices.empty() || Indices.empty())
+	{
+		UE_LOG("[error] CreateDynamicGPUResources: No vertex/index data");
+		return false;
+	}
+
+	// 기존 리소스 정리
+	ReleaseGPUResources();
+
+	// GPU Vertices 준비 (초기 데이터 - Bind Pose)
+	TArray<FNormalVertex> GPUVertices;
+	GPUVertices.reserve(VertexCount);
+
+	for (const FSkinnedVertex& SkinnedVert : Vertices)
+	{
+		FNormalVertex NormalVert;
+		NormalVert.pos = SkinnedVert.Position;
+		NormalVert.normal = SkinnedVert.Normal;
+		NormalVert.tex = SkinnedVert.UV;
+		NormalVert.Tangent = SkinnedVert.Tangent;
+		NormalVert.color = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
+
+		GPUVertices.push_back(NormalVert);
+	}
+
+	// Dynamic Vertex Buffer 생성
+	D3D11_BUFFER_DESC VbDesc = {};
+	VbDesc.Usage = D3D11_USAGE_DYNAMIC;              // Dynamic!
+	VbDesc.ByteWidth = sizeof(FNormalVertex) * VertexCount;
+	VbDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+	VbDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;  // CPU Write 허용
+
+	D3D11_SUBRESOURCE_DATA VbData = {};
+	VbData.pSysMem = GPUVertices.data();
+
+	HRESULT Hr = Device->CreateBuffer(&VbDesc, &VbData, &VertexBuffer);
+	if (FAILED(Hr))
+	{
+		UE_LOG("[error] Failed to create Dynamic Vertex Buffer");
+		return false;
+	}
+
+	// Index Buffer는 Static으로 유지 (변경 없음)
+	D3D11_BUFFER_DESC IbDesc = {};
+	IbDesc.Usage = D3D11_USAGE_DEFAULT;  // Static
+	IbDesc.ByteWidth = sizeof(uint32) * IndexCount;
+	IbDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+	IbDesc.CPUAccessFlags = 0;
+
+	D3D11_SUBRESOURCE_DATA IbData = {};
+	IbData.pSysMem = Indices.data();
+
+	Hr = Device->CreateBuffer(&IbDesc, &IbData, &IndexBuffer);
+	if (FAILED(Hr))
+	{
+		UE_LOG("[error] Failed to create Index Buffer");
+		ReleaseGPUResources();
+		return false;
+	}
+
+	bUseDynamicBuffer = true;
+
+	UE_LOG("[SkeletalMesh] Dynamic GPU resources created (%u vertices, %u indices)",
+		VertexCount, IndexCount);
+
+	return true;
+}
+
+bool USkeletalMesh::UpdateVertexBuffer(ID3D11DeviceContext* Context, const TArray<FNormalVertex>& NewVertices)
+{
+	if (!Context || !VertexBuffer)
+	{
+		UE_LOG("[error] UpdateVertexBuffer: Invalid context or buffer");
+		return false;
+	}
+
+	if (!bUseDynamicBuffer)
+	{
+		UE_LOG("[error] UpdateVertexBuffer: Not a dynamic buffer");
+		return false;
+	}
+
+	if (NewVertices.size() != VertexCount)
+	{
+		UE_LOG("[error] UpdateVertexBuffer: Vertex count mismatch");
+		return false;
+	}
+
+	// Map Vertex Buffer
+	D3D11_MAPPED_SUBRESOURCE MappedResource;
+	HRESULT Hr = Context->Map(VertexBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource);
+	if (FAILED(Hr))
+	{
+		UE_LOG("[error] UpdateVertexBuffer: Failed to map buffer");
+		return false;
+	}
+
+	// Vertex 데이터 복사
+	memcpy(MappedResource.pData, NewVertices.data(), sizeof(FNormalVertex) * VertexCount);
+
+	// Unmap
+	Context->Unmap(VertexBuffer, 0);
 
 	return true;
 }
