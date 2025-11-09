@@ -445,6 +445,24 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletal
 	// FBX Control Points (위치 정보)
 	FbxVector4* controlPoints = fbxMesh->GetControlPoints();
 
+	// Mesh Node의 Global Transform 가져오기 (ConvertScene 적용 후)
+	// 이것을 Vertex에 적용하여 좌표계 변환 효과를 적용
+	FbxNode* meshNode = fbxMesh->GetNode();
+	FbxAMatrix meshGlobalTransform = meshNode->EvaluateGlobalTransform();
+
+	// Geometry Transform도 함께 적용
+	FbxVector4 geoTranslation = meshNode->GetGeometricTranslation(FbxNode::eSourcePivot);
+	FbxVector4 geoRotation = meshNode->GetGeometricRotation(FbxNode::eSourcePivot);
+	FbxVector4 geoScaling = meshNode->GetGeometricScaling(FbxNode::eSourcePivot);
+	FbxAMatrix geometryTransform(geoTranslation, geoRotation, geoScaling);
+
+	// 최종 Transform = MeshGlobal × Geometry
+	FbxAMatrix totalTransform = meshGlobalTransform * geometryTransform;
+
+	// Normal/Tangent용 변환 (Translation 제외, Rotation만)
+	FbxAMatrix normalTransform = totalTransform;
+	normalTransform.SetT(FbxVector4(0, 0, 0, 0));
+
 	// Normal, UV Element 가져오기
 	FbxGeometryElementNormal* normalElement = fbxMesh->GetElementNormal();
 	FbxGeometryElementUV* uvElement = fbxMesh->GetElementUV();
@@ -472,23 +490,26 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletal
 			// Control Point Index 가져오기
 			int32 controlPointIndex = fbxMesh->GetPolygonVertex(polyIndex, vertInPoly);
 
-			// Position 추출
+			// Position 추출 및 변환 적용
 			FbxVector4 fbxPos = controlPoints[controlPointIndex];
+			FbxVector4 transformedPos = totalTransform.MultT(fbxPos);
 			vertex.Position = FVector(
-				static_cast<float>(fbxPos[0]),
-				static_cast<float>(fbxPos[1]),
-				static_cast<float>(fbxPos[2])
+				static_cast<float>(transformedPos[0]),
+				static_cast<float>(transformedPos[1]),
+				static_cast<float>(transformedPos[2])
 			);
 
-			// Normal 추출
+			// Normal 추출 및 변환 적용
 			if (normalElement)
 			{
 				FbxVector4 fbxNormal;
 				fbxMesh->GetPolygonVertexNormal(polyIndex, vertInPoly, fbxNormal);
+				FbxVector4 transformedNormal = normalTransform.MultT(fbxNormal);
+				transformedNormal.Normalize();
 				vertex.Normal = FVector(
-					static_cast<float>(fbxNormal[0]),
-					static_cast<float>(fbxNormal[1]),
-					static_cast<float>(fbxNormal[2])
+					static_cast<float>(transformedNormal[0]),
+					static_cast<float>(transformedNormal[1]),
+					static_cast<float>(transformedNormal[2])
 				);
 			}
 			else
@@ -512,7 +533,7 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletal
 				vertex.UV = FVector2D(0, 0); // Default UV
 			}
 
-			// Tangent 추출 (선택적)
+			// Tangent 추출 및 변환 적용 (선택적)
 			if (tangentElement)
 			{
 				int32 tangentIndex = 0;
@@ -526,11 +547,13 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletal
 				}
 
 				FbxVector4 fbxTangent = tangentElement->GetDirectArray().GetAt(tangentIndex);
+				FbxVector4 transformedTangent = normalTransform.MultT(fbxTangent);
+				transformedTangent.Normalize();
 				vertex.Tangent = FVector4(
-					static_cast<float>(fbxTangent[0]),
-					static_cast<float>(fbxTangent[1]),
-					static_cast<float>(fbxTangent[2]),
-					static_cast<float>(fbxTangent[3])
+					static_cast<float>(transformedTangent[0]),
+					static_cast<float>(transformedTangent[1]),
+					static_cast<float>(transformedTangent[2]),
+					static_cast<float>(fbxTangent[3])  // W 성분은 원본 유지 (handedness)
 				);
 			}
 			else
@@ -657,13 +680,12 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkelet
 		}
 
 		// CRITICAL FIX: ConvertScene() 후의 Transform 사용
-		// cluster->GetTransformLinkMatrix()는 ConvertScene() 이전의 원본 데이터를 반환
-		// 따라서 Node의 EvaluateGlobalTransform()을 사용해야 함
-		// 이것은 ConvertScene() 적용 후의 최종 Transform을 반환
+		// EvaluateGlobalTransform()은 ConvertScene() 적용 후의 최종 Transform 반환
+		// 이렇게 하면 Vertex와 Bone이 같은 좌표계를 사용하게 됨
 		FbxAMatrix transformLinkMatrix = linkNode->EvaluateGlobalTransform();  // Bone Global (ConvertScene 후)
 		FbxAMatrix transformMatrix = meshNode->EvaluateGlobalTransform();      // Mesh Global (ConvertScene 후)
 
-		// 디버그: 첫 번째 Bone의 원본 Cluster Transform 출력
+		// 디버그: 첫 번째 Bone의 변환된 Transform 출력
 		if (boneIndex == 0)
 		{
 			UE_LOG("[FBX DEBUG] === First Bone Cluster Transform Analysis ===");
@@ -713,11 +735,11 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkelet
 			}
 		}
 
-		// Inverse Bind Pose Matrix 계산 (Unreal Engine 공식)
-		// InverseBindPose = (BoneGlobalTransform)^-1 × MeshGlobalTransform × GeometryTransform
-		// GeometryTransform은 Mesh Node의 Pivot Offset을 고려
-		// 이것은 Vertex를 Mesh Space → Bone Space로 변환하는 Matrix
-		FbxAMatrix inverseBindMatrix = transformLinkMatrix.Inverse() * transformMatrix * geometryTransform;
+		// Inverse Bind Pose Matrix 계산
+		// Vertex에 이미 (MeshGlobal × Geometry) Transform을 적용했으므로
+		// InverseBindPose는 단순히 BoneGlobal의 역행렬
+		// 이렇게 하면 Bind Pose에서 InverseBindPose × BoneGlobal = Identity
+		FbxAMatrix inverseBindMatrix = transformLinkMatrix.Inverse();
 
 		// Skeleton에 Inverse Bind Pose Matrix 설정
 		FMatrix inverseBindPoseMatrix = ConvertFbxMatrix(FbxMatrix(inverseBindMatrix));
