@@ -5,6 +5,9 @@
 #include "FAudioDevice.h"
 #include <ObjManager.h>
 #include "FBXImporter.h"
+#include "SkeletalMesh.h"
+#include "SkeletalMeshComponent.h"
+#include "Actor.h"
 
 
 float UEditorEngine::ClientWidth = 1024.0f;
@@ -399,21 +402,12 @@ void UEditorEngine::EndPIE()
 void UEditorEngine::TestFBXImporter()
 {
     UE_LOG("========================================\n");
-    UE_LOG("[FBX Test] Starting FBX Importer Test...\n");
+    UE_LOG("[FBX Test] Starting FBX Skeletal Mesh Rendering Test...\n");
     UE_LOG("========================================\n");
 
-    // FBX Importer 싱글톤 가져오기
-    UFBXImporter& Importer = UFBXImporter::GetInstance();
-
-    if (!Importer.IsInitialized())
-    {
-        UE_LOG("[FBX Test Error] FBX Importer is not initialized!\n");
-        return;
-    }
-
-    // Data 폴더에서 모든 FBX 파일 찾기
-    std::filesystem::path DataPath = "Data";
-    TArray<std::filesystem::path> FBXFiles;
+    // Data 폴더에서 첫 번째 FBX 파일 찾기
+    std::filesystem::path DataPath = "Data/FBX";
+    FString FirstFBXFile;
 
     try
     {
@@ -421,7 +415,8 @@ void UEditorEngine::TestFBXImporter()
         {
             if (Entry.is_regular_file() && Entry.path().extension() == ".fbx")
             {
-                FBXFiles.push_back(Entry.path());
+                FirstFBXFile = Entry.path().string();
+                break;
             }
         }
     }
@@ -431,86 +426,64 @@ void UEditorEngine::TestFBXImporter()
         return;
     }
 
-    if (FBXFiles.empty())
+    if (FirstFBXFile.empty())
     {
-        UE_LOG("[FBX Test] No FBX files found in Data folder\n");
+        UE_LOG("[FBX Test] No FBX files found in Data/FBX folder\n");
         UE_LOG("========================================\n");
         return;
     }
 
-    UE_LOG("[FBX Test] Found %d FBX file(s) in Data folder\n\n", static_cast<int32>(FBXFiles.size()));
+    UE_LOG("[FBX Test] Found FBX file: %s\n", FirstFBXFile.c_str());
 
-    int32 SuccessCount = 0;
-    int32 FailCount = 0;
+    // USkeletalMesh 리소스 생성
+    USkeletalMesh* SkeletalMesh = ObjectFactory::NewObject<USkeletalMesh>();
+    SkeletalMesh->Load(FirstFBXFile, RHIDevice.GetDevice());
 
-    // 모든 FBX 파일 로드 테스트
-    for (const auto& FilePath : FBXFiles)
+    if (!SkeletalMesh->GetSkeletalMeshData())
     {
-        FString FilePathStr = FilePath.string();
-        UE_LOG("[FBX Test] Loading: %s\n", FilePathStr.c_str());
-
-        // 스켈레탈 메시로 로드 시도
-        FSkeletalMeshData* SkeletalMeshData = Importer.LoadFBXSkeletalMesh(FilePathStr);
-
-        if (SkeletalMeshData)
-        {
-            UE_LOG("  ✓ SUCCESS (Skeletal Mesh)!\n");
-            UE_LOG("    - Vertices: %d\n", static_cast<int32>(SkeletalMeshData->Vertices.size()));
-            UE_LOG("    - Indices: %d\n", static_cast<int32>(SkeletalMeshData->Indices.size()));
-            UE_LOG("    - Normals: %d\n", static_cast<int32>(SkeletalMeshData->Normal.size()));
-            UE_LOG("    - UVs: %d\n", static_cast<int32>(SkeletalMeshData->UV.size()));
-            UE_LOG("    - Bones: %d\n", static_cast<int32>(SkeletalMeshData->Skeleton.Bones.size()));
-            UE_LOG("    - BoneWeights: %d\n", static_cast<int32>(SkeletalMeshData->BoneWeights.size()));
-
-            // 본 정보 출력
-            if (!SkeletalMeshData->Skeleton.Bones.empty())
-            {
-                UE_LOG("    - Bone Hierarchy:\n");
-                for (size_t i = 0; i < SkeletalMeshData->Skeleton.Bones.size(); ++i)
-                {
-                    const FBoneInfo& Bone = SkeletalMeshData->Skeleton.Bones[i];
-                    UE_LOG("      [%d] %s (Parent: %d)\n",
-                        static_cast<int32>(i), Bone.Name.c_str(), Bone.ParentIndex);
-                }
-            }
-
-            // 첫 번째 정점 정보 출력
-            if (!SkeletalMeshData->Vertices.empty())
-            {
-                FVector& FirstVertex = SkeletalMeshData->Vertices[0];
-                UE_LOG("    - First vertex: (%.2f, %.2f, %.2f)\n",
-                    FirstVertex.X, FirstVertex.Y, FirstVertex.Z);
-
-                // 첫 번째 정점의 본 웨이트 출력
-                if (!SkeletalMeshData->BoneWeights.empty())
-                {
-                    const FBoneWeight& FirstWeight = SkeletalMeshData->BoneWeights[0];
-                    UE_LOG("    - First vertex bone weights:\n");
-                    for (int32 j = 0; j < 4; ++j)
-                    {
-                        if (FirstWeight.Weights[j] > 0.0f)
-                        {
-                            UE_LOG("      Bone[%d]: %.3f\n",
-                                FirstWeight.BoneIndices[j], FirstWeight.Weights[j]);
-                        }
-                    }
-                }
-            }
-
-            delete SkeletalMeshData;
-            SuccessCount++;
-        }
-        else
-        {
-            UE_LOG("  ✗ FAILED!\n");
-            FailCount++;
-        }
-        UE_LOG("\n");
+        UE_LOG("[FBX Test Error] Failed to load skeletal mesh from FBX file!\n");
+        ObjectFactory::DeleteObject(SkeletalMesh);
+        return;
     }
 
-    UE_LOG("========================================\n");
-    UE_LOG("[FBX Test] Test Complete\n");
-    UE_LOG("[FBX Test] Total: %d | Success: %d | Failed: %d\n",
-        static_cast<int32>(FBXFiles.size()), SuccessCount, FailCount);
+    const FSkeletalMeshData* MeshData = SkeletalMesh->GetSkeletalMeshData();
+    UE_LOG("[FBX Test] Skeletal Mesh Loaded Successfully!\n");
+    UE_LOG("  - Vertices: %d\n", static_cast<int32>(MeshData->Vertices.size()));
+    UE_LOG("  - Indices: %d\n", static_cast<int32>(MeshData->Indices.size()));
+    UE_LOG("  - Bones: %d\n", static_cast<int32>(MeshData->Skeleton.Bones.size()));
+    UE_LOG("\n");
+
+    // 월드에 액터 생성
+    FTransform SpawnTransform;
+    SpawnTransform.Translation = FVector(0, 0, 100);
+    SpawnTransform.Rotation = FQuat::Identity();
+    SpawnTransform.Scale3D = FVector(1, 1, 1);
+
+    AActor* TestActor = GWorld->SpawnActor<AActor>(SpawnTransform);
+    if (!TestActor)
+    {
+        UE_LOG("[FBX Test Error] Failed to spawn actor!\n");
+        ObjectFactory::DeleteObject(SkeletalMesh);
+        return;
+    }
+
+    UE_LOG("[FBX Test] Actor spawned successfully\n");
+
+    // 스켈레탈 메시 컴포넌트 생성 및 설정
+    USkeletalMeshComponent* MeshComponent = TestActor->CreateDefaultSubobject<USkeletalMeshComponent>(FName("SkeletalMeshComponent"));
+    if (!MeshComponent)
+    {
+        UE_LOG("[FBX Test Error] Failed to create skeletal mesh component!\n");
+        ObjectFactory::DeleteObject(SkeletalMesh);
+        return;
+    }
+
+    // 스켈레탈 메시 설정
+    MeshComponent->SetSkeletalMesh(SkeletalMesh);
+
+    TestActor->SetRootComponent(MeshComponent);
+
+    UE_LOG("[FBX Test] Skeletal Mesh Component created and configured!\n");
+    UE_LOG("[FBX Test] Actor should now be visible in the scene!\n");
     UE_LOG("========================================\n");
 }

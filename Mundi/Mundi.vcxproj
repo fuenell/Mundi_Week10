@@ -336,6 +336,7 @@
     <ClCompile Include="Source\Editor\SelectionManager.cpp" />
     <ClCompile Include="Source\Runtime\AssetManagement\DynamicMesh.cpp" />
     <ClCompile Include="Source\Runtime\AssetManagement\FBXImporter.cpp" />
+    <ClCompile Include="Source\Runtime\AssetManagement\SkeletalMesh.cpp" />
     <ClCompile Include="Source\Runtime\AssetManagement\Line.cpp" />
     <ClCompile Include="Source\Runtime\AssetManagement\LineDynamicMesh.cpp" />
     <ClCompile Include="Source\Runtime\AssetManagement\MeshLoader.cpp" />
@@ -370,6 +371,8 @@
     <ClCompile Include="Source\Runtime\Engine\Components\PrimitiveComponent.cpp" />
     <ClCompile Include="Source\Runtime\Engine\Components\SceneComponent.cpp" />
     <ClCompile Include="Source\Runtime\Engine\Components\StaticMeshComponent.cpp" />
+    <ClCompile Include="Source\Runtime\Engine\Components\SkinnedMeshComponent.cpp" />
+    <ClCompile Include="Source\Runtime\Engine\Components\SkeletalMeshComponent.cpp" />
     <ClCompile Include="Source\Runtime\Engine\Components\TextRenderComponent.cpp" />
     <ClCompile Include="Source\Runtime\Engine\GameFramework\CameraActor.cpp" />
     <ClCompile Include="Source\Runtime\Engine\GameFramework\DecalActor.cpp" />
@@ -639,6 +642,7 @@
     <ClInclude Include="Source\Runtime\AssetManagement\Cube.h" />
     <ClInclude Include="Source\Runtime\AssetManagement\DynamicMesh.h" />
     <ClInclude Include="Source\Runtime\AssetManagement\FBXImporter.h" />
+    <ClInclude Include="Source\Runtime\AssetManagement\SkeletalMesh.h" />
     <ClInclude Include="Source\Runtime\AssetManagement\Line.h" />
     <ClInclude Include="Source\Runtime\AssetManagement\LineDynamicMesh.h" />
     <ClInclude Include="Source\Runtime\AssetManagement\MeshLoader.h" />
@@ -682,6 +686,8 @@
     <ClInclude Include="Source\Runtime\Engine\Components\PrimitiveComponent.h" />
     <ClInclude Include="Source\Runtime\Engine\Components\SceneComponent.h" />
     <ClInclude Include="Source\Runtime\Engine\Components\StaticMeshComponent.h" />
+    <ClInclude Include="Source\Runtime\Engine\Components\SkinnedMeshComponent.h" />
+    <ClInclude Include="Source\Runtime\Engine\Components\SkeletalMeshComponent.h" />
     <ClInclude Include="Source\Runtime\Engine\Components\TextRenderComponent.h" />
     <ClInclude Include="Source\Runtime\Engine\GameFramework\CameraActor.h" />
     <ClInclude Include="Source\Runtime\Engine\GameFramework\DecalActor.h" />
