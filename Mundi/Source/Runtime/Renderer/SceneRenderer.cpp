@@ -46,6 +46,7 @@
 #include "ShadowStats.h"
 #include "PlatformTime.h"
 #include "PostProcessing/VignettePass.h"
+#include "SkeletalMeshComponent.h"
 
 FSceneRenderer::FSceneRenderer(UWorld* InWorld, FSceneView* InView, URenderer* InOwnerRenderer)
 	: World(InWorld)
@@ -585,6 +586,7 @@ void FSceneRenderer::GatherVisibleProxies()
 	//PerformFrustumCulling();
 
 	const bool bDrawStaticMeshes = World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_StaticMeshes);
+	const bool bDrawSkeletalMeshes = World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_SkeletalMeshes);
 	const bool bDrawDecals = World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_Decals);
 	const bool bDrawFog = World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_Fog);
 	const bool bDrawLight = World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_Lighting);
@@ -640,10 +642,10 @@ void FSceneRenderer::GatherVisibleProxies()
 						{
 							bShouldAdd = bDrawStaticMeshes;
 						}
-						// else if (USkeletalMeshComponent* SkeletalMeshComponent = ...)
-						// {
-						//     bShouldAdd = bDrawSkeletalMeshes;
-						// }
+						else if (USkeletalMeshComponent* SkeletalMeshComponent = Cast<USkeletalMeshComponent>(MeshComponent))
+						{
+							bShouldAdd = bDrawSkeletalMeshes;
+						}
 
 						if (bShouldAdd)
 						{
@@ -1220,15 +1222,25 @@ void FSceneRenderer::DrawMeshBatches(TArray<FMeshBatchElement>& InMeshBatches, b
 	ID3D11SamplerState* VSMSampler = RHIDevice->GetSamplerState(RHI_Sampler_Index::VSM);
 
 	// 정렬된 리스트 순회
+	int SkippedBatches = 0;
+	int DrawnBatches = 0;
+
+	UE_LOG("[DEBUG] DrawMeshBatches: Total batches = %d", InMeshBatches.Num());
+
 	for (const FMeshBatchElement& Batch : InMeshBatches)
 	{
 		// --- 필수 요소 유효성 검사 ---
 		if (!Batch.VertexShader || !Batch.PixelShader || !Batch.VertexBuffer || !Batch.IndexBuffer || Batch.VertexStride == 0)
 		{
 			// 셰이더나 버퍼, 스트라이드 정보가 없으면 그릴 수 없음
-			//UE_LOG("[%s] 머티리얼에 셰이더가 컴파일에 실패했거나 없습니다!", Batch.Material->GetFilePath().c_str());	// NOTE: 로그가 매 프레임 떠서 셰이더 컴파일 에러 로그를 볼 수 없어서 주석 처리
+			UE_LOG("[DrawMeshBatches] SKIPPED - VS=%p, PS=%p, VB=%p, IB=%p, Stride=%u",
+				Batch.VertexShader, Batch.PixelShader, Batch.VertexBuffer, Batch.IndexBuffer, Batch.VertexStride);
+			SkippedBatches++;
 			continue;
 		}
+
+		UE_LOG("[DEBUG] DrawMeshBatches: DRAWING batch - IndexCount=%u", Batch.IndexCount);
+		DrawnBatches++;
 
 		// 1. 셰이더 상태 변경
 		if (Batch.VertexShader != CurrentVertexShader || Batch.PixelShader != CurrentPixelShader)
@@ -1341,6 +1353,12 @@ void FSceneRenderer::DrawMeshBatches(TArray<FMeshBatchElement>& InMeshBatches, b
 
 		// 5. 드로우 콜 실행
 		RHIDevice->GetDeviceContext()->DrawIndexed(Batch.IndexCount, Batch.StartIndex, Batch.BaseVertexIndex);
+	}
+
+	// 로그 출력
+	if (SkippedBatches > 0 || DrawnBatches > 0)
+	{
+		//UE_LOG("[DrawMeshBatches] Summary - Drawn: %d, Skipped: %d", DrawnBatches, SkippedBatches);
 	}
 
 	// 루프 종료 후 리스트 비우기 (옵션)

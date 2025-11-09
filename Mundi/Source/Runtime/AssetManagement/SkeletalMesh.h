@@ -34,9 +34,11 @@ public:
     void Load(FSkeletalMeshAsset* InData, ID3D11Device* InDevice);
 
     // Accessors - GPU Resources
+    ID3D11Buffer* GetVertexBuffer() const { return VertexBuffer; }
     ID3D11Buffer* GetIndexBuffer() const { return IndexBuffer; }
     uint32 GetVertexCount() const { return VertexCount; }
     uint32 GetIndexCount() const { return IndexCount; }
+    uint32 GetVertexStride() const { return sizeof(FNormalVertex); }
 
     // Accessors - CPU Data
     const FString& GetAssetPathFileName() const { return SkeletalMeshAsset ? SkeletalMeshAsset->PathFileName : FilePath; }
@@ -52,6 +54,12 @@ public:
 
     FAABB GetLocalBound() const { return LocalBound; }
 
+    // Dynamic Buffer Management (CPU Skinning)
+    bool CreateDynamicGPUResources(ID3D11Device* Device);
+    bool UpdateVertexBuffer(ID3D11DeviceContext* Context, const TArray<FNormalVertex>& NewVertices);
+    void SetUseDynamicBuffer(bool bDynamic) { bUseDynamicBuffer = bDynamic; }
+    bool UsesDynamicBuffer() const { return bUseDynamicBuffer; }
+
 private:
     void CreateIndexBuffer(FSkeletalMeshAsset* InSkeletalMeshAsset, ID3D11Device* InDevice);
     void CreateLocalBound(const FSkeletalMeshAsset* InSkeletalMeshAsset);
@@ -59,10 +67,15 @@ private:
 
 private:
     FString FilePath;
-    
+
+    // GPU Resources
+    ID3D11Buffer* VertexBuffer = nullptr;
     ID3D11Buffer* IndexBuffer = nullptr;
     uint32 VertexCount = 0;
     uint32 IndexCount = 0;
+
+    // Dynamic Buffer flag (CPU Skinning)
+    bool bUseDynamicBuffer = false;
 
     // CPU ���
     FSkeletalMeshAsset* SkeletalMeshAsset = nullptr;

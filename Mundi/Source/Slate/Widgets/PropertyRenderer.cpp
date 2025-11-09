@@ -1113,18 +1113,18 @@ bool UPropertyRenderer::RenderSkeletalMeshProperty(const FProperty& Prop, void* 
 
 			// 컴포넌트별 Setter 호출
 			UObject* Object = static_cast<UObject*>(Instance);
-			if (USkeletalMeshComponent* SkeletalMeshComponent = Cast<USkeletalMeshComponent>(Object))
+			if (USkinnedMeshComponent* SkinnedMeshComponent = Cast<USkinnedMeshComponent>(Object))
 			{
 				// SkeletalMesh 로드
 				if (!SelectedPath.empty())
 				{
 					USkeletalMesh* SkMesh = UResourceManager::GetInstance().Load<USkeletalMesh>(SelectedPath);
-					SkeletalMeshComponent->SetSkeletalMesh(SkMesh);
+					SkinnedMeshComponent->SetSkeletalMesh(SkMesh);
 					UE_LOG("SkeletalMesh set: %s", SelectedPath.c_str());
 				}
 				else
 				{
-					SkeletalMeshComponent->SetSkeletalMesh(nullptr);
+					SkinnedMeshComponent->SetSkeletalMesh(nullptr);
 				}
 			}
 			else

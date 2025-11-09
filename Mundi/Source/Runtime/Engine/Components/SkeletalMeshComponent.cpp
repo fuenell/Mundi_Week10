@@ -24,7 +24,8 @@ USkeletalMeshComponent::USkeletalMeshComponent()
 
 USkeletalMeshComponent::~USkeletalMeshComponent()
 {
-    ReleaseDynamicVertexBuffer();
+    // Note: USkeletalMesh가 자체 VertexBuffer를 관리하므로 여기서 해제하지 않음
+    SkinnedVertices.Empty();
 }
 
 void USkeletalMeshComponent::InitializeComponent()
@@ -36,19 +37,39 @@ void USkeletalMeshComponent::BeginPlay()
 {
     Super::BeginPlay();
 
-    // Dynamic Vertex Buffer 생성
-    CreateDynamicVertexBuffer();
+    // Note: USkeletalMesh가 자체 VertexBuffer를 관리하므로 여기서 생성하지 않음
 }
 
 void USkeletalMeshComponent::TickComponent(float DeltaTime)
 {
     Super::TickComponent(DeltaTime);
 
-    // CPU 스키닝 수행 하지만 지금은 매 틱 마다 수행중인데, 나중에 애니메이션을 위해서 지금은 성능 낭비더라도 일단은 넣어둠
+    if (!SkeletalMesh)
+        return;
+
+    UE_LOG("[DEBUG TICK] SkeletalMeshComponent::TickComponent - Mesh=%s, BoneCount=%d",
+        SkeletalMesh->GetAssetPathFileName().c_str(), GetBoneMatrices().Num());
+
+    // CPU 스키닝 수행
     PerformCPUSkinning();
 
-    // Dynamic Vertex Buffer 업데이트
-    UpdateDynamicVertexBuffer();
+    // 첫 3개 정점 위치 확인
+    if (SkinnedVertices.Num() >= 3)
+    {
+        UE_LOG("[DEBUG TICK] First 3 skinned vertices: [0]=(%f,%f,%f), [1]=(%f,%f,%f), [2]=(%f,%f,%f)",
+            SkinnedVertices[0].Position.X, SkinnedVertices[0].Position.Y, SkinnedVertices[0].Position.Z,
+            SkinnedVertices[1].Position.X, SkinnedVertices[1].Position.Y, SkinnedVertices[1].Position.Z,
+            SkinnedVertices[2].Position.X, SkinnedVertices[2].Position.Y, SkinnedVertices[2].Position.Z);
+    }
+
+    // USkeletalMesh의 VertexBuffer 업데이트 (FVertexDynamic와 FNormalVertex는 메모리 레이아웃이 동일)
+    if (SkinnedVertices.Num() > 0 && SkeletalMesh->UsesDynamicBuffer())
+    {
+        ID3D11DeviceContext* Context = GEngine.GetRHIDevice()->GetDeviceContext();
+        const TArray<FNormalVertex>& NormalVertices = reinterpret_cast<const TArray<FNormalVertex>&>(SkinnedVertices);
+        bool bUpdateSuccess = SkeletalMesh->UpdateVertexBuffer(Context, NormalVertices);
+        UE_LOG("[DEBUG TICK] UpdateVertexBuffer result: %s", bUpdateSuccess ? "SUCCESS" : "FAILED");
+    }
 
     // AABB 재계산 필요 표시
     bAABBDirty = true;
@@ -61,8 +82,51 @@ void USkeletalMeshComponent::OnRegister(UWorld* InWorld)
 
 void USkeletalMeshComponent::OnUnregister()
 {
-    ReleaseDynamicVertexBuffer();
+    // Note: USkeletalMesh가 자체 VertexBuffer를 관리하므로 여기서 해제하지 않음
     Super::OnUnregister();
+}
+
+void USkeletalMeshComponent::SetSkeletalMesh(USkeletalMesh* InSkeletalMesh)
+{
+    UE_LOG("[SkeletalMeshComponent] SetSkeletalMesh called");
+
+    // 부모 클래스에서 본 행렬, 머티리얼 슬롯 초기화
+    USkinnedMeshComponent::SetSkeletalMesh(InSkeletalMesh);
+
+    // 새 메쉬로 CPU 스키닝 준비
+    if (SkeletalMesh)
+    {
+        UE_LOG("[SkeletalMeshComponent] Setting mesh: %s", SkeletalMesh->GetAssetPathFileName().c_str());
+        UE_LOG("[DEBUG INIT] BoneCount after parent SetSkeletalMesh: %d", GetBoneMatrices().Num());
+
+        // SkinnedVertices 크기 초기화
+        VertexCount = SkeletalMesh->GetVertexCount();
+        SkinnedVertices.SetNum(VertexCount);
+
+        // 초기 본 변환 업데이트 (TickComponent 전에 한번 수행)
+        UpdateBoneTransforms();
+        UE_LOG("[DEBUG INIT] UpdateBoneTransforms completed");
+
+        // 초기 CPU 스키닝 수행 및 버퍼 업데이트
+        PerformCPUSkinning();
+        UE_LOG("[DEBUG INIT] First skinned vertex: (%f,%f,%f)",
+            SkinnedVertices[0].Position.X, SkinnedVertices[0].Position.Y, SkinnedVertices[0].Position.Z);
+
+        if (SkeletalMesh->UsesDynamicBuffer())
+        {
+            ID3D11DeviceContext* Context = GEngine.GetRHIDevice()->GetDeviceContext();
+            const TArray<FNormalVertex>& NormalVertices = reinterpret_cast<const TArray<FNormalVertex>&>(SkinnedVertices);
+            bool bUpdateSuccess = SkeletalMesh->UpdateVertexBuffer(Context, NormalVertices);
+            UE_LOG("[DEBUG INIT] Initial UpdateVertexBuffer result: %s", bUpdateSuccess ? "SUCCESS" : "FAILED");
+        }
+
+        UE_LOG("[SkeletalMeshComponent] Mesh set successfully. VertexBuffer = %p", SkeletalMesh->GetVertexBuffer());
+    }
+    else
+    {
+        UE_LOG("[SkeletalMeshComponent] Mesh is null");
+        SkinnedVertices.Empty();
+    }
 }
 
 void USkeletalMeshComponent::PerformCPUSkinning()
@@ -179,12 +243,31 @@ void USkeletalMeshComponent::ReleaseDynamicVertexBuffer()
 
 void USkeletalMeshComponent::CollectMeshBatches(TArray<FMeshBatchElement>& OutMeshBatches, const FSceneView* View)
 {
+    UE_LOG("[DEBUG] SkeletalMeshComponent::CollectMeshBatches CALLED!");
+
     // ShowFlag 체크 (나중에 RenderSettings 구현 시 추가)
     // if (!RenderSettings->IsShowFlagEnabled(EEngineShowFlags::SF_SkeletalMeshes))
     //     return;
 
-    if (!SkeletalMesh || !DynamicVertexBuffer)
+    if (!SkeletalMesh)
+    {
+        UE_LOG("[SkeletalMeshComponent] CollectMeshBatches: SkeletalMesh is null");
         return;
+    }
+
+    // USkeletalMesh의 VertexBuffer 사용 (StaticMesh 패턴)
+    ID3D11Buffer* VertexBuffer = SkeletalMesh->GetVertexBuffer();
+    ID3D11Buffer* IndexBuffer = SkeletalMesh->GetIndexBuffer();
+
+    UE_LOG("[DEBUG] VB=%p, IB=%p, Stride=%u", VertexBuffer, IndexBuffer, SkeletalMesh->GetVertexStride());
+
+    if (!VertexBuffer || !IndexBuffer)
+    {
+        UE_LOG("[SkeletalMeshComponent] CollectMeshBatches: SkeletalMesh buffers are null! (VB=%p, IB=%p)", VertexBuffer, IndexBuffer);
+        return;
+    }
+
+    UE_LOG("[SkeletalMeshComponent] CollectMeshBatches: Processing mesh %s", SkeletalMesh->GetAssetPathFileName().c_str());
 
     const TArray<FGroupInfo>& MeshGroupInfos = SkeletalMesh->GetMeshGroupInfo();
 
@@ -239,7 +322,10 @@ void USkeletalMeshComponent::CollectMeshBatches(TArray<FMeshBatchElement>& OutMe
 
         auto [MaterialToUse, ShaderToUse] = DetermineMaterialAndShader(SectionIndex);
         if (!MaterialToUse || !ShaderToUse)
+        {
+            UE_LOG("[SkeletalMeshComponent] Section %u: Material or Shader is null", SectionIndex);
             continue;
+        }
 
         FMeshBatchElement BatchElement;
 
@@ -256,12 +342,17 @@ void USkeletalMeshComponent::CollectMeshBatches(TArray<FMeshBatchElement>& OutMe
             BatchElement.VertexShader = ShaderVariant->VertexShader;
             BatchElement.PixelShader = ShaderVariant->PixelShader;
             BatchElement.InputLayout = ShaderVariant->InputLayout;
+            //UE_LOG("[SkeletalMeshComponent] Section %u: ShaderVariant OK - VS=%p, PS=%p", SectionIndex, ShaderVariant->VertexShader, ShaderVariant->PixelShader);
+        }
+        else
+        {
+            UE_LOG("[SkeletalMeshComponent] Section %u: ShaderVariant is NULL!", SectionIndex);
         }
 
         BatchElement.Material = MaterialToUse;
-        BatchElement.VertexBuffer = DynamicVertexBuffer;
-        BatchElement.IndexBuffer = SkeletalMesh->GetIndexBuffer();
-        BatchElement.VertexStride = sizeof(FVertexDynamic);
+        BatchElement.VertexBuffer = VertexBuffer;  // USkeletalMesh의 VertexBuffer 사용
+        BatchElement.IndexBuffer = IndexBuffer;
+        BatchElement.VertexStride = SkeletalMesh->GetVertexStride();  // sizeof(FNormalVertex)
         BatchElement.IndexCount = IndexCount;
         BatchElement.StartIndex = StartIndex;
         BatchElement.BaseVertexIndex = 0;
@@ -269,8 +360,19 @@ void USkeletalMeshComponent::CollectMeshBatches(TArray<FMeshBatchElement>& OutMe
         BatchElement.ObjectID = InternalIndex;
         BatchElement.PrimitiveTopology = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 
+        FMatrix WorldMtx = GetWorldMatrix();
+        UE_LOG("[DEBUG] WorldMatrix: Pos=(%f,%f,%f), Scale=(%f,%f,%f)",
+            WorldMtx.M[3][0], WorldMtx.M[3][1], WorldMtx.M[3][2],
+            WorldMtx.M[0][0], WorldMtx.M[1][1], WorldMtx.M[2][2]);
+
+        UE_LOG("[DEBUG] Adding batch: VS=%p, PS=%p, VB=%p, IB=%p, Stride=%u, IndexCount=%u",
+            BatchElement.VertexShader, BatchElement.PixelShader,
+            BatchElement.VertexBuffer, BatchElement.IndexBuffer,
+            BatchElement.VertexStride, BatchElement.IndexCount);
         OutMeshBatches.Add(BatchElement);
     }
+
+    UE_LOG("[DEBUG] CollectMeshBatches completed: Total batches added = %d", NumSectionsToProcess);
 }
 
 FAABB USkeletalMeshComponent::GetWorldAABB() const

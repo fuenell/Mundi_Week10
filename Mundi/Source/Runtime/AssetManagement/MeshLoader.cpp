@@ -254,6 +254,7 @@ FSkeletalMeshAsset* UMeshLoader::LoadFBXSkeletalMesh(const FString& FilePath)
     }
     UE_LOG("  OK: FBX Manager created");
 
+    // FBX 파일을 어떻게 읽을지 설정하는 옵션 매뉴얼
     FbxIOSettings* ios = FbxIOSettings::Create(SdkManager, IOSROOT);
     SdkManager->SetIOSettings(ios);
     UE_LOG("  OK: IO Settings configured");

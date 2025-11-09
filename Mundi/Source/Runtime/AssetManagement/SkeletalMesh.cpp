@@ -36,7 +36,11 @@ void USkeletalMesh::Load(FSkeletalMeshAsset* InData, ID3D11Device* InDevice)
     VertexCount = static_cast<uint32>(SkeletalMeshAsset->Vertices.size());
     IndexCount = static_cast<uint32>(SkeletalMeshAsset->Indices.size());
 
+    // Create Index Buffer
     CreateIndexBuffer(SkeletalMeshAsset, InDevice);
+
+    // Create Dynamic Vertex Buffer (CPU Skinning)
+    CreateDynamicGPUResources(InDevice);
 
     // Local Bound 계산
     CreateLocalBound(SkeletalMeshAsset);
@@ -91,6 +95,12 @@ void USkeletalMesh::CreateLocalBound(const FSkeletalMeshAsset* InSkeletalMeshAss
 
 void USkeletalMesh::ReleaseResources()
 {
+    if (VertexBuffer)
+    {
+        VertexBuffer->Release();
+        VertexBuffer = nullptr;
+    }
+
     if (IndexBuffer)
     {
         IndexBuffer->Release();
@@ -99,4 +109,94 @@ void USkeletalMesh::ReleaseResources()
 
     VertexCount = 0;
     IndexCount = 0;
+}
+
+bool USkeletalMesh::CreateDynamicGPUResources(ID3D11Device* Device)
+{
+    if (!Device || !SkeletalMeshAsset || SkeletalMeshAsset->Vertices.empty())
+    {
+        UE_LOG("[error] CreateDynamicGPUResources: Invalid parameters");
+        return false;
+    }
+
+    // FSkinnedVertex -> FNormalVertex 변환 (Bind Pose)
+    TArray<FNormalVertex> InitialVertices;
+    InitialVertices.resize(SkeletalMeshAsset->Vertices.size());
+
+    for (size_t i = 0; i < SkeletalMeshAsset->Vertices.size(); i++)
+    {
+        const FSkinnedVertex& SrcVert = SkeletalMeshAsset->Vertices[i];
+        FNormalVertex& DstVert = InitialVertices[i];
+
+        DstVert.pos = SrcVert.Position;
+        DstVert.normal = SrcVert.Normal;
+        DstVert.tex = SrcVert.UV;
+        DstVert.Tangent = SrcVert.Tangent;
+        DstVert.color = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
+    }
+
+    // Dynamic Vertex Buffer 생성
+    D3D11_BUFFER_DESC vbd = {};
+    vbd.Usage = D3D11_USAGE_DYNAMIC;  // Dynamic Buffer
+    vbd.ByteWidth = sizeof(FNormalVertex) * static_cast<UINT>(InitialVertices.size());
+    vbd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+    vbd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;  // CPU에서 쓰기 가능
+
+    D3D11_SUBRESOURCE_DATA vinitData = {};
+    vinitData.pSysMem = InitialVertices.data();
+
+    HRESULT hr = Device->CreateBuffer(&vbd, &vinitData, &VertexBuffer);
+    if (FAILED(hr))
+    {
+        UE_LOG("[error] Failed to create dynamic vertex buffer for SkeletalMesh: %s",
+               SkeletalMeshAsset->PathFileName.c_str());
+        return false;
+    }
+
+    bUseDynamicBuffer = true;
+
+    UE_LOG("SkeletalMesh: Created dynamic vertex buffer (%u vertices, %u bytes)",
+           static_cast<uint32>(InitialVertices.size()),
+           vbd.ByteWidth);
+
+    return true;
+}
+
+bool USkeletalMesh::UpdateVertexBuffer(ID3D11DeviceContext* Context, const TArray<FNormalVertex>& NewVertices)
+{
+    if (!Context || !VertexBuffer)
+    {
+        UE_LOG("[error] UpdateVertexBuffer: Invalid context or buffer");
+        return false;
+    }
+
+    if (!bUseDynamicBuffer)
+    {
+        UE_LOG("[error] UpdateVertexBuffer: Not a dynamic buffer");
+        return false;
+    }
+
+    if (NewVertices.size() != VertexCount)
+    {
+        UE_LOG("[error] UpdateVertexBuffer: Vertex count mismatch (Expected: %u, Got: %zu)",
+               VertexCount, NewVertices.size());
+        return false;
+    }
+
+    // Map Vertex Buffer
+    D3D11_MAPPED_SUBRESOURCE mappedResource;
+    HRESULT hr = Context->Map(VertexBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
+    if (FAILED(hr))
+    {
+        UE_LOG("[error] UpdateVertexBuffer: Failed to map buffer");
+        return false;
+    }
+
+    // Vertex 데이터 복사
+    memcpy(mappedResource.pData, NewVertices.data(), sizeof(FNormalVertex) * VertexCount);
+
+    // Unmap
+    Context->Unmap(VertexBuffer, 0);
+
+    return true;
 }

@@ -7,7 +7,8 @@ IMPLEMENT_CLASS(USkinnedMeshComponent)
 
 BEGIN_PROPERTIES(USkinnedMeshComponent)
     MARK_AS_COMPONENT("스킨드 메시 컴포넌트", "스킨드 메시의 기본 기능을 제공합니다.")
-    //PROPERTY(SkeletalMesh, EPropertyType::SkeletalMesh, "Mesh", "렌더링할 스켈레탈 메시")
+    ADD_PROPERTY_SKELETALMESH(USkeletalMesh*, SkeletalMesh, "Skeletal Mesh", true, "렌더링할 스켈레탈 메시")
+    ADD_PROPERTY_ARRAY(EPropertyType::Material, MaterialSlots, "Materials", true, "머티리얼 슬롯")
 END_PROPERTIES()
 
 USkinnedMeshComponent::USkinnedMeshComponent()
@@ -52,13 +53,19 @@ void USkinnedMeshComponent::SetSkeletalMesh(USkeletalMesh* InSkeletalMesh)
         BoneSpaceTransforms.SetNum(BoneCount);
 
         // Material Slots 초기화
-        uint64 GroupCount = SkeletalMesh->GetMeshGroupCount();
-        MaterialSlots.resize(static_cast<size_t>(GroupCount));
+        const TArray<FGroupInfo>& GroupInfos = SkeletalMesh->GetMeshGroupInfo();
+        MaterialSlots.resize(GroupInfos.size());
 
-        UE_LOG("SetSkeletalMesh: %s (Bones: %d, Groups: %llu)",
+        // StaticMeshComponent처럼 각 섹션에 머티리얼 자동 설정
+        for (int i = 0; i < GroupInfos.size(); ++i)
+        {
+            SetMaterialByName(i, GroupInfos[i].InitialMaterialName);
+        }
+
+        UE_LOG("SetSkeletalMesh: %s (Bones: %d, Groups: %zu)",
             SkeletalMesh->GetAssetPathFileName().c_str(),
             BoneCount,
-            GroupCount);
+            GroupInfos.size());
     }
 }
 

@@ -19,8 +19,11 @@ struct FBoneInfo
 // 스켈레톤 구조
 struct FReferenceSkeleton
 {
+    // 모든 본의 배열
+    // FBoneInfo에는 "본 이름", "부모 본의 인덱스", "부모 기준 로컬 변환행렬", "Bind Pose의 역행렬(스키닝 용)"
     TArray<FBoneInfo> Bones;
 
+    // 본 이름으로 인덱스 찾기
     int32 FindBoneIndex(const FString& BoneName) const
     {
         for (int32 i = 0; i < Bones.Num(); ++i)

@@ -5,9 +5,6 @@
 class USkeletalMesh;
 class UMaterialInterface;
 
-
-
-
 class USkinnedMeshComponent : public UMeshComponent
 {
 public:
@@ -26,7 +23,7 @@ public:
     void TickComponent(float DeltaTime) override;
 
     // Skeletal Mesh 설정
-    void SetSkeletalMesh(USkeletalMesh* InSkeletalMesh);
+    virtual void SetSkeletalMesh(USkeletalMesh* InSkeletalMesh);
     USkeletalMesh* GetSkeletalMesh() const { return SkeletalMesh; }
 
     // Material 관리

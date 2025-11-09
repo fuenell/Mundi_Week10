@@ -29,6 +29,9 @@ public:
     void OnRegister(UWorld* InWorld) override;
     void OnUnregister() override;
 
+    // Mesh setup
+    void SetSkeletalMesh(USkeletalMesh* InSkeletalMesh) override;
+
     // Rendering
     void CollectMeshBatches(TArray<FMeshBatchElement>& OutMeshBatches, const FSceneView* View) override;
     FAABB GetWorldAABB() const override;
