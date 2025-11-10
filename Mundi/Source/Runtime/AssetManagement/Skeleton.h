@@ -116,6 +116,11 @@ public:
 	 */
 	TArray<int32> GetChildBones(int32 BoneIndex) const;
 
+	/**
+	 * Bone 계층 구조를 보기 좋은 트리 형태로 로그 출력
+	 */
+	void LogBoneHierarchy() const;
+
 	// === Bind Pose 관리 ===
 
 	/**
@@ -156,6 +161,8 @@ public:
 	void Serialize(bool bIsLoading, JSON& InOutHandle) override;
 
 private:
+	void LogBoneHierarchyRecursive(int32 BoneIndex, int32 Depth) const;
+
 	// Bone 배열 (인덱스 순서대로 저장)
 	TArray<FBoneInfo> Bones;
 
