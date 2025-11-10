@@ -1,4 +1,4 @@
-﻿#include "pch.h"
+#include "pch.h"
 #include "SkeletalMesh.h"
 #include "FbxImporter.h"
 #include "GlobalConsole.h"
@@ -280,6 +280,12 @@ void USkeletalMesh::Load(const FString& InFilePath, ID3D11Device* InDevice, cons
 	IndexCount = static_cast<uint32>(Indices.size());
 
 	UE_LOG("[SkeletalMesh] Mesh data loaded successfully");
+
+	if (Skeleton)
+	{
+		UE_LOG("[SkeletalMesh] Bone hierarchy for %s", InFilePath.c_str());
+		Skeleton->LogBoneHierarchy();
+	}
 
 	// 2.5. Extract Materials from FBX (FBX Scene이 아직 열려있음)
 	// ExtractMaterials()에서 Material 생성 → ResourceManager 등록 → Material 이름 저장

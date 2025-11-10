@@ -345,6 +345,7 @@
     <ClCompile Include="Source\Editor\SelectionManager.cpp" />
     <ClCompile Include="Source\Runtime\AssetManagement\DynamicMesh.cpp" />
     <ClCompile Include="Source\Runtime\AssetManagement\FbxImporter.cpp" />
+    <ClCompile Include="Source\Runtime\AssetManagement\FbxUtilsImport.cpp" />
     <ClCompile Include="Source\Runtime\AssetManagement\Line.cpp" />
     <ClCompile Include="Source\Runtime\AssetManagement\LineDynamicMesh.cpp" />
     <ClCompile Include="Source\Runtime\AssetManagement\MeshLoader.cpp" />
