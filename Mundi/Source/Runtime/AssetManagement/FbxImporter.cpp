@@ -195,6 +195,28 @@ FbxNode* FFbxImporter::FindFirstMeshNode(FbxNode* Node)
 	return nullptr;
 }
 
+void FFbxImporter::FindAllMeshNodes(FbxNode* Node, TArray<FbxNode*>& OutMeshNodes)
+{
+	if (!Scene)
+		return;
+
+	// 시작 노드가 없으면 Root부터
+	if (!Node)
+		Node = Scene->GetRootNode();
+
+	// 현재 노드가 Mesh를 가지고 있으면 추가
+	if (Node->GetMesh())
+	{
+		OutMeshNodes.push_back(Node);
+	}
+
+	// 모든 자식 노드 탐색 (첫 번째만이 아니라 전부!)
+	for (int i = 0; i < Node->GetChildCount(); i++)
+	{
+		FindAllMeshNodes(Node->GetChild(i), OutMeshNodes);
+	}
+}
+
 bool FFbxImporter::ImportSkeletalMesh(const FString& FilePath, const FFbxImportOptions& Options, FSkeletalMesh& OutMeshData)
 {
 	CurrentOptions = Options;
@@ -225,9 +247,11 @@ bool FFbxImporter::ImportSkeletalMesh(const FString& FilePath, const FFbxImportO
 		geometryConverter.RemoveBadPolygonsFromMeshes(Scene);
 	}
 
-	// 5. Mesh Node 찾기
-	FbxNode* meshNode = FindFirstMeshNode();
-	if (!meshNode)
+	// 5. 모든 Mesh Node 찾기 (다중 Mesh 지원)
+	TArray<FbxNode*> meshNodes;
+	FindAllMeshNodes(nullptr, meshNodes);
+
+	if (meshNodes.empty())
 	{
 		SetError("No mesh found in FBX file");
 		return false;
@@ -244,22 +268,68 @@ bool FFbxImporter::ImportSkeletalMesh(const FString& FilePath, const FFbxImportO
 	// Skeleton을 OutMeshData에 설정
 	OutMeshData.Skeleton = skeleton;
 
-	// 7. Mesh 데이터 추출 (Vertex, Normal, UV, Index)
-	if (!ExtractMeshData(meshNode, OutMeshData))
+	// 7. 모든 Mesh 데이터 추출 및 병합
+	TArray<FSkinnedVertex> mergedVertices;
+	TArray<uint32> mergedIndices;
+	TArray<int32> mergedVertexToControlPointMap;
+	TArray<FGroupInfo> mergedGroupInfos;
+
+	uint32 currentVertexOffset = 0;
+	uint32 currentIndexOffset = 0;
+
+	for (size_t meshIdx = 0; meshIdx < meshNodes.size(); meshIdx++)
 	{
-		SetError("Failed to extract mesh data");
-		return false;
+		FbxNode* meshNode = meshNodes[meshIdx];
+
+		// 임시 Mesh 데이터 구조체
+		FSkeletalMesh tempMeshData;
+		tempMeshData.Skeleton = skeleton;
+
+		// 이 Mesh의 데이터 추출
+		if (!ExtractMeshData(meshNode, tempMeshData))
+		{
+			continue;
+		}
+
+		// Skin Weights 추출
+		if (!ExtractSkinWeights(meshNode->GetMesh(), tempMeshData))
+		{
+			continue;
+		}
+
+		// Vertex 병합
+		mergedVertices.insert(mergedVertices.end(),
+			tempMeshData.Vertices.begin(),
+			tempMeshData.Vertices.end());
+
+		// Index 병합 (Vertex Offset 적용)
+		for (uint32 idx : tempMeshData.Indices)
+		{
+			mergedIndices.push_back(idx + currentVertexOffset);
+		}
+
+		// VertexToControlPointMap 병합
+		mergedVertexToControlPointMap.insert(mergedVertexToControlPointMap.end(),
+			tempMeshData.VertexToControlPointMap.begin(),
+			tempMeshData.VertexToControlPointMap.end());
+
+		// GroupInfo 병합 (Index Offset 적용)
+		// Material 이름은 ExtractMeshData에서 이미 설정됨
+		for (FGroupInfo& groupInfo : tempMeshData.GroupInfos)
+		{
+			groupInfo.StartIndex += currentIndexOffset;
+			mergedGroupInfos.push_back(groupInfo);
+		}
+
+		currentVertexOffset += static_cast<uint32>(tempMeshData.Vertices.size());
+		currentIndexOffset += static_cast<uint32>(tempMeshData.Indices.size());
 	}
 
-	// 8. Skin Weights 및 Bind Pose 추출
-	// ExtractSkinWeights()에서 FbxCluster를 통해 Inverse Bind Pose도 함께 추출
-	if (!ExtractSkinWeights(meshNode->GetMesh(), OutMeshData))
-	{
-		SetError("Failed to extract skin weights and bind pose");
-		return false;
-	}
-
-	UE_LOG("[FBX] ImportSkeletalMesh: Completed successfully");
+	// 병합된 데이터를 OutMeshData에 설정
+	OutMeshData.Vertices = std::move(mergedVertices);
+	OutMeshData.Indices = std::move(mergedIndices);
+	OutMeshData.VertexToControlPointMap = std::move(mergedVertexToControlPointMap);
+	OutMeshData.GroupInfos = std::move(mergedGroupInfos);
 
 	return true;
 }
@@ -434,6 +504,38 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, FSkeletalMesh& OutMeshData
 	FbxGeometryElementUV* uvElement = fbxMesh->GetElementUV();
 	FbxGeometryElementTangent* tangentElement = fbxMesh->GetElementTangent();
 
+	// Material Element 가져오기 (다중 Material 지원)
+	FbxGeometryElementMaterial* materialElement = fbxMesh->GetElementMaterial();
+
+	// Polygon별 Material 인덱스 저장
+	TArray<int32> polygonMaterialIndices;
+	polygonMaterialIndices.resize(polygonCount, 0);  // 기본값 0
+
+	if (materialElement)
+	{
+		if (materialElement->GetMappingMode() == FbxGeometryElement::eByPolygon)
+		{
+			// Polygon별로 Material 인덱스가 할당됨
+			if (materialElement->GetReferenceMode() == FbxGeometryElement::eIndexToDirect)
+			{
+				for (int32 polyIndex = 0; polyIndex < polygonCount; polyIndex++)
+				{
+					int32 materialIndex = materialElement->GetIndexArray().GetAt(polyIndex);
+					polygonMaterialIndices[polyIndex] = materialIndex;
+				}
+			}
+		}
+		else if (materialElement->GetMappingMode() == FbxGeometryElement::eAllSame)
+		{
+			// 전체 Mesh가 하나의 Material 사용
+			int32 materialIndex = materialElement->GetIndexArray().GetAt(0);
+			for (int32 polyIndex = 0; polyIndex < polygonCount; polyIndex++)
+			{
+				polygonMaterialIndices[polyIndex] = materialIndex;
+			}
+		}
+	}
+
 	// Polygon 순회 (각 Triangle)
 	int32 vertexIndexCounter = 0;
 
@@ -548,12 +650,91 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, FSkeletalMesh& OutMeshData
 
 	UE_LOG("[FBX] Extracted %zu vertices, %zu indices", vertices.size(), indices.size());
 
+	// Material별로 GroupInfo 생성 및 Index Buffer 재배치
+	// Polygon이 Material별로 섞여있을 수 있으므로 정렬 필요
+	TArray<FGroupInfo> groupInfos;
+
+	if (!polygonMaterialIndices.empty())
+	{
+		// Material 인덱스별로 Polygon 그룹화
+		TMap<int32, TArray<int32>> materialToPolygons;
+
+		for (int32 polyIndex = 0; polyIndex < polygonMaterialIndices.size(); polyIndex++)
+		{
+			int32 materialIndex = polygonMaterialIndices[polyIndex];
+			materialToPolygons[materialIndex].push_back(polyIndex);
+		}
+
+		UE_LOG("[FBX] === DIAGNOSTIC: Material Grouping ===");
+		UE_LOG("[FBX] Total unique materials: %zu", materialToPolygons.size());
+
+		for (auto& pair : materialToPolygons)
+		{
+			UE_LOG("[FBX] Material[%d]: %zu polygons", pair.first, pair.second.size());
+		}
+
+		UE_LOG("[FBX] Reorganizing index buffer by material...");
+
+		// 원본 Index Buffer 백업
+		TArray<uint32> originalIndices = indices;
+
+		// 새로운 Index Buffer 생성 (Material별로 재배치)
+		indices.clear();
+		uint32 currentStartIndex = 0;
+
+		// 각 Material별로 GroupInfo 생성 및 Index 추가
+		for (auto& pair : materialToPolygons)
+		{
+			int32 materialIndex = pair.first;
+			const TArray<int32>& polygons = pair.second;
+
+			if (polygons.empty())
+				continue;
+
+			FGroupInfo groupInfo;
+			groupInfo.StartIndex = currentStartIndex;
+			groupInfo.IndexCount = polygons.size() * 3;
+			groupInfo.InitialMaterialName = "";
+
+			// Material 이름 설정
+			if (materialIndex >= 0 && materialIndex < MeshNode->GetMaterialCount())
+			{
+				FbxSurfaceMaterial* mat = MeshNode->GetMaterial(materialIndex);
+				if (mat)
+				{
+					groupInfo.InitialMaterialName = mat->GetName();
+				}
+			}
+
+			// 이 Material의 모든 Polygon의 Index를 새 버퍼에 추가
+			for (int32 polyIndex : polygons)
+			{
+				// 각 Polygon은 3개의 Index를 가짐
+				uint32 polyStartIdx = polyIndex * 3;
+				indices.push_back(originalIndices[polyStartIdx + 0]);
+				indices.push_back(originalIndices[polyStartIdx + 1]);
+				indices.push_back(originalIndices[polyStartIdx + 2]);
+			}
+
+			currentStartIndex += groupInfo.IndexCount;
+			groupInfos.push_back(groupInfo);
+		}
+	}
+	else
+	{
+		// Material 정보가 없으면 전체를 하나의 그룹으로
+		FGroupInfo groupInfo;
+		groupInfo.StartIndex = 0;
+		groupInfo.IndexCount = static_cast<uint32>(indices.size());
+		groupInfo.InitialMaterialName = "";
+		groupInfos.push_back(groupInfo);
+	}
+
 	// FSkeletalMesh에 데이터 설정 (Move Semantics)
 	OutMeshData.Vertices = std::move(vertices);
 	OutMeshData.Indices = std::move(indices);
 	OutMeshData.VertexToControlPointMap = std::move(vertexToControlPointMap);
-
-	UE_LOG("[FBX] Stored vertex to control point mapping (%zu entries)", OutMeshData.VertexToControlPointMap.size());
+	OutMeshData.GroupInfos = std::move(groupInfos);
 
 	return true;
 }
@@ -1029,9 +1210,9 @@ bool FFbxImporter::ExtractBindPose(FbxScene* Scene, USkeleton* OutSkeleton)
 	return true;
 }
 
-bool FFbxImporter::ExtractMaterials(FbxNode* MeshNode, USkeletalMesh* OutSkeletalMesh)
+bool FFbxImporter::ExtractMaterials(FbxScene* InScene, USkeletalMesh* OutSkeletalMesh)
 {
-	if (!MeshNode || !OutSkeletalMesh)
+	if (!InScene || !OutSkeletalMesh)
 	{
 		SetError("ExtractMaterials: Invalid parameters");
 		return false;
@@ -1039,7 +1220,7 @@ bool FFbxImporter::ExtractMaterials(FbxNode* MeshNode, USkeletalMesh* OutSkeleta
 
 	UE_LOG("[FBX] Extracting materials and loading textures...");
 
-	int32 materialCount = MeshNode->GetMaterialCount();
+	int32 materialCount = InScene->GetMaterialCount();
 
 	if (materialCount == 0)
 	{
@@ -1049,33 +1230,15 @@ bool FFbxImporter::ExtractMaterials(FbxNode* MeshNode, USkeletalMesh* OutSkeleta
 
 	UE_LOG("[FBX] Found %d materials", materialCount);
 
-	// 첫 번째 Material만 사용 (대부분의 경우 하나만 있음)
-	FbxSurfaceMaterial* fbxMaterial = MeshNode->GetMaterial(0);
-	if (!fbxMaterial)
-	{
-		UE_LOG("[FBX] Warning: Failed to get material");
-		return true;
-	}
-
-	FString materialName = fbxMaterial->GetName();
-	UE_LOG("[FBX] Processing material: %s", materialName.c_str());
-
-	// Material 정보 구조체 생성
-	FMaterialInfo materialInfo;
-	materialInfo.MaterialName = materialName;
-
 	// FBX 파일의 디렉토리 경로 구하기 (Scene 파일 경로 기반)
-	// Importer가 로드한 파일 경로를 가져옴
 	FbxString fbxFilePath = Scene->GetDocumentInfo()->Url.Get();
 	std::filesystem::path fbxDirAbsolute = std::filesystem::path(fbxFilePath.Buffer()).parent_path();
 
 	// ResolveAssetRelativePath 사용하여 Data/ 기준 상대 경로로 변환
 	FString fbxDirStr = ResolveAssetRelativePath(fbxDirAbsolute.string(), GDataDir);
-
 	UE_LOG("[FBX] FBX directory (relative to Data/): %s", fbxDirStr.c_str());
 
 	// Helper lambda: 텍스처 경로를 Data/ 기준 상대 경로로 변환
-	// 예: "C:/.../Data/Model/Mutant.fbm/texture.png" → "Data/Model/Mutant.fbm/texture.png"
 	auto ResolveTexturePath = [&](FbxFileTexture* texture) -> FString
 	{
 		if (!texture) return "";
@@ -1110,119 +1273,130 @@ bool FFbxImporter::ExtractMaterials(FbxNode* MeshNode, USkeletalMesh* OutSkeleta
 		return finalPath;
 	};
 
-	// Diffuse Texture 추출
-	FbxProperty diffuseProp = fbxMaterial->FindProperty(FbxSurfaceMaterial::sDiffuse);
-	if (diffuseProp.IsValid())
+	// 모든 Material 처리
+	for (int32 matIndex = 0; matIndex < materialCount; matIndex++)
 	{
-		int32 textureCount = diffuseProp.GetSrcObjectCount<FbxTexture>();
-
-		for (int32 i = 0; i < textureCount; i++)
+		FbxSurfaceMaterial* fbxMaterial = InScene->GetMaterial(matIndex);
+		if (!fbxMaterial)
 		{
-			FbxFileTexture* texture = diffuseProp.GetSrcObject<FbxFileTexture>(i);
-			if (texture)
-			{
-				materialInfo.DiffuseTextureFileName = ResolveTexturePath(texture);
-				UE_LOG("[FBX] - Diffuse texture: %s", materialInfo.DiffuseTextureFileName.c_str());
-			}
+			UE_LOG("[FBX] Warning: Failed to get material at index %d", matIndex);
+			continue;
 		}
-	}
 
-	// Normal Map Texture 추출
-	FbxProperty normalProp = fbxMaterial->FindProperty(FbxSurfaceMaterial::sNormalMap);
-	if (normalProp.IsValid())
-	{
-		int32 textureCount = normalProp.GetSrcObjectCount<FbxTexture>();
+		FString materialName = fbxMaterial->GetName();
+		UE_LOG("[FBX] Processing material[%d]: %s", matIndex, materialName.c_str());
 
-		for (int32 i = 0; i < textureCount; i++)
+		// Material 정보 구조체 생성
+		FMaterialInfo materialInfo;
+		materialInfo.MaterialName = materialName;
+
+		// Diffuse Texture 추출
+		FbxProperty diffuseProp = fbxMaterial->FindProperty(FbxSurfaceMaterial::sDiffuse);
+		if (diffuseProp.IsValid())
 		{
-			FbxFileTexture* texture = normalProp.GetSrcObject<FbxFileTexture>(i);
-			if (texture)
-			{
-				materialInfo.NormalTextureFileName = ResolveTexturePath(texture);
-				UE_LOG("[FBX] - Normal texture: %s", materialInfo.NormalTextureFileName.c_str());
-			}
-		}
-	}
-
-	// Bump Map을 Normal Map으로 사용 (일부 FBX는 Bump에 저장)
-	if (materialInfo.NormalTextureFileName.empty())
-	{
-		FbxProperty bumpProp = fbxMaterial->FindProperty(FbxSurfaceMaterial::sBump);
-		if (bumpProp.IsValid())
-		{
-			int32 textureCount = bumpProp.GetSrcObjectCount<FbxTexture>();
+			int32 textureCount = diffuseProp.GetSrcObjectCount<FbxTexture>();
 
 			for (int32 i = 0; i < textureCount; i++)
 			{
-				FbxFileTexture* texture = bumpProp.GetSrcObject<FbxFileTexture>(i);
+				FbxFileTexture* texture = diffuseProp.GetSrcObject<FbxFileTexture>(i);
 				if (texture)
 				{
-					materialInfo.NormalTextureFileName = ResolveTexturePath(texture);
-					UE_LOG("[FBX] - Bump texture (as Normal): %s", materialInfo.NormalTextureFileName.c_str());
+					materialInfo.DiffuseTextureFileName = ResolveTexturePath(texture);
+					UE_LOG("[FBX] - Diffuse texture: %s", materialInfo.DiffuseTextureFileName.c_str());
 				}
 			}
 		}
+
+		// Normal Map Texture 추출
+		FbxProperty normalProp = fbxMaterial->FindProperty(FbxSurfaceMaterial::sNormalMap);
+		if (normalProp.IsValid())
+		{
+			int32 textureCount = normalProp.GetSrcObjectCount<FbxTexture>();
+
+			for (int32 i = 0; i < textureCount; i++)
+			{
+				FbxFileTexture* texture = normalProp.GetSrcObject<FbxFileTexture>(i);
+				if (texture)
+				{
+					materialInfo.NormalTextureFileName = ResolveTexturePath(texture);
+					UE_LOG("[FBX] - Normal texture: %s", materialInfo.NormalTextureFileName.c_str());
+				}
+			}
+		}
+
+		// Bump Map을 Normal Map으로 사용 (일부 FBX는 Bump에 저장)
+		if (materialInfo.NormalTextureFileName.empty())
+		{
+			FbxProperty bumpProp = fbxMaterial->FindProperty(FbxSurfaceMaterial::sBump);
+			if (bumpProp.IsValid())
+			{
+				int32 textureCount = bumpProp.GetSrcObjectCount<FbxTexture>();
+
+				for (int32 i = 0; i < textureCount; i++)
+				{
+					FbxFileTexture* texture = bumpProp.GetSrcObject<FbxFileTexture>(i);
+					if (texture)
+					{
+						materialInfo.NormalTextureFileName = ResolveTexturePath(texture);
+						UE_LOG("[FBX] - Bump texture (as Normal): %s", materialInfo.NormalTextureFileName.c_str());
+					}
+				}
+			}
+		}
+
+		// Diffuse Color 추출
+		if (fbxMaterial->GetClassId().Is(FbxSurfaceLambert::ClassId))
+		{
+			FbxSurfaceLambert* lambert = static_cast<FbxSurfaceLambert*>(fbxMaterial);
+			FbxDouble3 diffuse = lambert->Diffuse.Get();
+			materialInfo.DiffuseColor = FVector(
+				static_cast<float>(diffuse[0]),
+				static_cast<float>(diffuse[1]),
+				static_cast<float>(diffuse[2])
+			);
+			UE_LOG("[FBX] - Diffuse color: (%.3f, %.3f, %.3f)",
+				materialInfo.DiffuseColor.X,
+				materialInfo.DiffuseColor.Y,
+				materialInfo.DiffuseColor.Z);
+		}
+
+		// === Material 객체 생성 ===
+		UE_LOG("[FBX] Creating Material: '%s'", materialInfo.MaterialName.c_str());
+		UE_LOG("[FBX] - DiffuseTextureFileName: '%s'", materialInfo.DiffuseTextureFileName.c_str());
+		UE_LOG("[FBX] - NormalTextureFileName: '%s'", materialInfo.NormalTextureFileName.c_str());
+
+		// Material 동적 생성
+		UMaterial* material = NewObject<UMaterial>();
+		if (!material)
+		{
+			UE_LOG("[FBX] Warning: Failed to create Material object for '%s'", materialInfo.MaterialName.c_str());
+			continue;
+		}
+
+		// MaterialInfo 설정 → 내부에서 ResolveTextures() 자동 호출
+		material->SetMaterialInfo(materialInfo);
+
+		// UberLit Shader 설정
+		UShader* uberlitShader = UResourceManager::GetInstance().Load<UShader>("Shaders/Materials/UberLit.hlsl");
+		if (uberlitShader)
+		{
+			material->SetShader(uberlitShader);
+			UE_LOG("[FBX] UberLit shader set successfully");
+		}
+		else
+		{
+			UE_LOG("[FBX] Warning: Failed to load UberLit shader");
+		}
+
+		// ResourceManager에 등록
+		UResourceManager::GetInstance().Add<UMaterial>(materialInfo.MaterialName, material);
+		UE_LOG("[FBX] Material registered to ResourceManager: '%s'", materialInfo.MaterialName.c_str());
+
+		// SkeletalMesh에 Material 이름 추가
+		OutSkeletalMesh->AddMaterialName(materialInfo.MaterialName);
 	}
 
-	// Diffuse Color 추출
-	if (fbxMaterial->GetClassId().Is(FbxSurfaceLambert::ClassId))
-	{
-		FbxSurfaceLambert* lambert = static_cast<FbxSurfaceLambert*>(fbxMaterial);
-		FbxDouble3 diffuse = lambert->Diffuse.Get();
-		materialInfo.DiffuseColor = FVector(
-			static_cast<float>(diffuse[0]),
-			static_cast<float>(diffuse[1]),
-			static_cast<float>(diffuse[2])
-		);
-		UE_LOG("[FBX] - Diffuse color: (%.3f, %.3f, %.3f)",
-			materialInfo.DiffuseColor.X,
-			materialInfo.DiffuseColor.Y,
-			materialInfo.DiffuseColor.Z);
-	}
-
-	// === Material 객체 생성 (ObjManager 패턴과 동일) ===
-	// Material Name을 MaterialInfo.MaterialName에 설정 (OBJ는 MTL 이름, FBX는 FBX 파일명만 사용)
-	FbxString fbxFilePathStr = Scene->GetDocumentInfo()->Url.Get();
-	std::filesystem::path fbxPath(fbxFilePathStr.Buffer());
-
-	UE_LOG("[FBX] Creating Material: '%s'", materialInfo.MaterialName.c_str());
-	UE_LOG("[FBX] - DiffuseTextureFileName: '%s'", materialInfo.DiffuseTextureFileName.c_str());
-	UE_LOG("[FBX] - NormalTextureFileName: '%s'", materialInfo.NormalTextureFileName.c_str());
-
-	// Material 동적 생성 (ObjManager.cpp:505와 동일)
-	UMaterial* material = NewObject<UMaterial>();
-	if (!material)
-	{
-		SetError("ExtractMaterials: Failed to create Material object");
-		return false;
-	}
-
-	// MaterialInfo 설정 → 내부에서 ResolveTextures() 자동 호출 (ObjManager.cpp:506)
-	material->SetMaterialInfo(materialInfo);
-
-	// UberLit Shader 설정 (ObjManager.cpp:512)
-	UShader* uberlitShader = UResourceManager::GetInstance().Load<UShader>("Shaders/Materials/UberLit.hlsl");
-	if (uberlitShader)
-	{
-		material->SetShader(uberlitShader);
-		UE_LOG("[FBX] UberLit shader set successfully");
-	}
-	else
-	{
-		UE_LOG("[FBX] Warning: Failed to load UberLit shader");
-	}
-
-	// ResourceManager에 등록 (ObjManager.cpp:515)
-	// MaterialName을 키로 사용 (OBJ와 동일)
-	UResourceManager::GetInstance().Add<UMaterial>(materialInfo.MaterialName, material);
-	UE_LOG("[FBX] Material registered to ResourceManager: '%s'", materialInfo.MaterialName.c_str());
-
-	// SkeletalMesh에 Material 이름 저장 (Unreal Engine 방식)
-	// Component에서 이 이름으로 ResourceManager에서 Material을 찾음
-	OutSkeletalMesh->SetMaterialName(materialInfo.MaterialName);
-
-	UE_LOG("[FBX] Material extraction completed: Material name '%s' stored in SkeletalMesh",
-		materialInfo.MaterialName.c_str());
+	UE_LOG("[FBX] Material extraction completed: %d materials processed", materialCount);
 	return true;
 }
 
@@ -1243,7 +1417,7 @@ bool FFbxImporter::ExtractMaterialsFromScene(USkeletalMesh* OutSkeletalMesh)
 	}
 
 	// ExtractMaterials() 호출
-	return ExtractMaterials(meshNode, OutSkeletalMesh);
+	return ExtractMaterials(Scene, OutSkeletalMesh);
 }
 
 // Helper: FbxMatrix → FMatrix 변환

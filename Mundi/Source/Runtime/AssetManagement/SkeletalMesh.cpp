@@ -274,12 +274,13 @@ void USkeletalMesh::Load(const FString& InFilePath, ID3D11Device* InDevice, cons
 	Vertices = std::move(MeshData.Vertices);
 	Indices = std::move(MeshData.Indices);
 	VertexToControlPointMap = std::move(MeshData.VertexToControlPointMap);
+	GroupInfos = std::move(MeshData.GroupInfos);
 	Skeleton = MeshData.Skeleton;
 
 	VertexCount = static_cast<uint32>(Vertices.size());
 	IndexCount = static_cast<uint32>(Indices.size());
 
-	UE_LOG("[SkeletalMesh] Mesh data loaded successfully");
+	UE_LOG("[SkeletalMesh] Mesh data loaded successfully (Groups: %zu)", GroupInfos.size());
 
 	// 2.5. Extract Materials from FBX (FBX Scene이 아직 열려있음)
 	// ExtractMaterials()에서 Material 생성 → ResourceManager 등록 → Material 이름 저장

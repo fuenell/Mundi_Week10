@@ -173,12 +173,40 @@ public:
 	void SetMaterialName(const FString& InMaterialName) { MaterialName = InMaterialName; }
 
 	/**
-	 * Material 이름 가져오기
+	 * Material 이름 추가 (다중 Material 지원)
+	 * @param InMaterialName - 추가할 Material Asset 이름
+	 */
+	void AddMaterialName(const FString& InMaterialName) { MaterialNames.push_back(InMaterialName); }
+
+	/**
+	 * Material 이름 가져오기 (레거시 - 단일 Material)
 	 * @return Material Asset 이름 (ResourceManager에서 찾을 때 사용)
 	 */
 	const FString& GetMaterialName() const { return MaterialName; }
 
+	/**
+	 * 모든 Material 이름 가져오기 (다중 Material 지원)
+	 * @return Material Asset 이름 배열
+	 */
+	const TArray<FString>& GetMaterialNames() const { return MaterialNames; }
 
+	/**
+	 * Material 개수 가져오기
+	 * @return Material 개수
+	 */
+	size_t GetMaterialCount() const { return MaterialNames.size(); }
+
+	/**
+	 * Mesh Group 정보 가져오기 (Material별 Index 범위)
+	 * @return GroupInfo 배열
+	 */
+	const TArray<FGroupInfo>& GetMeshGroupInfo() const { return GroupInfos; }
+
+	/**
+	 * Mesh Group 개수 가져오기
+	 * @return Group 개수
+	 */
+	uint64 GetMeshGroupCount() const { return GroupInfos.size(); }
 
 	// === Mesh 데이터 관리 ===
 
@@ -333,8 +361,14 @@ private:
 	// Skeleton 참조
 	USkeleton* Skeleton = nullptr;
 
-	// Material 이름 (FBX Import 시 설정, Component에서 ResourceManager로 찾음)
+	// Material 이름 (레거시 - 단일 Material)
 	FString MaterialName;
+
+	// Material 이름 배열 (다중 Material 지원)
+	TArray<FString> MaterialNames;
+
+	// Material별 그룹 정보 (다중 Material 지원)
+	TArray<FGroupInfo> GroupInfos;
 
 	// CPU Mesh 데이터
 	TArray<FSkinnedVertex> Vertices;

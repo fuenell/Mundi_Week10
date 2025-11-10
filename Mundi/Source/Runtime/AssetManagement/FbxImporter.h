@@ -116,6 +116,13 @@ private:
 	 */
 	FbxNode* FindFirstMeshNode(FbxNode* Node = nullptr);
 
+	/**
+	 * Scene에서 모든 Mesh Node 찾기 (다중 Mesh 지원)
+	 * @param Node - 시작 노드 (nullptr인 경우 RootNode부터)
+	 * @param OutMeshNodes - 찾은 Mesh Node 배열 (출력)
+	 */
+	void FindAllMeshNodes(FbxNode* Node, TArray<FbxNode*>& OutMeshNodes);
+
 	// === SkeletalMesh Import 내부 로직 ===
 
 	/**
@@ -155,7 +162,7 @@ private:
 	 * @param OutSkeletalMesh - Material 정보를 저장할 SkeletalMesh
 	 * @return 성공 여부
 	 */
-	bool ExtractMaterials(FbxNode* MeshNode, USkeletalMesh* OutSkeletalMesh);
+	bool ExtractMaterials(FbxScene* InScene, USkeletalMesh* OutSkeletalMesh);
 
 	// === Helper 함수 ===
 

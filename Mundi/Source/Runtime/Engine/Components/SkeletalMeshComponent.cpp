@@ -37,23 +37,49 @@ void USkeletalMeshComponent::SetSkeletalMesh(USkeletalMesh* InSkeletalMesh)
 	MaterialSlots.Empty();
 	if (SkeletalMesh)
 	{
-		// SkeletalMesh가 저장한 Material 이름으로 ResourceManager에서 찾기 (Unreal Engine 방식)
-		UMaterialInterface* Mat = nullptr;
-		const FString& MaterialName = SkeletalMesh->GetMaterialName();
+		// 다중 Material 지원: SkeletalMesh의 모든 Material 로드
+		const TArray<FString>& MaterialNames = SkeletalMesh->GetMaterialNames();
 
-		if (!MaterialName.empty())
+		if (!MaterialNames.empty())
 		{
-			// Material 이름으로 ResourceManager에서 찾기
-			Mat = UResourceManager::GetInstance().Get<UMaterial>(MaterialName);
-		}
+			// 모든 Material을 MaterialSlots에 추가
+			for (const FString& MaterialName : MaterialNames)
+			{
+				UMaterialInterface* Mat = nullptr;
 
-		if (!Mat)
+				if (!MaterialName.empty())
+				{
+					// Material 이름으로 ResourceManager에서 찾기
+					Mat = UResourceManager::GetInstance().Get<UMaterial>(MaterialName);
+				}
+
+				if (!Mat)
+				{
+					// Material을 찾지 못하면 기본 Material 사용
+					Mat = UResourceManager::GetInstance().GetDefaultMaterial();
+				}
+
+				MaterialSlots.push_back(Mat);
+			}
+		}
+		else
 		{
-			// Material을 찾지 못하면 기본 Material 사용
-			Mat = UResourceManager::GetInstance().GetDefaultMaterial();
-		}
+			// 레거시 지원: MaterialNames가 비어있으면 단일 MaterialName 사용
+			UMaterialInterface* Mat = nullptr;
+			const FString& MaterialName = SkeletalMesh->GetMaterialName();
 
-		MaterialSlots.push_back(Mat);
+			if (!MaterialName.empty())
+			{
+				Mat = UResourceManager::GetInstance().Get<UMaterial>(MaterialName);
+			}
+
+			if (!Mat)
+			{
+				Mat = UResourceManager::GetInstance().GetDefaultMaterial();
+			}
+
+			MaterialSlots.push_back(Mat);
+		}
 
 		// Bone Transform 업데이트
 		if (SkeletalMesh->GetSkeleton())
@@ -255,62 +281,129 @@ void USkeletalMeshComponent::CollectMeshBatches(TArray<FMeshBatchElement>& OutMe
 		return;
 	}
 
-	// Material 결정
-	UMaterialInterface* Material = GetMaterial(0);
-	UShader* Shader = nullptr;
+	// Material별 Section 처리 (StaticMeshComponent와 동일)
+	const TArray<FGroupInfo>& MeshGroupInfos = SkeletalMesh->GetMeshGroupInfo();
 
-	if (Material && Material->GetShader())
+	UE_LOG("[SkeletalMeshComponent] === DIAGNOSTIC: CollectMeshBatches ===");
+	UE_LOG("[SkeletalMeshComponent] Total GroupInfos: %zu", MeshGroupInfos.size());
+	UE_LOG("[SkeletalMeshComponent] Total MaterialSlots: %zu", MaterialSlots.size());
+
+	for (size_t i = 0; i < MeshGroupInfos.size(); i++)
 	{
-		Shader = Material->GetShader();
+		const FGroupInfo& group = MeshGroupInfos[i];
+		UE_LOG("[SkeletalMeshComponent] GroupInfo[%zu]: StartIndex=%u, IndexCount=%u",
+			i, group.StartIndex, group.IndexCount);
 	}
-	else
+
+	for (size_t i = 0; i < MaterialSlots.size(); i++)
 	{
-		// 기본 머티리얼 사용
-		Material = UResourceManager::GetInstance().GetDefaultMaterial();
-		if (Material)
+		UMaterialInterface* mat = MaterialSlots[i];
+		UE_LOG("[SkeletalMeshComponent] MaterialSlot[%zu]: %s",
+			i, mat ? "Valid" : "NULL");
+	}
+
+	auto DetermineMaterialAndShader = [&](uint32 SectionIndex) -> TPair<UMaterialInterface*, UShader*>
+	{
+		UMaterialInterface* Material = GetMaterial(SectionIndex);
+		UShader* Shader = nullptr;
+
+		if (Material && Material->GetShader())
 		{
 			Shader = Material->GetShader();
 		}
-		if (!Material || !Shader)
+		else
 		{
-			return;
+			// 기본 머티리얼 사용
+			Material = UResourceManager::GetInstance().GetDefaultMaterial();
+			if (Material)
+			{
+				Shader = Material->GetShader();
+			}
+			if (!Material || !Shader)
+			{
+				return { nullptr, nullptr };
+			}
 		}
-	}
+		return { Material, Shader };
+	};
 
-	// Mesh Batch Element 생성
-	FMeshBatchElement BatchElement;
+	const bool bHasSections = !MeshGroupInfos.IsEmpty();
+	const uint32 NumSectionsToProcess = bHasSections ? static_cast<uint32>(MeshGroupInfos.size()) : 1;
 
-	// View 모드 전용 매크로와 머티리얼 개인 매크로를 결합
-	TArray<FShaderMacro> ShaderMacros = View->ViewShaderMacros;
-	if (0 < Material->GetShaderMacros().Num())
+	for (uint32 SectionIndex = 0; SectionIndex < NumSectionsToProcess; ++SectionIndex)
 	{
-		ShaderMacros.Append(Material->GetShaderMacros());
-	}
-	FShaderVariant* ShaderVariant = Shader->GetOrCompileShaderVariant(ShaderMacros);
+		uint32 IndexCount = 0;
+		uint32 StartIndex = 0;
 
-	if (ShaderVariant)
-	{
-		BatchElement.VertexShader = ShaderVariant->VertexShader;
-		BatchElement.PixelShader = ShaderVariant->PixelShader;
-		BatchElement.InputLayout = ShaderVariant->InputLayout;
-	}
-	else
-	{
-		return;
+		if (bHasSections)
+		{
+			const FGroupInfo& Group = MeshGroupInfos[SectionIndex];
+			IndexCount = Group.IndexCount;
+			StartIndex = Group.StartIndex;
+
+			UE_LOG("[SkeletalMeshComponent] Processing Section[%u]: StartIndex=%u, IndexCount=%u",
+				SectionIndex, StartIndex, IndexCount);
+		}
+		else
+		{
+			IndexCount = SkeletalMesh->GetIndexCount();
+			StartIndex = 0;
+
+			UE_LOG("[SkeletalMeshComponent] Processing Section[%u] (no groups): StartIndex=%u, IndexCount=%u",
+				SectionIndex, StartIndex, IndexCount);
+		}
+
+		if (IndexCount == 0)
+		{
+			UE_LOG("[SkeletalMeshComponent] Section[%u] skipped: IndexCount is 0", SectionIndex);
+			continue;
+		}
+
+		auto [MaterialToUse, ShaderToUse] = DetermineMaterialAndShader(SectionIndex);
+		if (!MaterialToUse || !ShaderToUse)
+		{
+			UE_LOG("[SkeletalMeshComponent] Section[%u] skipped: Material or Shader is NULL", SectionIndex);
+			continue;
+		}
+
+		UE_LOG("[SkeletalMeshComponent] Section[%u] using Material: %s",
+			SectionIndex, MaterialToUse ? "Valid" : "NULL");
+
+		FMeshBatchElement BatchElement;
+
+		// View 모드 전용 매크로와 머티리얼 개인 매크로를 결합
+		TArray<FShaderMacro> ShaderMacros = View->ViewShaderMacros;
+		if (0 < MaterialToUse->GetShaderMacros().Num())
+		{
+			ShaderMacros.Append(MaterialToUse->GetShaderMacros());
+		}
+		FShaderVariant* ShaderVariant = ShaderToUse->GetOrCompileShaderVariant(ShaderMacros);
+
+		if (ShaderVariant)
+		{
+			BatchElement.VertexShader = ShaderVariant->VertexShader;
+			BatchElement.PixelShader = ShaderVariant->PixelShader;
+			BatchElement.InputLayout = ShaderVariant->InputLayout;
+		}
+
+		BatchElement.Material = MaterialToUse;
+		BatchElement.VertexBuffer = VertexBuffer;
+		BatchElement.IndexBuffer = IndexBuffer;
+		BatchElement.VertexStride = SkeletalMesh->GetVertexStride();
+		BatchElement.IndexCount = IndexCount;
+		BatchElement.StartIndex = StartIndex;
+		BatchElement.BaseVertexIndex = 0;
+		BatchElement.WorldMatrix = GetWorldMatrix();
+		BatchElement.ObjectID = InternalIndex;
+		BatchElement.PrimitiveTopology = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+
+		OutMeshBatchElements.Add(BatchElement);
+
+		UE_LOG("[SkeletalMeshComponent] Added BatchElement[%u]: StartIndex=%u, IndexCount=%u",
+			SectionIndex, BatchElement.StartIndex, BatchElement.IndexCount);
 	}
 
-	BatchElement.Material = Material;
-	BatchElement.VertexBuffer = VertexBuffer;
-	BatchElement.IndexBuffer = IndexBuffer;
-	BatchElement.VertexStride = SkeletalMesh->GetVertexStride();
-	BatchElement.IndexCount = SkeletalMesh->GetIndexCount();
-	BatchElement.StartIndex = 0;
-	BatchElement.BaseVertexIndex = 0;
-	BatchElement.WorldMatrix = GetWorldMatrix();
-	BatchElement.ObjectID = InternalIndex;
-	BatchElement.PrimitiveTopology = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-
-	OutMeshBatchElements.Add(BatchElement);
+	UE_LOG("[SkeletalMeshComponent] Total BatchElements created: %zu", OutMeshBatchElements.size());
 }
 
 FAABB USkeletalMeshComponent::GetWorldAABB() const
