@@ -139,6 +139,14 @@ private:
 	 */
 	bool ExtractBindPose(FbxScene* Scene, USkeleton* OutSkeleton);
 
+	/**
+	 * Material과 Texture 정보 추출
+	 * @param MeshNode - Mesh를 가진 FBX Node
+	 * @param OutSkeletalMesh - Material 정보를 저장할 SkeletalMesh
+	 * @return 성공 여부
+	 */
+	bool ExtractMaterials(FbxNode* MeshNode, USkeletalMesh* OutSkeletalMesh);
+
 	// === Helper 함수 ===
 
 	/**

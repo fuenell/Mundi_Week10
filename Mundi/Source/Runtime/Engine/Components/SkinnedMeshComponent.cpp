@@ -17,7 +17,7 @@ IMPLEMENT_CLASS(USkinnedMeshComponent)
 BEGIN_PROPERTIES(USkinnedMeshComponent)
 	MARK_AS_COMPONENT("스킨드 메시 컴포넌트", "본이 있는 스켈레탈 메시를 렌더링하는 기본 컴포넌트입니다.")
 	// TODO: EPropertyType::SkeletalMesh 추가 시 활성화
-	// ADD_PROPERTY(EPropertyType::SkeletalMesh, SkeletalMesh, "Skeletal Mesh", true)
+	 //ADD_PROPERTY(EPropertyType::SkeletalMesh, SkeletalMesh, "Skeletal Mesh", true)
 	ADD_PROPERTY_ARRAY(EPropertyType::Material, MaterialSlots, "Materials", true)
 END_PROPERTIES()
 
@@ -69,6 +69,13 @@ void USkinnedMeshComponent::CollectMeshBatches(TArray<FMeshBatchElement>& OutMes
 
 	// Material 결정 (현재는 기본 Material 사용)
 	UMaterialInterface* Material = GetMaterial(0);
+	UE_LOG("[SkinnedMesh] CollectMeshBatches: GetMaterial(0) = %p", Material);
+	if (Material)
+	{
+		const FMaterialInfo& Info = Material->GetMaterialInfo();
+		UE_LOG("[SkinnedMesh] Material DiffuseTexture: '%s'", Info.DiffuseTextureFileName.c_str());
+		UE_LOG("[SkinnedMesh] Material NormalTexture: '%s'", Info.NormalTextureFileName.c_str());
+	}
 	UShader* Shader = nullptr;
 
 	if (Material && Material->GetShader())
@@ -78,6 +85,7 @@ void USkinnedMeshComponent::CollectMeshBatches(TArray<FMeshBatchElement>& OutMes
 	else
 	{
 		// 기본 머티리얼 사용
+		UE_LOG("[SkinnedMesh] Using default material (GetMaterial(0) returned %p or had no shader)", Material);
 		Material = UResourceManager::GetInstance().GetDefaultMaterial();
 		if (Material)
 		{
@@ -146,13 +154,22 @@ void USkinnedMeshComponent::SetSkeletalMesh(USkeletalMesh* InSkeletalMesh)
 {
 	SkeletalMesh = InSkeletalMesh;
 
-	// Material 슬롯 초기화 (기본 머티리얼 사용)
+	// Material 슬롯 초기화
 	MaterialSlots.Empty();
 	if (SkeletalMesh)
 	{
-		// 현재는 단일 Material만 지원 (향후 다중 Material 지원 예정)
-		UMaterialInterface* DefaultMat = UResourceManager::GetInstance().GetDefaultMaterial();
-		MaterialSlots.push_back(DefaultMat);
+		// SkeletalMesh가 Material을 가지고 있으면 사용, 없으면 기본 Material
+		UMaterialInterface* Mat = SkeletalMesh->GetMaterial();
+		if (!Mat)
+		{
+			Mat = UResourceManager::GetInstance().GetDefaultMaterial();
+			UE_LOG("USkinnedMeshComponent: Using default material (SkeletalMesh has no material)");
+		}
+		else
+		{
+			UE_LOG("USkinnedMeshComponent: Using SkeletalMesh's material");
+		}
+		MaterialSlots.push_back(Mat);
 
 		UE_LOG("USkinnedMeshComponent: SkeletalMesh set with %d vertices, %d indices",
 			SkeletalMesh->GetVertexCount(), SkeletalMesh->GetIndexCount());

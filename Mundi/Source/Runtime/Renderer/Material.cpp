@@ -18,7 +18,7 @@ void UMaterial::Load(const FString& InFilePath, ID3D11Device* InDevice)
 	MaterialInfo.MaterialName = InFilePath;
 
 	// 기본 쉐이더 로드 (LayoutType에 따라)
-	// dds 의 경우 
+	// dds 의 경우
 	if (InFilePath.find(".dds") != std::string::npos)
 	{
 		FString shaderName = UResourceManager::GetInstance().GetProperShader(InFilePath);
@@ -26,14 +26,27 @@ void UMaterial::Load(const FString& InFilePath, ID3D11Device* InDevice)
 		Shader = UResourceManager::GetInstance().Load<UShader>(shaderName);
 		UResourceManager::GetInstance().Load<UTexture>(InFilePath);
 		MaterialInfo.DiffuseTextureFileName = InFilePath;
-	} // hlsl 의 경우 
+	}
+	// png, jpg 등 이미지 파일의 경우 (DDS와 동일하게 처리)
+	else if (InFilePath.find(".png") != std::string::npos ||
+	         InFilePath.find(".jpg") != std::string::npos ||
+	         InFilePath.find(".jpeg") != std::string::npos ||
+	         InFilePath.find(".tga") != std::string::npos)
+	{
+		FString shaderName = UResourceManager::GetInstance().GetProperShader(InFilePath);
+
+		Shader = UResourceManager::GetInstance().Load<UShader>(shaderName);
+		UResourceManager::GetInstance().Load<UTexture>(InFilePath, true); // sRGB = true
+		MaterialInfo.DiffuseTextureFileName = InFilePath;
+	}
+	// hlsl 의 경우
 	else if (InFilePath.find(".hlsl") != std::string::npos)
 	{
 		Shader = UResourceManager::GetInstance().Load<UShader>(InFilePath);
 	}
 	else
 	{
-		throw std::runtime_error(".dds나 .hlsl만 입력해주세요. 현재 입력 파일명 : " + InFilePath);
+		throw std::runtime_error("지원하지 않는 파일 형식입니다. (.dds, .png, .jpg, .hlsl만 지원) 현재 입력 파일명 : " + InFilePath);
 	}
 }
 
@@ -113,6 +126,10 @@ bool UMaterial::HasTexture(EMaterialTextureSlot Slot) const
 
 void UMaterial::ResolveTextures()
 {
+	UE_LOG("[Material] ResolveTextures() called");
+	UE_LOG("[Material] DiffuseTextureFileName: '%s'", MaterialInfo.DiffuseTextureFileName.c_str());
+	UE_LOG("[Material] NormalTextureFileName: '%s'", MaterialInfo.NormalTextureFileName.c_str());
+
 	auto& RM = UResourceManager::GetInstance();
 	size_t MaxSlots = static_cast<size_t>(EMaterialTextureSlot::Max);
 
@@ -124,14 +141,26 @@ void UMaterial::ResolveTextures()
 
 	// 각 슬롯에 해당하는 텍스처 경로로 UTexture* 찾아서 배열에 저장
 	if (!MaterialInfo.DiffuseTextureFileName.empty())
-		ResolvedTextures[static_cast<int32>(EMaterialTextureSlot::Diffuse)] = RM.Load<UTexture>(MaterialInfo.DiffuseTextureFileName, true);
+	{
+		UE_LOG("[Material] Loading Diffuse texture...");
+		UTexture* DiffuseTex = RM.Load<UTexture>(MaterialInfo.DiffuseTextureFileName, true);
+		UE_LOG("[Material] Diffuse UTexture* = %p, Width = %d, Height = %d", DiffuseTex, DiffuseTex ? DiffuseTex->GetWidth() : 0, DiffuseTex ? DiffuseTex->GetHeight() : 0);
+		ResolvedTextures[static_cast<int32>(EMaterialTextureSlot::Diffuse)] = DiffuseTex;
+	}
 	else
 		ResolvedTextures[static_cast<int32>(EMaterialTextureSlot::Diffuse)] = nullptr; // 또는 기본 텍스처
 
 	if (!MaterialInfo.NormalTextureFileName.empty())
-		ResolvedTextures[static_cast<int32>(EMaterialTextureSlot::Normal)] = RM.Load<UTexture>(MaterialInfo.NormalTextureFileName, false);
+	{
+		UE_LOG("[Material] Loading Normal texture...");
+		UTexture* NormalTex = RM.Load<UTexture>(MaterialInfo.NormalTextureFileName, false);
+		UE_LOG("[Material] Normal UTexture* = %p, Width = %d, Height = %d", NormalTex, NormalTex ? NormalTex->GetWidth() : 0, NormalTex ? NormalTex->GetHeight() : 0);
+		ResolvedTextures[static_cast<int32>(EMaterialTextureSlot::Normal)] = NormalTex;
+	}
 	else
 		ResolvedTextures[static_cast<int32>(EMaterialTextureSlot::Normal)] = nullptr; // 또는 기본 노멀 텍스처
+
+	UE_LOG("[Material] ResolveTextures() completed");
 }
 
 void UMaterial::SetMaterialInfo(const FMaterialInfo& InMaterialInfo)
