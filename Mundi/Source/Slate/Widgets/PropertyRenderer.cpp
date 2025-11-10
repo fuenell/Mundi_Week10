@@ -17,6 +17,7 @@
 #include "SpotLightComponent.h"
 #include "PlatformProcess.h"
 #include "ImGui/imgui_curve.hpp"
+#include "SkeletalMeshComponent.h"
 
 // 정적 멤버 변수 초기화
 TArray<FString> UPropertyRenderer::CachedStaticMeshPaths;
@@ -31,6 +32,8 @@ TArray<FString> UPropertyRenderer::CachedSoundPaths;
 TArray<const char*> UPropertyRenderer::CachedSoundItems;
 TArray<FString> UPropertyRenderer::CachedScriptPaths;
 TArray<const char*> UPropertyRenderer::CachedScriptItems;
+TArray<FString> UPropertyRenderer::CachedSkeletalMeshPaths;
+TArray<const char*> UPropertyRenderer::CachedSkeletalMeshItems;
 
 bool UPropertyRenderer::RenderProperty(const FProperty& Property, void* ObjectInstance)
 {
@@ -83,6 +86,10 @@ bool UPropertyRenderer::RenderProperty(const FProperty& Property, void* ObjectIn
 
 	case EPropertyType::StaticMesh:
 		bChanged = RenderStaticMeshProperty(Property, ObjectInstance);
+		break;
+
+	case EPropertyType::SkeletalMesh:
+		bChanged = RenderSkeletalMeshProperty(Property, ObjectInstance);
 		break;
 
 	case EPropertyType::Material:
@@ -370,6 +377,18 @@ void UPropertyRenderer::CacheResources()
             CachedSoundItems.push_back(path.c_str());
         }
     }
+
+	// 스켈레탈 메시
+	if (CachedSkeletalMeshPaths.IsEmpty() && CachedSkeletalMeshItems.IsEmpty())
+	{
+		CachedSkeletalMeshPaths = ResMgr.GetAllFilePaths<USkeletalMesh>();
+		CachedSkeletalMeshItems.Add("None"); // CachedStaticMeshPaths.Insert("", 0)와 짝을 맞춤
+		for (const FString& path : CachedSkeletalMeshPaths)
+		{
+			CachedSkeletalMeshItems.push_back(path.c_str());
+		}
+		CachedSkeletalMeshPaths.Insert("", 0); // "None"에 해당하는 빈 경로
+	}
 }
 
 void UPropertyRenderer::ClearResourcesCache()
@@ -386,6 +405,8 @@ void UPropertyRenderer::ClearResourcesCache()
 	CachedSoundItems.Empty();
 	CachedScriptPaths.Empty();
 	CachedScriptItems.Empty();
+	CachedSkeletalMeshPaths.Empty();
+	CachedSkeletalMeshItems.Empty();
 }
 
 // ===== 타입별 렌더링 구현 =====
@@ -1048,6 +1069,84 @@ bool UPropertyRenderer::RenderStaticMeshProperty(const FProperty& Prop, void* In
 				ImGui::Text("Cache: %s", CachedPath.c_str());
 			}
 		}
+
+		ImGui::EndTooltip();
+	}
+
+	return false;
+}
+
+bool UPropertyRenderer::RenderSkeletalMeshProperty(const FProperty& Prop, void* Instance)
+{
+	// 1. 프로퍼티에서 현재 USkeletalMesh 포인터를 가져옵니다.
+	USkeletalMesh** MeshPtr = Prop.GetValuePtr<USkeletalMesh*>(Instance);
+
+	// 2. 현재 설정된 리소스의 경로를 가져옵니다.
+	FString CurrentPath;
+	if (*MeshPtr)
+	{
+		CurrentPath = (*MeshPtr)->GetFilePath(); // GetFilePath()는 UResourceBase에 있어야 합니다.
+	}
+
+	// 3. 캐시된 리소스가 없으면 렌더링하지 않습니다.
+	if (CachedSkeletalMeshPaths.empty())
+	{
+		ImGui::Text("%s: <No Skeletal Meshes>", Prop.Name);
+		return false;
+	}
+
+	// 4. 캐시된 경로 목록에서 현재 경로의 인덱스를 찾습니다.
+	int SelectedIdx = -1;
+	for (int i = 0; i < static_cast<int>(CachedSkeletalMeshPaths.size()); ++i)
+	{
+		if (CachedSkeletalMeshPaths[i] == CurrentPath)
+		{
+			SelectedIdx = i;
+			break;
+		}
+	}
+
+	// 5. ImGui 콤보박스를 렌더링합니다.
+	ImGui::SetNextItemWidth(240);
+	if (ImGui::Combo(Prop.Name, &SelectedIdx, CachedSkeletalMeshItems.data(), static_cast<int>(CachedSkeletalMeshItems.size())))
+	{
+		// 6. 콤보박스에서 새 항목을 선택한 경우
+		if (SelectedIdx >= 0 && SelectedIdx < static_cast<int>(CachedSkeletalMeshPaths.size()))
+		{
+			// 리소스 매니저에서 새 리소스를 로드합니다. (경로가 ""이면 nullptr이 로드됨)
+			USkeletalMesh* NewMesh = UResourceManager::GetInstance().Load<USkeletalMesh>(CachedSkeletalMeshPaths[SelectedIdx]);
+
+			// 컴포넌트별 Setter를 호출합니다.
+			UObject* Object = static_cast<UObject*>(Instance);
+			if (USkinnedMeshComponent* SkinnedMeshComponent = Cast<USkinnedMeshComponent>(Object))
+			{
+				SkinnedMeshComponent->SetSkeletalMesh(NewMesh); // 컴포넌트의 Setter 호출
+			}
+			else
+			{
+				*MeshPtr = NewMesh; // 일반 프로퍼티일 경우 직접 할당
+			}
+			return true; // 값이 변경되었음을 반환
+		}
+	}
+
+	// 7. 콤보박스에 마우스를 올렸을 때 툴팁을 표시합니다.
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::BeginTooltip();
+
+		ImGui::TextUnformatted(CurrentPath.c_str());
+
+		// NOTE: 추후 fbx bin 캐싱 추가되면 주석 해제해서 캐싱된 경로 표시
+		//if ((*MeshPtr))
+		//{
+		//	const FString& CachedPath = (*MeshPtr)->GetCacheFilePath();
+		//	if (!CachedPath.empty())
+		//	{
+		//		ImGui::Separator();
+		//		ImGui::Text("Cache: %s", CachedPath.c_str());
+		//	}
+		//}
 
 		ImGui::EndTooltip();
 	}
