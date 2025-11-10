@@ -281,6 +281,12 @@ void USkeletalMesh::Load(const FString& InFilePath, ID3D11Device* InDevice, cons
 
 	UE_LOG("[SkeletalMesh] Mesh data loaded successfully");
 
+	if (Skeleton)
+	{
+		UE_LOG("[SkeletalMesh] Bone hierarchy for %s", InFilePath.c_str());
+		Skeleton->LogBoneHierarchy();
+	}
+
 	// 3. Create Dynamic GPU resources for CPU Skinning
 	if (!CreateDynamicGPUResources(InDevice))
 	{
