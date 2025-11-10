@@ -480,6 +480,9 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletal
 	FbxGeometryElementUV* uvElement = fbxMesh->GetElementUV();
 	FbxGeometryElementTangent* tangentElement = fbxMesh->GetElementTangent();
 
+	// Skeleton 정보 (Static vs Skeletal 구분용)
+	USkeleton* skeleton = OutSkeletalMesh->GetSkeleton();
+
 	// Polygon 순회 (각 Triangle)
 	int32 vertexIndexCounter = 0;
 
@@ -556,7 +559,7 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletal
 				}
 				else if (tangentElement->GetMappingMode() == FbxGeometryElement::eByPolygonVertex)
 				{
-					tangentIndex = vertexIndexCounter;
+					tangentIndex = fbxMesh->GetPolygonVertexIndex(polyIndex) + vertInPoly;
 				}
 
 				FbxVector4 fbxTangent = tangentElement->GetDirectArray().GetAt(tangentIndex);
@@ -580,14 +583,10 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletal
 				vertex.BoneWeights[i] = 0.0f;
 			}
 
-			// Vertex 추가
+			// Vertex와 Index 저장
 			vertices.push_back(vertex);
-			indices.push_back(vertexIndexCounter);
-
-			// Control Point Index 매핑 저장
+			indices.push_back(vertexIndexCounter++);
 			vertexToControlPointMap.push_back(controlPointIndex);
-
-			vertexIndexCounter++;
 		}
 	}
 
@@ -604,7 +603,7 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletal
 
 	// STATIC MESH 처리: Skeleton이 없는 경우 Unreal Engine 방식 적용
 	// Skeletal Mesh는 ExtractSkinWeights()에서 변환되므로 여기서는 건너뜀
-	USkeleton* skeleton = OutSkeletalMesh->GetSkeleton();
+	// skeleton 변수는 함수 시작 부분에서 이미 선언됨
 	if (!skeleton || skeleton->GetBoneCount() == 0)
 	{
 		UE_LOG("[FBX] No skeleton detected - applying Static Mesh transform (Unreal Engine style)");
@@ -663,8 +662,20 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletal
 			vertex.Tangent = FVector4(tangent3D.X, tangent3D.Y, tangent3D.Z, vertex.Tangent.W);
 		}
 
-		UE_LOG("[FBX] Static Mesh transform complete (UE style). Vertex count: %d", verticesRef.size());
-		UE_LOG("[FBX] No index swap needed (ConvertPos Y-flip handles winding order correctly)");
+		// CRITICAL DIFFERENCE: Mundi vs Unreal Engine Winding Order
+		// - Unreal Engine: CCW = Front Face (FrontCounterClockwise = TRUE)
+		// - Mundi Engine: CW = Front Face (FrontCounterClockwise = FALSE, D3D11 기본)
+		//
+		// Y-flip은 Handedness만 변경 (RH→LH), Winding Order는 변경 안 함 (CCW 유지)
+		// 따라서 Mundi는 CCW→CW 변환을 위해 Index Reversal 필요!
+		TArray<uint32>& indicesRef = OutSkeletalMesh->GetIndicesRef();
+		for (size_t i = 0; i < indicesRef.size(); i += 3)
+		{
+			std::swap(indicesRef[i], indicesRef[i + 2]);  // [0,1,2] → [2,1,0] (CCW → CW)
+		}
+
+		UE_LOG("[FBX] Static Mesh transform complete. Vertex count: %d", verticesRef.size());
+		UE_LOG("[FBX] Triangle indices reversed (CCW → CW) for Mundi winding order");
 	}
 
 	return true;
@@ -826,6 +837,9 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkelet
 			// (transformMatrix × geometryTransform)을 적용해서 Global Space로 이동
 			FbxAMatrix totalTransform = transformMatrix * geometryTransform;
 
+			// Odd Negative Scale 확인 (Unreal Engine 방식)
+			bool bOddNegativeScale = IsOddNegativeScale(totalTransform);
+
 			// Normal/Tangent용 Transform (Inverse Transpose)
 			FbxAMatrix normalTransform = totalTransform;
 			normalTransform.SetT(FbxVector4(0, 0, 0, 0));
@@ -853,12 +867,21 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkelet
 				vertex.Tangent = FVector4(tangent3D.X, tangent3D.Y, tangent3D.Z, vertex.Tangent.W);
 			}
 
-			UE_LOG("[FBX] Vertex transformation complete (UE style). Vertex count: %d", vertices.size());
+			UE_LOG("[FBX] Vertex transformation complete. Vertex count: %d", vertices.size());
 
-			// UNREAL ENGINE 방식: Winding Order는 ConvertFbxPosition의 Y축 반전이 자동으로 처리
-			// Determinant 체크 및 Index swap 불필요!
-			// Y축 반전은 Reflection 변환이므로 winding order를 자동으로 보존
-			UE_LOG("[FBX] Winding order automatically preserved by Y-axis flip (no manual swap needed)");
+			// CRITICAL DIFFERENCE: Mundi vs Unreal Engine Winding Order
+			// - Unreal Engine: CCW = Front Face (FrontCounterClockwise = TRUE)
+			// - Mundi Engine: CW = Front Face (FrontCounterClockwise = FALSE, D3D11 기본)
+			//
+			// Y-flip은 Handedness만 변경 (RH→LH), Winding Order는 변경 안 함 (CCW 유지)
+			// 따라서 Mundi는 CCW→CW 변환을 위해 Index Reversal 필요!
+			TArray<uint32>& indicesRef = OutSkeletalMesh->GetIndicesRef();
+			for (size_t i = 0; i < indicesRef.size(); i += 3)
+			{
+				std::swap(indicesRef[i], indicesRef[i + 2]);  // [0,1,2] → [2,1,0] (CCW → CW)
+			}
+
+			UE_LOG("[FBX] Triangle indices reversed (CCW → CW) for Mundi winding order");
 		}
 
 		// UNREAL ENGINE 방식: Global Bind Pose Matrix 저장 (Y축 반전 적용)
@@ -1194,6 +1217,19 @@ FVector FFbxImporter::ConvertFbxScale(const FbxVector4& scale)
 		static_cast<float>(scale[1]),
 		static_cast<float>(scale[2])
 	);
+}
+
+// Helper: Odd Negative Scale 확인 (Unreal Engine 방식)
+bool FFbxImporter::IsOddNegativeScale(const FbxAMatrix& TotalMatrix)
+{
+	FbxVector4 Scale = TotalMatrix.GetS();
+	int32 NegativeNum = 0;
+
+	if (Scale[0] < 0) NegativeNum++;
+	if (Scale[1] < 0) NegativeNum++;
+	if (Scale[2] < 0) NegativeNum++;
+
+	return NegativeNum == 1 || NegativeNum == 3;
 }
 
 void FFbxImporter::SetError(const FString& Message)

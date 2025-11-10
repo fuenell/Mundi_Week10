@@ -193,6 +193,14 @@ private:
 	 */
 	FVector ConvertFbxScale(const FbxVector4& scale);
 
+	/**
+	 * TotalMatrix의 Scale에 음수가 홀수 개 있는지 확인 (Unreal Engine 방식)
+	 * Odd Negative Scale일 경우 Vertex Order를 reverse해야 올바른 winding order 유지
+	 * @param TotalMatrix - Transform Matrix
+	 * @return Scale에 음수가 1개 또는 3개면 true
+	 */
+	bool IsOddNegativeScale(const FbxAMatrix& TotalMatrix);
+
 	// === 에러 처리 ===
 
 	/**
