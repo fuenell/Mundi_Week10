@@ -192,14 +192,14 @@ FbxNode* FFbxImporter::FindFirstMeshNode(FbxNode* Node)
 	return nullptr;
 }
 
-USkeletalMesh* FFbxImporter::ImportSkeletalMesh(const FString& FilePath, const FFbxImportOptions& Options)
+bool FFbxImporter::ImportSkeletalMesh(const FString& FilePath, const FFbxImportOptions& Options, FSkeletalMesh& OutMeshData)
 {
 	CurrentOptions = Options;
 
 	// 1. Scene 로드
 	if (!LoadScene(FilePath))
 	{
-		return nullptr;
+		return false;
 	}
 
 	// 2. 단위 변환 (먼저 수행 - Unreal Engine 방식)
@@ -227,7 +227,7 @@ USkeletalMesh* FFbxImporter::ImportSkeletalMesh(const FString& FilePath, const F
 	if (!meshNode)
 	{
 		SetError("No mesh found in FBX file");
-		return nullptr;
+		return false;
 	}
 
 	// 6. Skeleton 추출
@@ -235,53 +235,30 @@ USkeletalMesh* FFbxImporter::ImportSkeletalMesh(const FString& FilePath, const F
 	if (!skeleton)
 	{
 		SetError("Failed to extract skeleton");
-		return nullptr;
+		return false;
 	}
 
-	// 7. SkeletalMesh 생성
-	USkeletalMesh* skeletalMesh = ObjectFactory::NewObject<USkeletalMesh>();
-	if (!skeletalMesh)
-	{
-		SetError("Failed to create SkeletalMesh object");
-		return nullptr;
-	}
+	// Skeleton을 OutMeshData에 설정
+	OutMeshData.Skeleton = skeleton;
 
-	// Skeleton 연결
-	skeletalMesh->SetSkeleton(skeleton);
-
-	// 8. Mesh 데이터 추출 (Vertex, Normal, UV, Index)
-	if (!ExtractMeshData(meshNode, skeletalMesh))
+	// 7. Mesh 데이터 추출 (Vertex, Normal, UV, Index)
+	if (!ExtractMeshData(meshNode, OutMeshData))
 	{
 		SetError("Failed to extract mesh data");
-		return nullptr;
+		return false;
 	}
 
-	// 9. Skin Weights 및 Bind Pose 추출
+	// 8. Skin Weights 및 Bind Pose 추출
 	// ExtractSkinWeights()에서 FbxCluster를 통해 Inverse Bind Pose도 함께 추출
-	if (!ExtractSkinWeights(meshNode->GetMesh(), skeletalMesh))
+	if (!ExtractSkinWeights(meshNode->GetMesh(), OutMeshData))
 	{
 		SetError("Failed to extract skin weights and bind pose");
-		return nullptr;
+		return false;
 	}
 
-	// 10. GPU 리소스 생성 (Dynamic Vertex Buffer, Index Buffer)
-	// CPU Skinning을 위해 Dynamic Buffer 사용
-	ID3D11Device* Device = UResourceManager::GetInstance().GetDevice();
-	if (!Device)
-	{
-		SetError("Failed to get D3D11 Device for GPU resource creation");
-		return nullptr;
-	}
+	UE_LOG("[FBX] ImportSkeletalMesh: Completed successfully");
 
-	if (!skeletalMesh->CreateDynamicGPUResources(Device))
-	{
-		SetError("Failed to create Dynamic GPU resources (Vertex/Index buffers)");
-		return nullptr;
-	}
-
-	UE_LOG("[FBX] ImportSkeletalMesh: Completed successfully (Dynamic Buffer for CPU Skinning)");
-
-	return skeletalMesh;
+	return true;
 }
 
 UStaticMesh* FFbxImporter::ImportStaticMesh(const FString& FilePath, const FFbxImportOptions& Options)
@@ -404,9 +381,9 @@ FTransform FFbxImporter::ConvertFbxTransform(const FbxAMatrix& fbxMatrix)
 	return transform;
 }
 
-bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletalMesh)
+bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, FSkeletalMesh& OutMeshData)
 {
-	if (!MeshNode || !OutSkeletalMesh)
+	if (!MeshNode)
 	{
 		SetError("ExtractMeshData: Invalid parameters");
 		return false;
@@ -567,30 +544,28 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletal
 
 	UE_LOG("[FBX] Extracted %zu vertices, %zu indices", vertices.size(), indices.size());
 
-	// SkeletalMesh에 데이터 설정
-	OutSkeletalMesh->SetVertices(vertices);
-	OutSkeletalMesh->SetIndices(indices);
+	// FSkeletalMesh에 데이터 설정 (Move Semantics)
+	OutMeshData.Vertices = std::move(vertices);
+	OutMeshData.Indices = std::move(indices);
+	OutMeshData.VertexToControlPointMap = std::move(vertexToControlPointMap);
 
-	// Vertex → Control Point 매핑 저장
-	OutSkeletalMesh->SetVertexToControlPointMap(vertexToControlPointMap);
-
-	UE_LOG("[FBX] Stored vertex to control point mapping (%zu entries)", vertexToControlPointMap.size());
+	UE_LOG("[FBX] Stored vertex to control point mapping (%zu entries)", OutMeshData.VertexToControlPointMap.size());
 
 	return true;
 }
 
-bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkeletalMesh)
+bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, FSkeletalMesh& OutMeshData)
 {
-	if (!fbxMesh || !OutSkeletalMesh)
+	if (!fbxMesh)
 	{
 		SetError("ExtractSkinWeights: Invalid parameters");
 		return false;
 	}
 
-	USkeleton* skeleton = OutSkeletalMesh->GetSkeleton();
+	USkeleton* skeleton = OutMeshData.Skeleton;
 	if (!skeleton)
 	{
-		SetError("ExtractSkinWeights: SkeletalMesh has no Skeleton");
+		SetError("ExtractSkinWeights: FSkeletalMesh has no Skeleton");
 		return false;
 	}
 
@@ -741,7 +716,7 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkelet
 
 			UE_LOG("[FBX] Transforming vertices to Mesh Global Space using transformMatrix × geometryTransform");
 
-			TArray<FSkinnedVertex>& vertices = OutSkeletalMesh->GetVerticesRef();
+			TArray<FSkinnedVertex>& vertices = OutMeshData.Vertices;
 
 			for (auto& vertex : vertices)
 			{
@@ -794,7 +769,7 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkelet
 			UE_LOG("[FBX] Determinant is negative - reversing triangle winding order");
 
 			// Index buffer에서 모든 triangle의 vertex order를 반전
-			TArray<uint32>& indices = OutSkeletalMesh->GetIndicesRef();
+			TArray<uint32>& indices = OutMeshData.Indices;
 
 			// Triangle 단위로 순회하며 vertex order 반전 (0,1,2 → 2,1,0)
 			for (size_t i = 0; i < indices.size(); i += 3)
@@ -900,12 +875,12 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkelet
 		}
 	}
 
-	// 이제 SkeletalMesh의 각 Vertex에 Bone Weight 적용
+	// 이제 FSkeletalMesh의 각 Vertex에 Bone Weight 적용
 	// ExtractMeshData에서 생성한 Vertex들을 가져와서 Bone Weights를 적용
 
 	// 기존 Vertices 가져오기 (수정 가능)
-	TArray<FSkinnedVertex>& vertices = OutSkeletalMesh->GetVerticesRef();
-	const TArray<int32>& vertexToControlPointMap = OutSkeletalMesh->GetVertexToControlPointMap();
+	TArray<FSkinnedVertex>& vertices = OutMeshData.Vertices;
+	const TArray<int32>& vertexToControlPointMap = OutMeshData.VertexToControlPointMap;
 
 	// 매핑 데이터 검증
 	if (vertices.size() != vertexToControlPointMap.size())
