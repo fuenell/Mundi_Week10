@@ -196,6 +196,8 @@ bool UGameEngine::Startup(HINSTANCE hInstance)
 
     FObjManager::Preload();
 
+    RESOURCE.PreloadSkeletalMeshes();
+
     // Preload audio assets
     FAudioDevice::Preload();
 

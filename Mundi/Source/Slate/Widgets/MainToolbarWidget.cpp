@@ -573,8 +573,16 @@ void UMainToolbarWidget::OnImportFBX()
         Options.bConvertScene = true;
         Options.ImportScale = 1.0f;
 
-        // ResourceManager를 통해 SkeletalMesh 로드
+        // 파일 경로
         FString PathStr = SelectedPath.string();
+
+        // 캐시 확인 (PreLoad된 경우 여기서 nullptr이 아님)
+        USkeletalMesh* CachedMesh = UResourceManager::GetInstance().Get<USkeletalMesh>(PathStr);
+        bool bWasCached = (CachedMesh != nullptr);
+
+        // ResourceManager를 통해 SkeletalMesh 로드
+        // - 이미 PreLoad된 경우: 캐시에서 즉시 반환 (FBX Import 스킵)
+        // - 새 파일인 경우: FBX Import 후 캐시에 저장
         USkeletalMesh* ImportedMesh = UResourceManager::GetInstance().Load<USkeletalMesh>(PathStr, Options);
 
         if (!ImportedMesh)
@@ -583,7 +591,15 @@ void UMainToolbarWidget::OnImportFBX()
             return;
         }
 
-        UE_LOG("MainToolbar: SkeletalMesh loaded successfully: %s", SelectedPath.filename().generic_u8string().c_str());
+        // 로그 출력
+        if (bWasCached)
+        {
+            UE_LOG("MainToolbar: Using cached SkeletalMesh (PreLoaded): %s", SelectedPath.filename().generic_u8string().c_str());
+        }
+        else
+        {
+            UE_LOG("MainToolbar: Imported new SkeletalMesh: %s", SelectedPath.filename().generic_u8string().c_str());
+        }
 
         // Scene에 SkeletalMeshActor 생성
         if (GWorld)

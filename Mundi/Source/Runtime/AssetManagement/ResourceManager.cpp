@@ -7,9 +7,12 @@
 #include "Quad.h"
 #include "MeshBVH.h"
 #include "Enums.h"
+#include "FbxImportOptions.h"
+#include "SkeletalMesh.h"
 
 #include <filesystem>
 #include <cwctype>
+#include <algorithm>
 
 IMPLEMENT_CLASS(UResourceManager)
 
@@ -149,9 +152,81 @@ void UResourceManager::SetStaticMeshs()
     StaticMeshs = GetAll<UStaticMesh>();
 }
 
+void UResourceManager::SetSkeletalMeshes()
+{
+	SkeletalMeshes = GetAll<USkeletalMesh>();
+}
+
 void UResourceManager::SetAudioFiles()
-{ 
+{
     Sounds = GetAll<USound>();
+}
+
+void UResourceManager::PreloadSkeletalMeshes()
+{
+	// Data/Model/Fbx 폴더 경로 구성
+	const std::filesystem::path FbxDir = std::filesystem::path(GDataDir) / "Model" / "Fbx";
+
+	if (!std::filesystem::exists(FbxDir) || !std::filesystem::is_directory(FbxDir))
+	{
+		UE_LOG("[ResourceManager] PreloadSkeletalMeshes: Fbx directory not found: %s", FbxDir.string().c_str());
+		return;
+	}
+
+	size_t LoadedCount = 0;
+	std::unordered_set<FString> ProcessedFiles; // 중복 로딩 방지
+
+	// FBX Import 옵션 설정 (기본값)
+	FFbxImportOptions DefaultOptions;
+	DefaultOptions.ImportType = EFbxImportType::SkeletalMesh;
+	DefaultOptions.bImportSkeleton = true;
+	DefaultOptions.bConvertScene = true;
+	DefaultOptions.ImportScale = 1.0f;
+
+	// 재귀적으로 .fbx 파일 탐색
+	for (const auto& Entry : std::filesystem::recursive_directory_iterator(FbxDir))
+	{
+		if (!Entry.is_regular_file())
+			continue;
+
+		const std::filesystem::path& Path = Entry.path();
+		FString Extension = Path.extension().string();
+		std::transform(Extension.begin(), Extension.end(), Extension.begin(),
+			[](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+		if (Extension == ".fbx")
+		{
+			FString PathStr = Path.string();
+
+			// 경로 정규화 (백슬래시 → 슬래시)
+			std::replace(PathStr.begin(), PathStr.end(), '\\', '/');
+
+			// 이미 처리된 파일인지 확인
+			if (ProcessedFiles.find(PathStr) == ProcessedFiles.end())
+			{
+				ProcessedFiles.insert(PathStr);
+
+				// ResourceManager::Load를 통해 로드 (캐싱 자동 처리)
+				USkeletalMesh* Mesh = Load<USkeletalMesh>(PathStr, DefaultOptions);
+
+				if (Mesh)
+				{
+					++LoadedCount;
+					UE_LOG("[ResourceManager] PreloadSkeletalMeshes: Loaded %s", Path.filename().string().c_str());
+				}
+				else
+				{
+					UE_LOG("[error] PreloadSkeletalMeshes: Failed to load %s", PathStr.c_str());
+				}
+			}
+		}
+	}
+
+	// SkeletalMeshes 배열 업데이트
+	SetSkeletalMeshes();
+
+	UE_LOG("[ResourceManager] PreloadSkeletalMeshes: Loaded %zu .fbx files from %s",
+		LoadedCount, FbxDir.string().c_str());
 }
 
 
