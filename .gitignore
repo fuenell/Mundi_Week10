@@ -19,8 +19,10 @@
 *.so
 *.dylib
 *.dll
-# Exception: Allow Lua library DLL
+# Exception: Allow third-party library DLLs
 !Mundi/ThirdParty/Lua/bin/lua54.dll
+!Mundi/ThirdParty/FBX/bin/Debug/libfbxsdk.dll
+!Mundi/ThirdParty/FBX/bin/Release/libfbxsdk.dll
 
 # Fortran module files
 *.mod

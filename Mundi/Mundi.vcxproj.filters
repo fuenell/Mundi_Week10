@@ -240,6 +240,9 @@
     <ClCompile Include="Source\Runtime\AssetManagement\DynamicMesh.cpp">
       <Filter>Source\Runtime\AssetManagement</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Runtime\AssetManagement\FbxImporter.cpp">
+      <Filter>Source\Runtime\AssetManagement</Filter>
+    </ClCompile>
     <ClCompile Include="Source\Runtime\AssetManagement\Line.cpp">
       <Filter>Source\Runtime\AssetManagement</Filter>
     </ClCompile>
@@ -256,6 +259,12 @@
       <Filter>Source\Runtime\AssetManagement</Filter>
     </ClCompile>
     <ClCompile Include="Source\Runtime\AssetManagement\ResourceManager.cpp">
+      <Filter>Source\Runtime\AssetManagement</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Runtime\AssetManagement\Skeleton.cpp">
+      <Filter>Source\Runtime\AssetManagement</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Runtime\AssetManagement\SkeletalMesh.cpp">
       <Filter>Source\Runtime\AssetManagement</Filter>
     </ClCompile>
     <ClCompile Include="Source\Runtime\AssetManagement\StaticMesh.cpp">
@@ -339,6 +348,12 @@
     <ClCompile Include="Source\Runtime\Engine\Components\SceneComponent.cpp">
       <Filter>Source\Runtime\Engine\Components</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Runtime\Engine\Components\SkinnedMeshComponent.cpp">
+      <Filter>Source\Runtime\Engine\Components</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Runtime\Engine\Components\SkeletalMeshComponent.cpp">
+      <Filter>Source\Runtime\Engine\Components</Filter>
+    </ClCompile>
     <ClCompile Include="Source\Runtime\Engine\Components\StaticMeshComponent.cpp">
       <Filter>Source\Runtime\Engine\Components</Filter>
     </ClCompile>
@@ -358,6 +373,9 @@
       <Filter>Source\Runtime\Engine\GameFramework</Filter>
     </ClCompile>
     <ClCompile Include="Source\Runtime\Engine\GameFramework\Level.cpp">
+      <Filter>Source\Runtime\Engine\GameFramework</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Runtime\Engine\GameFramework\SkeletalMeshActor.cpp">
       <Filter>Source\Runtime\Engine\GameFramework</Filter>
     </ClCompile>
     <ClCompile Include="Source\Runtime\Engine\GameFramework\StaticMeshActor.cpp">
@@ -781,6 +799,12 @@
     <ClInclude Include="Source\Runtime\AssetManagement\DynamicMesh.h">
       <Filter>Source\Runtime\AssetManagement</Filter>
     </ClInclude>
+    <ClInclude Include="Source\Runtime\AssetManagement\FbxImporter.h">
+      <Filter>Source\Runtime\AssetManagement</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Runtime\AssetManagement\FbxImportOptions.h">
+      <Filter>Source\Runtime\AssetManagement</Filter>
+    </ClInclude>
     <ClInclude Include="Source\Runtime\AssetManagement\Line.h">
       <Filter>Source\Runtime\AssetManagement</Filter>
     </ClInclude>
@@ -797,6 +821,12 @@
       <Filter>Source\Runtime\AssetManagement</Filter>
     </ClInclude>
     <ClInclude Include="Source\Runtime\AssetManagement\ResourceManager.h">
+      <Filter>Source\Runtime\AssetManagement</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Runtime\AssetManagement\Skeleton.h">
+      <Filter>Source\Runtime\AssetManagement</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Runtime\AssetManagement\SkeletalMesh.h">
       <Filter>Source\Runtime\AssetManagement</Filter>
     </ClInclude>
     <ClInclude Include="Source\Runtime\AssetManagement\StaticMesh.h">
@@ -907,6 +937,12 @@
     <ClInclude Include="Source\Runtime\Engine\Components\SceneComponent.h">
       <Filter>Source\Runtime\Engine\Components</Filter>
     </ClInclude>
+    <ClInclude Include="Source\Runtime\Engine\Components\SkinnedMeshComponent.h">
+      <Filter>Source\Runtime\Engine\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Runtime\Engine\Components\SkeletalMeshComponent.h">
+      <Filter>Source\Runtime\Engine\Components</Filter>
+    </ClInclude>
     <ClInclude Include="Source\Runtime\Engine\Components\StaticMeshComponent.h">
       <Filter>Source\Runtime\Engine\Components</Filter>
     </ClInclude>
@@ -926,6 +962,9 @@
       <Filter>Source\Runtime\Engine\GameFramework</Filter>
     </ClInclude>
     <ClInclude Include="Source\Runtime\Engine\GameFramework\Level.h">
+      <Filter>Source\Runtime\Engine\GameFramework</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Runtime\Engine\GameFramework\SkeletalMeshActor.h">
       <Filter>Source\Runtime\Engine\GameFramework</Filter>
     </ClInclude>
     <ClInclude Include="Source\Runtime\Engine\GameFramework\StaticMeshActor.h">

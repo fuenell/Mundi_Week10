@@ -35,6 +35,7 @@ private:
     void OnNewScene();
     void OnSaveScene();
     void OnLoadScene();
+    void OnImportFBX();
 
     // 키보드 입력 처리
     void HandleKeyboardShortcuts();
@@ -50,6 +51,7 @@ private:
         NewScene,
         SaveScene,
         LoadScene,
+        ImportFBX,
         SpawnActor,
         StartPIE,
         EndPIE
@@ -97,6 +99,7 @@ private:
     UTexture* IconNew = nullptr;
     UTexture* IconSave = nullptr;
     UTexture* IconLoad = nullptr;
+    UTexture* IconImport = nullptr;
     UTexture* IconPlay = nullptr;
     UTexture* IconStop = nullptr;
     UTexture* IconAddActor = nullptr;

@@ -7,6 +7,10 @@
 #include "CameraActor.h"
 #include "EditorEngine.h"
 #include "PlatformProcess.h"
+#include "FbxImporter.h"
+#include "SkeletalMesh.h"
+#include "Skeleton.h"
+#include "SkeletalMeshActor.h"
 #include <commdlg.h>
 #include <random>
 
@@ -42,6 +46,7 @@ void UMainToolbarWidget::LoadToolbarIcons()
     IconNew = UResourceManager::GetInstance().Load<UTexture>("Data/Icon/Toolbar_New.png");
     IconSave = UResourceManager::GetInstance().Load<UTexture>("Data/Icon/Toolbar_Save.png");
     IconLoad = UResourceManager::GetInstance().Load<UTexture>("Data/Icon/Toolbar_Load.png");
+    IconImport = UResourceManager::GetInstance().Load<UTexture>("Data/Icon/Toolbar_Import.png");
     IconPlay = UResourceManager::GetInstance().Load<UTexture>("Data/Icon/Toolbar_Play.png");
     IconStop = UResourceManager::GetInstance().Load<UTexture>("Data/Icon/Toolbar_Stop.png");
     IconAddActor = UResourceManager::GetInstance().Load<UTexture>("Data/Icon/Toolbar_AddActor.png");
@@ -221,6 +226,19 @@ void UMainToolbarWidget::RenderSceneButtons()
         }
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("씬을 불러옵니다 [Ctrl+O]");
+    }
+
+    ImGui::SameLine();
+
+    // Import FBX 버튼
+    if (IconImport && IconImport->GetShaderResourceView())
+    {
+        if (ImGui::ImageButton("##ImportBtn", (void*)IconImport->GetShaderResourceView(), IconSizeVec))
+        {
+            PendingCommand = EToolbarCommand::ImportFBX;
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("FBX 파일을 임포트합니다 [Ctrl+I]");
     }
 
     EndButtonGroup();
@@ -535,6 +553,80 @@ void UMainToolbarWidget::RenderPIEButtons()
     ImGui::PopStyleVar(3);
 }
 
+void UMainToolbarWidget::OnImportFBX()
+{
+    const FWideString BaseDir = UTF8ToWide(GDataDir) + L"/Model";
+    const FWideString Extension = L".fbx";
+    const FWideString Description = L"FBX Files";
+
+    // Windows 파일 다이얼로그 열기
+    std::filesystem::path SelectedPath = FPlatformProcess::OpenLoadFileDialog(BaseDir, Extension, Description);
+    if (SelectedPath.empty())
+        return;
+
+    try
+    {
+        // FBX Importer 생성
+        FFbxImporter FbxImporter;
+
+        // Import 옵션 설정
+        FFbxImportOptions Options;
+        Options.ImportType = EFbxImportType::SkeletalMesh;
+        Options.bImportSkeleton = true;
+        Options.bConvertScene = true;
+        Options.ImportScale = 1.0f;
+
+        // FBX 파일에서 SkeletalMesh Import
+        FString PathStr = SelectedPath.string();
+        USkeletalMesh* ImportedMesh = FbxImporter.ImportSkeletalMesh(PathStr, Options);
+
+        if (!ImportedMesh)
+        {
+            UE_LOG("[error] MainToolbar: FBX Import failed: %s", FbxImporter.GetLastError().c_str());
+            return;
+        }
+
+        UE_LOG("MainToolbar: FBX Import successful: %s", SelectedPath.filename().generic_u8string().c_str());
+
+        // Scene에 SkeletalMeshActor 생성
+        if (GWorld)
+        {
+            ASkeletalMeshActor* NewActor = GWorld->SpawnActor<ASkeletalMeshActor>();
+            if (NewActor)
+            {
+                // Import된 Mesh 설정
+                NewActor->SetSkeletalMesh(ImportedMesh);
+
+                // 고유 이름 생성 (파일명 사용)
+                FString MeshName = SelectedPath.stem().string();
+                FString ActorName = GWorld->GenerateUniqueActorName(MeshName);
+                NewActor->ObjectName = FName(ActorName);
+
+                // 카메라 앞쪽에 배치
+                ACameraActor* Camera = GWorld->GetEditorCameraActor();
+                if (Camera)
+                {
+                    FVector cameraPos = Camera->GetActorLocation();
+                    FVector cameraForward = Camera->GetForward();
+
+                    // 카메라 앞쪽 10 유닛 위치에 스폰
+                    FVector spawnPos = cameraPos + cameraForward * 10.0f;
+                    NewActor->SetActorLocation(spawnPos);
+                }
+
+                // 생성된 액터를 선택 상태로 만들기
+                HandleActorSelection(NewActor);
+
+                UE_LOG("MainToolbar: Created SkeletalMeshActor '%s' with imported FBX mesh", ActorName.c_str());
+            }
+        }
+    }
+    catch (const std::exception& Exception)
+    {
+        UE_LOG("[error] MainToolbar: FBX Import Error: %s", Exception.what());
+    }
+}
+
 void UMainToolbarWidget::OnNewScene()
 {
     try
@@ -799,6 +891,10 @@ void UMainToolbarWidget::ProcessPendingCommands()
         OnLoadScene();
         break;
 
+    case EToolbarCommand::ImportFBX:
+        OnImportFBX();
+        break;
+
     case EToolbarCommand::SpawnActor:
         if (PendingActorClass && GWorld)
         {
@@ -907,6 +1003,12 @@ void UMainToolbarWidget::HandleKeyboardShortcuts()
     if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O, false))
     {
         PendingCommand = EToolbarCommand::LoadScene;
+    }
+
+    // Ctrl+I: Import FBX
+    if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_I, false))
+    {
+        PendingCommand = EToolbarCommand::ImportFBX;
     }
 
 #ifdef _EDITOR

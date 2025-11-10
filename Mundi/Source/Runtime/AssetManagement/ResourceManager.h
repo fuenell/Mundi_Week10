@@ -62,6 +62,7 @@ public:
 	// --- 헬퍼 및 유틸리티 ---
 	ID3D11Device* GetDevice() { return Device; }
 	ID3D11DeviceContext* GetDeviceContext() { return Context; }
+	ID3D11DeviceContext* GetContext() { return Context; }  // Alias for GetDeviceContext
 	TArray<D3D11_INPUT_ELEMENT_DESC>& GetProperInputLayout(const FString& InShaderName);
 	FString& GetProperShader(const FString& InTextureName);
 
