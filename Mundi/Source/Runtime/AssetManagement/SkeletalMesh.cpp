@@ -281,6 +281,14 @@ void USkeletalMesh::Load(const FString& InFilePath, ID3D11Device* InDevice, cons
 
 	UE_LOG("[SkeletalMesh] Mesh data loaded successfully");
 
+	// 2.5. Extract Materials from FBX (FBX Scene이 아직 열려있음)
+	// ExtractMaterials()에서 Material 생성 → ResourceManager 등록 → Material 이름 저장
+	if (!FbxImporter.ExtractMaterialsFromScene(this))
+	{
+		UE_LOG("[warning] Failed to extract materials from FBX, using default material");
+		// Material 추출 실패는 치명적이지 않으므로 계속 진행
+	}
+
 	// 3. Create Dynamic GPU resources for CPU Skinning
 	if (!CreateDynamicGPUResources(InDevice))
 	{

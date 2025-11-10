@@ -251,14 +251,7 @@ bool FFbxImporter::ImportSkeletalMesh(const FString& FilePath, const FFbxImportO
 		return false;
 	}
 
-	// 8.5. Material과 Texture 정보 추출
-	if (!ExtractMaterials(meshNode, skeletalMesh))
-	{
-		// Material 추출 실패는 경고만 출력하고 계속 진행
-		UE_LOG("[FBX] Warning: Failed to extract materials, continuing without material info");
-	}
-
-	// 9. Skin Weights 및 Bind Pose 추출
+	// 8. Skin Weights 및 Bind Pose 추출
 	// ExtractSkinWeights()에서 FbxCluster를 통해 Inverse Bind Pose도 함께 추출
 	if (!ExtractSkinWeights(meshNode->GetMesh(), OutMeshData))
 	{
@@ -1076,14 +1069,12 @@ bool FFbxImporter::ExtractMaterials(FbxNode* MeshNode, USkeletalMesh* OutSkeleta
 	FbxString fbxFilePath = Scene->GetDocumentInfo()->Url.Get();
 	std::filesystem::path fbxDirAbsolute = std::filesystem::path(fbxFilePath.Buffer()).parent_path();
 
-	// CWD 기준 상대 경로로 변환 (예: "Data/Model")
-	std::filesystem::path fbxDirRelative = std::filesystem::relative(fbxDirAbsolute, std::filesystem::current_path());
-	std::string fbxDirStr = fbxDirRelative.string();
-	std::replace(fbxDirStr.begin(), fbxDirStr.end(), '\\', '/');
+	// ResolveAssetRelativePath 사용하여 Data/ 기준 상대 경로로 변환
+	FString fbxDirStr = ResolveAssetRelativePath(fbxDirAbsolute.string(), GDataDir);
 
-	UE_LOG("[FBX] FBX directory (relative to CWD): %s", fbxDirStr.c_str());
+	UE_LOG("[FBX] FBX directory (relative to Data/): %s", fbxDirStr.c_str());
 
-	// Helper lambda: 텍스처 경로를 CWD 기준 상대 경로로 변환
+	// Helper lambda: 텍스처 경로를 Data/ 기준 상대 경로로 변환
 	// 예: "C:/.../Data/Model/Mutant.fbm/texture.png" → "Data/Model/Mutant.fbm/texture.png"
 	auto ResolveTexturePath = [&](FbxFileTexture* texture) -> FString
 	{
@@ -1112,26 +1103,9 @@ bool FFbxImporter::ExtractMaterials(FbxNode* MeshNode, USkeletalMesh* OutSkeleta
 			texturePath_fs = texturePath_fs.lexically_normal(); // 경로 정규화
 		}
 
-		// FBX 파일 기준 상대 경로 생성 (예: "Mutant.fbm/texture.png")
-		std::error_code ec;
-		std::filesystem::path textureRelativeToFbx = std::filesystem::relative(texturePath_fs, fbxDirAbsolute, ec);
-
-		FString finalPath;
-		if (!ec && !textureRelativeToFbx.empty())
-		{
-			// FBX 디렉토리 + 텍스처 상대 경로 결합
-			// 예: "Data/Model" + "/" + "Mutant.fbm/texture.png" = "Data/Model/Mutant.fbm/texture.png"
-			finalPath = fbxDirStr + "/" + textureRelativeToFbx.string();
-			std::replace(finalPath.begin(), finalPath.end(), '\\', '/'); // 슬래시로 정규화
-			UE_LOG("[FBX]   Resolved texture path: %s", finalPath.c_str());
-		}
-		else
-		{
-			// 실패 시 절대 경로 사용
-			finalPath = texturePath_fs.string();
-			std::replace(finalPath.begin(), finalPath.end(), '\\', '/');
-			UE_LOG("[FBX]   Warning: Could not resolve relative path, using absolute: %s", finalPath.c_str());
-		}
+		// ResolveAssetRelativePath로 Data/ 기준 경로로 변환
+		FString finalPath = ResolveAssetRelativePath(texturePath_fs.string(), GDataDir);
+		UE_LOG("[FBX]   Resolved texture path: %s", finalPath.c_str());
 
 		return finalPath;
 	};
@@ -1210,8 +1184,6 @@ bool FFbxImporter::ExtractMaterials(FbxNode* MeshNode, USkeletalMesh* OutSkeleta
 	// Material Name을 MaterialInfo.MaterialName에 설정 (OBJ는 MTL 이름, FBX는 FBX 파일명만 사용)
 	FbxString fbxFilePathStr = Scene->GetDocumentInfo()->Url.Get();
 	std::filesystem::path fbxPath(fbxFilePathStr.Buffer());
-	materialName = fbxPath.stem().string(); // 예: "Mutant.fbx" → "Mutant"
-	materialInfo.MaterialName = materialName;
 
 	UE_LOG("[FBX] Creating Material: '%s'", materialInfo.MaterialName.c_str());
 	UE_LOG("[FBX] - DiffuseTextureFileName: '%s'", materialInfo.DiffuseTextureFileName.c_str());
@@ -1245,12 +1217,33 @@ bool FFbxImporter::ExtractMaterials(FbxNode* MeshNode, USkeletalMesh* OutSkeleta
 	UResourceManager::GetInstance().Add<UMaterial>(materialInfo.MaterialName, material);
 	UE_LOG("[FBX] Material registered to ResourceManager: '%s'", materialInfo.MaterialName.c_str());
 
-	// SkeletalMesh에 Material 설정
-	OutSkeletalMesh->SetMaterial(material);
-	OutSkeletalMesh->SetMaterialInfo(materialInfo);
+	// SkeletalMesh에 Material 이름 저장 (Unreal Engine 방식)
+	// Component에서 이 이름으로 ResourceManager에서 Material을 찾음
+	OutSkeletalMesh->SetMaterialName(materialInfo.MaterialName);
 
-	UE_LOG("[FBX] Material extraction completed (ObjManager pattern)");
+	UE_LOG("[FBX] Material extraction completed: Material name '%s' stored in SkeletalMesh",
+		materialInfo.MaterialName.c_str());
 	return true;
+}
+
+bool FFbxImporter::ExtractMaterialsFromScene(USkeletalMesh* OutSkeletalMesh)
+{
+	if (!Scene || !OutSkeletalMesh)
+	{
+		SetError("ExtractMaterialsFromScene: Invalid Scene or SkeletalMesh");
+		return false;
+	}
+
+	// Scene에서 첫 번째 Mesh Node 찾기
+	FbxNode* meshNode = FindFirstMeshNode();
+	if (!meshNode)
+	{
+		SetError("ExtractMaterialsFromScene: No mesh node found in scene");
+		return false;
+	}
+
+	// ExtractMaterials() 호출
+	return ExtractMaterials(meshNode, OutSkeletalMesh);
 }
 
 // Helper: FbxMatrix → FMatrix 변환

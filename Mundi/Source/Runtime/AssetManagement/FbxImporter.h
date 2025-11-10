@@ -7,6 +7,7 @@
 // Forward declarations
 class USkeleton;
 class UStaticMesh;
+class USkeletalMesh;
 struct FSkeletalMesh;
 
 /**
@@ -57,6 +58,14 @@ public:
 	 * TODO: Phase 4에서 구현 예정
 	 */
 	UStaticMesh* ImportStaticMesh(const FString& FilePath, const FFbxImportOptions& Options);
+
+	/**
+	 * Material 추출 (Scene에서 첫 번째 Mesh Node 자동 찾기)
+	 * USkeletalMesh::Load()에서 호출 (FBX Scene이 아직 열려있는 상태)
+	 * @param OutSkeletalMesh - Material 정보를 저장할 SkeletalMesh
+	 * @return 성공 여부
+	 */
+	bool ExtractMaterialsFromScene(USkeletalMesh* OutSkeletalMesh);
 
 	/**
 	 * 마지막 에러 메시지 가져오기

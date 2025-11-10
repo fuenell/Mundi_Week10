@@ -83,6 +83,9 @@ struct FSkeletalMesh
 	TArray<uint32> Indices;
 	TArray<int32> VertexToControlPointMap;
 
+	TArray<FGroupInfo> GroupInfos;
+
+	
 	// Skeleton 데이터
 	USkeleton* Skeleton = nullptr;
 
@@ -164,34 +167,18 @@ public:
 	// === Material 관리 ===
 
 	/**
-	 * Material 설정
-	 * @param InMaterial - Material 객체
+	 * Material 이름 설정 (FBX Import 시 사용)
+	 * @param InMaterialName - Material Asset 이름
 	 */
-	void SetMaterial(class UMaterial* InMaterial) { Material = InMaterial; }
+	void SetMaterialName(const FString& InMaterialName) { MaterialName = InMaterialName; }
 
 	/**
-	 * Material 가져오기
-	 * @return Material 객체
+	 * Material 이름 가져오기
+	 * @return Material Asset 이름 (ResourceManager에서 찾을 때 사용)
 	 */
-	class UMaterial* GetMaterial() const { return Material; }
+	const FString& GetMaterialName() const { return MaterialName; }
 
-	/**
-	 * Material 정보 설정
-	 * @param InMaterialInfo - Material 정보
-	 */
-	void SetMaterialInfo(const FMaterialInfo& InMaterialInfo) { MaterialInfo = InMaterialInfo; }
 
-	/**
-	 * Material 정보 가져오기
-	 * @return Material 정보
-	 */
-	const FMaterialInfo& GetMaterialInfo() const { return MaterialInfo; }
-
-	/**
-	 * Material 정보 가져오기 (수정 가능)
-	 * @return Material 정보 참조
-	 */
-	FMaterialInfo& GetMaterialInfoRef() { return MaterialInfo; }
 
 	// === Mesh 데이터 관리 ===
 
@@ -346,11 +333,8 @@ private:
 	// Skeleton 참조
 	USkeleton* Skeleton = nullptr;
 
-	// Material 객체 (텍스처 포함)
-	class UMaterial* Material = nullptr;
-
-	// Material 정보 (텍스처 경로 포함)
-	FMaterialInfo MaterialInfo;
+	// Material 이름 (FBX Import 시 설정, Component에서 ResourceManager로 찾음)
+	FString MaterialName;
 
 	// CPU Mesh 데이터
 	TArray<FSkinnedVertex> Vertices;
