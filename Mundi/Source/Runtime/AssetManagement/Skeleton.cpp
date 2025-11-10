@@ -200,7 +200,7 @@ void USkeleton::LogBoneHierarchyRecursive(int32 BoneIndex, int32 Depth) const
 	}
 	else
 	{
-		Line.append(static_cast<size_t>(Depth) * 2, ' ');
+		Line.append(static_cast<size_t>(Depth - 1) * 2, ' ');
 		Line += "└";
 		Line += Bone.Name;
 	}
