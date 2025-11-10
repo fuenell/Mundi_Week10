@@ -88,24 +88,63 @@ void FFbxImporter::ConvertScene()
 	if (!Scene)
 		return;
 
-	// Mundi 엔진의 좌표계: Z-Up, X-Forward, Y-Right, Left-Handed
-	FbxAxisSystem mundiAxis(
-		FbxAxisSystem::eZAxis,       // Z-Up
-		FbxAxisSystem::eParityEven,  // X-Forward (ParityEven = positive X axis)
-		FbxAxisSystem::eLeftHanded   // Left-Handed
-	);
-
+	// 원본 Scene Axis System 정보 출력
 	FbxAxisSystem sceneAxis = Scene->GetGlobalSettings().GetAxisSystem();
 
-	if (sceneAxis != mundiAxis)
+	int upSign;
+	FbxAxisSystem::EUpVector upVector = sceneAxis.GetUpVector(upSign);
+	int frontSign;
+	FbxAxisSystem::EFrontVector frontVector = sceneAxis.GetFrontVector(frontSign);
+	FbxAxisSystem::ECoordSystem coordSystem = sceneAxis.GetCoorSystem();
+
+	UE_LOG("[FBX DEBUG] === Original Scene Coordinate System ===");
+	UE_LOG("[FBX DEBUG] UpVector: %d (sign: %d)", (int)upVector, upSign);
+	UE_LOG("[FBX DEBUG] FrontVector: %d (sign: %d)", (int)frontVector, frontSign);
+	UE_LOG("[FBX DEBUG] CoordSystem: %s", coordSystem == FbxAxisSystem::eRightHanded ? "RightHanded" : "LeftHanded");
+
+	// UNREAL ENGINE 방식: Z-Up, -Y-Forward, Right-Handed로 변환
+	// "we use -Y as forward axis here when we import. This is odd considering our forward axis is technically +X
+	// but this is to mimic Maya/Max behavior where if you make a model facing +X facing,
+	// when you import that mesh, you want +X facing in engine."
+	// - Unreal Engine FbxMainImport.cpp:1528-1532
+	//
+	// IMPORTANT: Unreal은 Right-Handed로 변환 후, ConvertPos()에서 Y축만 반전 (Left-Handed로 변경)
+	FbxAxisSystem::ECoordSystem CoordSystem = FbxAxisSystem::eRightHanded;
+	FbxAxisSystem::EUpVector UpVector = FbxAxisSystem::eZAxis;
+	FbxAxisSystem::EFrontVector FrontVector = (FbxAxisSystem::EFrontVector)-FbxAxisSystem::eParityOdd;  // -Y Forward
+
+	FbxAxisSystem UnrealImportAxis(UpVector, FrontVector, CoordSystem);
+
+	if (sceneAxis != UnrealImportAxis)
 	{
-		UE_LOG("[FBX] Converting scene to Mundi coordinate system (Z-Up, X-Forward, Left-Handed)");
-		mundiAxis.ConvertScene(Scene);
+		// UNREAL ENGINE 방식: 좌표계 변환 전에 불필요한 FBX Root 노드 제거
+		UE_LOG("[FBX] Removing FBX root nodes (Unreal Engine style)");
+		FbxRootNodeUtility::RemoveAllFbxRoots(Scene);
+
+		UE_LOG("[FBX] Converting scene to Unreal-style coordinate system (Z-Up, -Y-Forward, Right-Handed)");
+		UnrealImportAxis.ConvertScene(Scene);
+
+		// 변환 후 검증
+		FbxAxisSystem convertedAxis = Scene->GetGlobalSettings().GetAxisSystem();
+		int convertedUpSign;
+		FbxAxisSystem::EUpVector convertedUpVector = convertedAxis.GetUpVector(convertedUpSign);
+		int convertedFrontSign;
+		FbxAxisSystem::EFrontVector convertedFrontVector = convertedAxis.GetFrontVector(convertedFrontSign);
+		FbxAxisSystem::ECoordSystem convertedCoordSystem = convertedAxis.GetCoorSystem();
+
+		UE_LOG("[FBX DEBUG] === After Conversion ===");
+		UE_LOG("[FBX DEBUG] UpVector: %d (sign: %d)", (int)convertedUpVector, convertedUpSign);
+		UE_LOG("[FBX DEBUG] FrontVector: %d (sign: %d)", (int)convertedFrontVector, convertedFrontSign);
+		UE_LOG("[FBX DEBUG] CoordSystem: %s", convertedCoordSystem == FbxAxisSystem::eRightHanded ? "RightHanded" : "LeftHanded");
+		UE_LOG("[FBX] ConvertPos() will flip Y-axis to convert Right-Handed to Left-Handed");
 	}
 	else
 	{
-		UE_LOG("[FBX] Scene already in Mundi coordinate system");
+		UE_LOG("[FBX] Scene already in Unreal-style coordinate system");
 	}
+
+	// Animation Evaluator Reset (Unreal Engine 방식)
+	Scene->GetAnimationEvaluator()->Reset();
 }
 
 void FFbxImporter::ConvertSceneUnit(float ScaleFactor)
@@ -371,35 +410,22 @@ USkeleton* FFbxImporter::ExtractSkeleton(FbxNode* RootNode)
 	return skeleton;
 }
 
-// Helper: FbxAMatrix → FTransform 변환
+// Helper: FbxAMatrix → FTransform 변환 (Unreal Engine 스타일)
 FTransform FFbxImporter::ConvertFbxTransform(const FbxAMatrix& fbxMatrix)
 {
 	FTransform transform;
 
-	// Translation 추출
+	// Translation 추출 및 변환 (Y축 반전)
 	FbxVector4 fbxTranslation = fbxMatrix.GetT();
-	transform.Translation = FVector(
-		static_cast<float>(fbxTranslation[0]),
-		static_cast<float>(fbxTranslation[1]),
-		static_cast<float>(fbxTranslation[2])
-	);
+	transform.Translation = ConvertFbxPosition(fbxTranslation);
 
-	// Rotation 추출 (Quaternion)
+	// Rotation 추출 및 변환 (Y, W 반전)
 	FbxQuaternion fbxRotation = fbxMatrix.GetQ();
-	transform.Rotation = FQuat(
-		static_cast<float>(fbxRotation[0]),  // X
-		static_cast<float>(fbxRotation[1]),  // Y
-		static_cast<float>(fbxRotation[2]),  // Z
-		static_cast<float>(fbxRotation[3])   // W
-	);
+	transform.Rotation = ConvertFbxQuaternion(fbxRotation);
 
-	// Scale 추출
+	// Scale 추출 (변환 없음)
 	FbxVector4 fbxScale = fbxMatrix.GetS();
-	transform.Scale3D = FVector(
-		static_cast<float>(fbxScale[0]),
-		static_cast<float>(fbxScale[1]),
-		static_cast<float>(fbxScale[2])
-	);
+	transform.Scale3D = ConvertFbxScale(fbxScale);
 
 	return transform;
 }
@@ -576,6 +602,71 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletal
 
 	UE_LOG("[FBX] Stored vertex to control point mapping (%zu entries)", vertexToControlPointMap.size());
 
+	// STATIC MESH 처리: Skeleton이 없는 경우 Unreal Engine 방식 적용
+	// Skeletal Mesh는 ExtractSkinWeights()에서 변환되므로 여기서는 건너뜀
+	USkeleton* skeleton = OutSkeletalMesh->GetSkeleton();
+	if (!skeleton || skeleton->GetBoneCount() == 0)
+	{
+		UE_LOG("[FBX] No skeleton detected - applying Static Mesh transform (Unreal Engine style)");
+
+		// UNREAL ENGINE 방식: ComputeTotalMatrix() 구현
+		// bTransformVertexToAbsolute = true (Static Mesh 기본값)
+		// TotalMatrix = GlobalTransform * Geometry
+
+		// Geometry Transform 가져오기 (Pivot/Offset)
+		FbxVector4 geoTranslation = MeshNode->GetGeometricTranslation(FbxNode::eSourcePivot);
+		FbxVector4 geoRotation = MeshNode->GetGeometricRotation(FbxNode::eSourcePivot);
+		FbxVector4 geoScaling = MeshNode->GetGeometricScaling(FbxNode::eSourcePivot);
+		FbxAMatrix geometryTransform(geoTranslation, geoRotation, geoScaling);
+
+		// Global Transform 가져오기 (ConvertScene 후의 값)
+		FbxAMatrix globalTransform = Scene->GetAnimationEvaluator()->GetNodeGlobalTransform(MeshNode);
+
+		// Total Transform = GlobalTransform * Geometry (Unreal Engine 방식)
+		FbxAMatrix totalTransform = globalTransform * geometryTransform;
+
+		// Normal/Tangent용 Transform (Inverse Transpose)
+		FbxAMatrix totalTransformForNormal = totalTransform.Inverse();
+		totalTransformForNormal = totalTransformForNormal.Transpose();
+
+		UE_LOG("[FBX] Global Transform - T:(%.3f, %.3f, %.3f) R:(%.3f, %.3f, %.3f) S:(%.3f, %.3f, %.3f)",
+			globalTransform.GetT()[0], globalTransform.GetT()[1], globalTransform.GetT()[2],
+			globalTransform.GetR()[0], globalTransform.GetR()[1], globalTransform.GetR()[2],
+			globalTransform.GetS()[0], globalTransform.GetS()[1], globalTransform.GetS()[2]);
+
+		UE_LOG("[FBX] Geometry Transform - T:(%.3f, %.3f, %.3f) R:(%.3f, %.3f, %.3f) S:(%.3f, %.3f, %.3f)",
+			geoTranslation[0], geoTranslation[1], geoTranslation[2],
+			geoRotation[0], geoRotation[1], geoRotation[2],
+			geoScaling[0], geoScaling[1], geoScaling[2]);
+
+		// Vertex 변환 적용 (Unreal Engine 방식)
+		TArray<FSkinnedVertex>& verticesRef = OutSkeletalMesh->GetVerticesRef();
+
+		for (auto& vertex : verticesRef)
+		{
+			// 1. TotalTransform 적용 (FBX Space)
+			FbxVector4 fbxPos(vertex.Position.X, vertex.Position.Y, vertex.Position.Z, 1.0);
+			FbxVector4 transformedPos = totalTransform.MultT(fbxPos);
+
+			// 2. ConvertPos() - Y축 반전 (RightHanded → LeftHanded)
+			vertex.Position = ConvertFbxPosition(transformedPos);
+
+			// Normal 변환 (Inverse Transpose Transform 사용)
+			FbxVector4 fbxNormal(vertex.Normal.X, vertex.Normal.Y, vertex.Normal.Z, 0.0);
+			FbxVector4 transformedNormal = totalTransformForNormal.MultT(fbxNormal);
+			vertex.Normal = ConvertFbxDirection(transformedNormal);
+
+			// Tangent 변환 (Inverse Transpose Transform 사용)
+			FbxVector4 fbxTangent(vertex.Tangent.X, vertex.Tangent.Y, vertex.Tangent.Z, 0.0);
+			FbxVector4 transformedTangent = totalTransformForNormal.MultT(fbxTangent);
+			FVector tangent3D = ConvertFbxDirection(transformedTangent);
+			vertex.Tangent = FVector4(tangent3D.X, tangent3D.Y, tangent3D.Z, vertex.Tangent.W);
+		}
+
+		UE_LOG("[FBX] Static Mesh transform complete (UE style). Vertex count: %d", verticesRef.size());
+		UE_LOG("[FBX] No index swap needed (ConvertPos Y-flip handles winding order correctly)");
+	}
+
 	return true;
 }
 
@@ -728,99 +819,57 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkelet
 			meshGlobalTransform = transformMatrix;
 			bMeshTransformExtracted = true;
 
-			// CRITICAL: Vertex들을 Mesh Global Space로 변환
+			// UNREAL ENGINE 방식: Vertex들을 Mesh Global Space로 변환
 			// transformMatrix는 Bind Pose에서의 Mesh Global Transform
 			// geometryTransform은 Mesh의 Pivot/Geometry Offset
 			// Vertex는 현재 Component Space (Raw FBX)에 있으므로
 			// (transformMatrix × geometryTransform)을 적용해서 Global Space로 이동
 			FbxAMatrix totalTransform = transformMatrix * geometryTransform;
 
-			// Normal/Tangent용 Transform (Translation 제거)
+			// Normal/Tangent용 Transform (Inverse Transpose)
 			FbxAMatrix normalTransform = totalTransform;
 			normalTransform.SetT(FbxVector4(0, 0, 0, 0));
 
-			UE_LOG("[FBX] Transforming vertices to Mesh Global Space using transformMatrix × geometryTransform");
+			UE_LOG("[FBX] Transforming vertices to Mesh Global Space (Unreal Engine style)");
 
 			TArray<FSkinnedVertex>& vertices = OutSkeletalMesh->GetVerticesRef();
 
 			for (auto& vertex : vertices)
 			{
-				// Position 변환
+				// Position 변환 (FBX Transform 적용 후 ConvertFbxPosition으로 Y축 반전)
 				FbxVector4 fbxPos(vertex.Position.X, vertex.Position.Y, vertex.Position.Z, 1.0);
 				FbxVector4 transformedPos = totalTransform.MultT(fbxPos);
+				vertex.Position = ConvertFbxPosition(transformedPos);
 
-				FVector originalPos = vertex.Position;
-				vertex.Position = FVector(
-					static_cast<float>(transformedPos[0]),
-					static_cast<float>(transformedPos[1]),
-					static_cast<float>(transformedPos[2])
-				);
-
-				// Normal 변환
+				// Normal 변환 (FBX Transform 적용 후 ConvertFbxDirection으로 Y축 반전)
 				FbxVector4 fbxNormal(vertex.Normal.X, vertex.Normal.Y, vertex.Normal.Z, 0.0);
 				FbxVector4 transformedNormal = normalTransform.MultT(fbxNormal);
-				transformedNormal.Normalize();
+				vertex.Normal = ConvertFbxDirection(transformedNormal);
 
-				vertex.Normal = FVector(
-					static_cast<float>(transformedNormal[0]),
-					static_cast<float>(transformedNormal[1]),
-					static_cast<float>(transformedNormal[2])
-				);
-
-				// Tangent 변환
+				// Tangent 변환 (FBX Transform 적용 후 ConvertFbxDirection으로 Y축 반전)
 				FbxVector4 fbxTangent(vertex.Tangent.X, vertex.Tangent.Y, vertex.Tangent.Z, 0.0);
 				FbxVector4 transformedTangent = normalTransform.MultT(fbxTangent);
-				transformedTangent.Normalize();
-
-				vertex.Tangent = FVector4(
-					static_cast<float>(transformedTangent[0]),
-					static_cast<float>(transformedTangent[1]),
-					static_cast<float>(transformedTangent[2]),
-				vertex.Tangent.W
-			);
+				FVector tangent3D = ConvertFbxDirection(transformedTangent);
+				vertex.Tangent = FVector4(tangent3D.X, tangent3D.Y, tangent3D.Z, vertex.Tangent.W);
 			}
 
-			UE_LOG("[FBX] Vertex transformation complete. Vertex count: %d", vertices.size());
+			UE_LOG("[FBX] Vertex transformation complete (UE style). Vertex count: %d", vertices.size());
 
-		// CRITICAL: Winding Order 수정
-		// Reflection이 포함된 변환은 winding order를 반전시킴
-		// Determinant가 음수이면 vertex order를 반전시켜야 함
-		// Mundi는 Clockwise = Front Face 사용
-		double det = totalTransform.Determinant();
-		UE_LOG("[FBX] Transform determinant: %.6f", det);
-
-		if (det < 0.0)
-		{
-			UE_LOG("[FBX] Determinant is negative - reversing triangle winding order");
-
-			// Index buffer에서 모든 triangle의 vertex order를 반전
-			TArray<uint32>& indices = OutSkeletalMesh->GetIndicesRef();
-
-			// Triangle 단위로 순회하며 vertex order 반전 (0,1,2 → 2,1,0)
-			for (size_t i = 0; i < indices.size(); i += 3)
-			{
-				if (i + 2 < indices.size())
-				{
-					std::swap(indices[i], indices[i + 2]);
-				}
-			}
-
-			UE_LOG("[FBX] Triangle winding order reversed for %zu triangles", indices.size() / 3);
+			// UNREAL ENGINE 방식: Winding Order는 ConvertFbxPosition의 Y축 반전이 자동으로 처리
+			// Determinant 체크 및 Index swap 불필요!
+			// Y축 반전은 Reflection 변환이므로 winding order를 자동으로 보존
+			UE_LOG("[FBX] Winding order automatically preserved by Y-axis flip (no manual swap needed)");
 		}
-		else
-		{
-			UE_LOG("[FBX] Determinant is positive - keeping original winding order");
-		}
-	}
 
-		// Global Bind Pose Matrix 저장 (CPU Skinning에서 직접 사용)
-		FMatrix globalBindPoseMatrix = ConvertFbxMatrix(FbxMatrix(transformLinkMatrix));
+		// UNREAL ENGINE 방식: Global Bind Pose Matrix 저장 (Y축 반전 적용)
+		// ConvertFbxMatrixWithYAxisFlip() 사용하여 Y축 선택적 반전
+		FMatrix globalBindPoseMatrix = ConvertFbxMatrixWithYAxisFlip(FbxMatrix(transformLinkMatrix));
 		skeleton->SetGlobalBindPoseMatrix(boneIndex, globalBindPoseMatrix);
 
 		// 디버그: 변환된 GlobalBindPoseMatrix 출력
 		if (boneIndex == 0)
 		{
-			UE_LOG("[FBX DEBUG] After ConvertFbxMatrix - GlobalBindPoseMatrix:");
+			UE_LOG("[FBX DEBUG] After ConvertFbxMatrixWithYAxisFlip - GlobalBindPoseMatrix:");
 			for (int row = 0; row < 4; row++)
 			{
 				UE_LOG("[FBX DEBUG]   Row %d: (%.6f, %.6f, %.6f, %.6f)",
@@ -832,11 +881,10 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkelet
 			}
 		}
 
-		// Inverse Bind Pose Matrix 계산
-		//
-		// UNREAL ENGINE 방식: Vertex는 Mesh Global Space에 있음
-		// 위에서 transformMatrix × geometryTransform을 Vertex에 적용했음
-		// 따라서 InverseBindPose = BoneGlobal^-1 (단순 역행렬)
+		// UNREAL ENGINE 방식: Inverse Bind Pose Matrix 계산
+		// Vertex는 Mesh Global Space에 있음 (ConvertFbxPosition으로 Y축 반전 적용됨)
+		// InverseBindPose = BoneGlobal^-1 (단순 역행렬)
+		// ConvertFbxMatrixWithYAxisFlip()를 Inverse에도 적용하여 Y축 반전 일관성 유지
 		//
 		// Skinning 공식: SkinnedVertex = GlobalSpaceVertex × (InverseBindPose × BoneTransform)
 		//
@@ -844,14 +892,14 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkelet
 		// InverseBindPose × GlobalBindPose = BoneGlobal^-1 × BoneGlobal = Identity
 		FbxAMatrix inverseBindMatrix = transformLinkMatrix.Inverse();
 
-		// Skeleton에 Inverse Bind Pose Matrix 설정
-		FMatrix inverseBindPoseMatrix = ConvertFbxMatrix(FbxMatrix(inverseBindMatrix));
+		// Skeleton에 Inverse Bind Pose Matrix 설정 (Y축 반전 적용)
+		FMatrix inverseBindPoseMatrix = ConvertFbxMatrixWithYAxisFlip(FbxMatrix(inverseBindMatrix));
 		skeleton->SetInverseBindPoseMatrix(boneIndex, inverseBindPoseMatrix);
 
 		// 디버그: 변환된 InverseBindPoseMatrix 출력
 		if (boneIndex == 0)
 		{
-			UE_LOG("[FBX DEBUG] After ConvertFbxMatrix - InverseBindPoseMatrix:");
+			UE_LOG("[FBX DEBUG] After ConvertFbxMatrixWithYAxisFlip - InverseBindPoseMatrix:");
 			for (int row = 0; row < 4; row++)
 			{
 				UE_LOG("[FBX DEBUG]   Row %d: (%.6f, %.6f, %.6f, %.6f)",
@@ -1050,7 +1098,36 @@ bool FFbxImporter::ExtractBindPose(FbxScene* Scene, USkeleton* OutSkeleton)
 	return true;
 }
 
-// Helper: FbxMatrix → FMatrix 변환
+// Helper: FbxMatrix → FMatrix 변환 (Unreal Engine 스타일 - Y축 선택적 반전)
+FMatrix FFbxImporter::ConvertFbxMatrixWithYAxisFlip(const FbxMatrix& fbxMatrix)
+{
+	FMatrix matrix;
+
+	// Unreal Engine ConvertMatrix 방식
+	// Y축을 선택적으로 반전하여 Right-Handed → Left-Handed 변환
+	// 이 변환이 Winding Order를 자동으로 올바르게 유지함
+	for (int32 row = 0; row < 4; row++)
+	{
+		if (row == 1)  // Y축 Row만 특별 처리
+		{
+			matrix.M[row][0] = -static_cast<float>(fbxMatrix.Get(row, 0));  // Y축 X 성분 반전
+			matrix.M[row][1] = static_cast<float>(fbxMatrix.Get(row, 1));   // Y축 Y 성분 유지
+			matrix.M[row][2] = -static_cast<float>(fbxMatrix.Get(row, 2));  // Y축 Z 성분 반전
+			matrix.M[row][3] = -static_cast<float>(fbxMatrix.Get(row, 3));  // Y축 W 성분 반전
+		}
+		else  // X, Z, W Row
+		{
+			matrix.M[row][0] = static_cast<float>(fbxMatrix.Get(row, 0));   // X 성분 유지
+			matrix.M[row][1] = -static_cast<float>(fbxMatrix.Get(row, 1));  // Y 성분만 반전
+			matrix.M[row][2] = static_cast<float>(fbxMatrix.Get(row, 2));   // Z 성분 유지
+			matrix.M[row][3] = static_cast<float>(fbxMatrix.Get(row, 3));   // W 성분 유지
+		}
+	}
+
+	return matrix;
+}
+
+// Helper: FbxMatrix → FMatrix 변환 (기존 방식 - 직접 복사)
 FMatrix FFbxImporter::ConvertFbxMatrix(const FbxMatrix& fbxMatrix)
 {
 	FMatrix matrix;
@@ -1065,6 +1142,58 @@ FMatrix FFbxImporter::ConvertFbxMatrix(const FbxMatrix& fbxMatrix)
 	}
 
 	return matrix;
+}
+
+// Helper: FbxVector4 Position → FVector 변환 (Y축 반전)
+FVector FFbxImporter::ConvertFbxPosition(const FbxVector4& pos)
+{
+	return FVector(
+		static_cast<float>(pos[0]),
+		-static_cast<float>(pos[1]),  // Y 반전
+		static_cast<float>(pos[2])
+	);
+}
+
+// Helper: FbxVector4 Direction → FVector 변환 (Y축 반전)
+FVector FFbxImporter::ConvertFbxDirection(const FbxVector4& dir)
+{
+	FVector result(
+		static_cast<float>(dir[0]),
+		-static_cast<float>(dir[1]),  // Y 반전
+		static_cast<float>(dir[2])
+	);
+
+	// Direction Vector는 정규화 필요
+	float length = std::sqrt(result.X * result.X + result.Y * result.Y + result.Z * result.Z);
+	if (length > 1e-8f)
+	{
+		result.X /= length;
+		result.Y /= length;
+		result.Z /= length;
+	}
+
+	return result;
+}
+
+// Helper: FbxQuaternion → FQuat 변환 (Y, W 반전)
+FQuat FFbxImporter::ConvertFbxQuaternion(const FbxQuaternion& q)
+{
+	return FQuat(
+		static_cast<float>(q[0]),
+		-static_cast<float>(q[1]),  // Y 반전
+		static_cast<float>(q[2]),
+		-static_cast<float>(q[3])   // W 반전
+	);
+}
+
+// Helper: FbxVector4 Scale → FVector 변환 (변환 없음)
+FVector FFbxImporter::ConvertFbxScale(const FbxVector4& scale)
+{
+	return FVector(
+		static_cast<float>(scale[0]),
+		static_cast<float>(scale[1]),
+		static_cast<float>(scale[2])
+	);
 }
 
 void FFbxImporter::SetError(const FString& Message)
