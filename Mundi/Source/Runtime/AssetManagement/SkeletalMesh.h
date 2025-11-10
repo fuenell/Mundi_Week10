@@ -3,6 +3,7 @@
 #include "ResourceBase.h"
 #include "Skeleton.h"
 #include "Enums.h"
+#include "FbxImportOptions.h"
 #include <d3d11.h>
 
 /**
@@ -71,6 +72,62 @@ struct FSkinnedVertex
 };
 
 /**
+ * Skeletal Mesh 데이터 구조체 (Serialization 전용)
+ * FBX Import 결과를 담는 순수 데이터 컨테이너
+ * USkeletalMesh::Load() 함수에서 이 데이터를 받아서 UObject로 변환
+ */
+struct FSkeletalMesh
+{
+	// Mesh 데이터
+	TArray<FSkinnedVertex> Vertices;
+	TArray<uint32> Indices;
+	TArray<int32> VertexToControlPointMap;
+
+	TArray<FGroupInfo> GroupInfos;
+
+	
+	// Skeleton 데이터
+	USkeleton* Skeleton = nullptr;
+
+	// 기본 생성자
+	FSkeletalMesh() = default;
+
+	// 이동 생성자
+	FSkeletalMesh(FSkeletalMesh&& Other) noexcept
+		: Vertices(std::move(Other.Vertices))
+		, Indices(std::move(Other.Indices))
+		, VertexToControlPointMap(std::move(Other.VertexToControlPointMap))
+		, Skeleton(Other.Skeleton)
+	{
+		Other.Skeleton = nullptr;
+	}
+
+	// 이동 대입 연산자
+	FSkeletalMesh& operator=(FSkeletalMesh&& Other) noexcept
+	{
+		if (this != &Other)
+		{
+			Vertices = std::move(Other.Vertices);
+			Indices = std::move(Other.Indices);
+			VertexToControlPointMap = std::move(Other.VertexToControlPointMap);
+			Skeleton = Other.Skeleton;
+			Other.Skeleton = nullptr;
+		}
+		return *this;
+	}
+
+	// 복사 방지
+	FSkeletalMesh(const FSkeletalMesh&) = delete;
+	FSkeletalMesh& operator=(const FSkeletalMesh&) = delete;
+
+	// 유효성 검사
+	bool IsValid() const
+	{
+		return !Vertices.empty() && !Indices.empty() && Skeleton != nullptr;
+	}
+};
+
+/**
  * Skeletal Mesh 클래스
  * Bone에 의해 변형되는 Mesh 데이터를 관리
  * Unreal Engine의 USkeletalMesh와 유사한 구조
@@ -106,6 +163,22 @@ public:
 	 * @return Skeleton 객체
 	 */
 	USkeleton* GetSkeleton() const { return Skeleton; }
+
+	// === Material 관리 ===
+
+	/**
+	 * Material 이름 설정 (FBX Import 시 사용)
+	 * @param InMaterialName - Material Asset 이름
+	 */
+	void SetMaterialName(const FString& InMaterialName) { MaterialName = InMaterialName; }
+
+	/**
+	 * Material 이름 가져오기
+	 * @return Material Asset 이름 (ResourceManager에서 찾을 때 사용)
+	 */
+	const FString& GetMaterialName() const { return MaterialName; }
+
+
 
 	// === Mesh 데이터 관리 ===
 
@@ -230,6 +303,17 @@ public:
 	 */
 	uint32 GetVertexStride() const { return sizeof(FNormalVertex); }
 
+	// === Loading ===
+
+	/**
+	 * FBX 파일로부터 SkeletalMesh 로드
+	 * ResourceManager 패턴에 맞춰 설계됨
+	 * @param InFilePath - FBX 파일 경로
+	 * @param InDevice - D3D11 Device (GPU 리소스 생성용)
+	 * @param InOptions - FBX Import 옵션 (기본값 사용 가능)
+	 */
+	void Load(const FString& InFilePath, ID3D11Device* InDevice, const FFbxImportOptions& InOptions = FFbxImportOptions());
+
 	// === Serialization ===
 
 	/**
@@ -248,6 +332,9 @@ private:
 private:
 	// Skeleton 참조
 	USkeleton* Skeleton = nullptr;
+
+	// Material 이름 (FBX Import 시 설정, Component에서 ResourceManager로 찾음)
+	FString MaterialName;
 
 	// CPU Mesh 데이터
 	TArray<FSkinnedVertex> Vertices;

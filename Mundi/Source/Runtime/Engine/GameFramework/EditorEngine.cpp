@@ -191,7 +191,9 @@ bool UEditorEngine::Startup(HINSTANCE hInstance)
     UI.Initialize(HWnd, RHIDevice.GetDevice(), RHIDevice.GetDeviceContext());
     INPUT.Initialize(HWnd);
 
-    FObjManager::Preload(); 
+    FObjManager::Preload();
+
+    RESOURCE.PreloadSkeletalMeshes();
 
     FAudioDevice::Preload();
 

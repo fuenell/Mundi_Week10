@@ -122,9 +122,10 @@ private:
 };
 
 // Forward declarations
-class USkeletalMesh;
 class USkeleton;
 class UStaticMesh;
+class USkeletalMesh;
+struct FSkeletalMesh;
 
 /**
  * Autodesk FBX SDK를 사용한 FBX 파일 임포터
@@ -157,12 +158,13 @@ public:
 	// === Public Import Interface ===
 
 	/**
-	 * FBX 파일에서 SkeletalMesh를 Import
+	 * FBX 파일에서 SkeletalMesh 데이터를 Import
 	 * @param FilePath - FBX 파일 경로
 	 * @param Options - Import 옵션
-	 * @return Import된 SkeletalMesh (실패 시 nullptr)
+	 * @param OutMeshData - Import된 Mesh 데이터 (출력)
+	 * @return 성공 여부
 	 */
-	USkeletalMesh* ImportSkeletalMesh(const FString& FilePath, const FFbxImportOptions& Options);
+	bool ImportSkeletalMesh(const FString& FilePath, const FFbxImportOptions& Options, FSkeletalMesh& OutMeshData);
 
 	/**
 	 * FBX 파일에서 StaticMesh를 Import (미구현)
@@ -173,6 +175,14 @@ public:
 	 * TODO: Phase 4에서 구현 예정
 	 */
 	UStaticMesh* ImportStaticMesh(const FString& FilePath, const FFbxImportOptions& Options);
+
+	/**
+	 * Material 추출 (Scene에서 첫 번째 Mesh Node 자동 찾기)
+	 * USkeletalMesh::Load()에서 호출 (FBX Scene이 아직 열려있는 상태)
+	 * @param OutSkeletalMesh - Material 정보를 저장할 SkeletalMesh
+	 * @return 성공 여부
+	 */
+	bool ExtractMaterialsFromScene(USkeletalMesh* OutSkeletalMesh);
 
 	/**
 	 * 마지막 에러 메시지 가져오기
@@ -232,18 +242,18 @@ private:
 	/**
 	 * Mesh 데이터 추출 (Vertex, Index, Normals, UVs, Skin Weights)
 	 * @param MeshNode - Mesh를 가진 FBX Node
-	 * @param OutSkeletalMesh - 데이터를 저장할 SkeletalMesh
+	 * @param OutMeshData - 데이터를 저장할 FSkeletalMesh 구조체
 	 * @return 성공 여부
 	 */
-	bool ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletalMesh);
+	bool ExtractMeshData(FbxNode* MeshNode, FSkeletalMesh& OutMeshData);
 
 	/**
 	 * Skin Weights 추출 (Bone Influences)
 	 * @param FbxMesh - FBX Mesh 객체
-	 * @param OutSkeletalMesh - 데이터를 저장할 SkeletalMesh
+	 * @param OutMeshData - 데이터를 저장할 FSkeletalMesh 구조체
 	 * @return 성공 여부
 	 */
-	bool ExtractSkinWeights(FbxMesh* Mesh, USkeletalMesh* OutSkeletalMesh);
+	bool ExtractSkinWeights(FbxMesh* Mesh, FSkeletalMesh& OutMeshData);
 
 	/**
 	 * Bind Pose 추출 (초기 Bone Transform)
@@ -252,6 +262,14 @@ private:
 	 * @return 성공 여부
 	 */
 	bool ExtractBindPose(FbxScene* Scene, USkeleton* OutSkeleton);
+
+	/**
+	 * Material과 Texture 정보 추출
+	 * @param MeshNode - Mesh를 가진 FBX Node
+	 * @param OutSkeletalMesh - Material 정보를 저장할 SkeletalMesh
+	 * @return 성공 여부
+	 */
+	bool ExtractMaterials(FbxNode* MeshNode, USkeletalMesh* OutSkeletalMesh);
 
 	// === Helper 함수 ===
 

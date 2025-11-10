@@ -2,7 +2,8 @@
 #include "Property.h"
 #include "Color.h"
 #include "StaticMesh.h"
-#include "Texture.h" 
+#include "SkeletalMesh.h"
+#include "Texture.h"
 #include <type_traits>
 
 // ===== 타입 자동 감지 템플릿 =====
@@ -27,12 +28,14 @@ struct TPropertyTypeTraits
 			return EPropertyType::FString;
 		else if constexpr (std::is_same_v<T, FName>)
 			return EPropertyType::FName;
-		else if constexpr (std::is_pointer_v<T>)
-			return EPropertyType::ObjectPtr;  // UObject* 및 파생 타입
 		else if constexpr (std::is_same_v<T, UTexture>)
 			return EPropertyType::Texture;
 		else if constexpr (std::is_same_v<T, UStaticMesh>)
 			return EPropertyType::StaticMesh;
+		else if constexpr (std::is_same_v<T, USkeletalMesh*>)
+			return EPropertyType::SkeletalMesh;
+		else if constexpr (std::is_pointer_v<T>)
+			return EPropertyType::ObjectPtr;  // UObject* 및 파생 타입
 		//else if constexpr (std::is_same_v<T, USound>)
 		//	return EPropertyType::Sound;
 		else

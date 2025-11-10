@@ -17,6 +17,7 @@
 #include "SpotLightComponent.h"
 #include "PlatformProcess.h"
 #include "ImGui/imgui_curve.hpp"
+#include "SkeletalMeshComponent.h"
 
 // 정적 멤버 변수 초기화
 TArray<FString> UPropertyRenderer::CachedStaticMeshPaths;
@@ -31,6 +32,8 @@ TArray<FString> UPropertyRenderer::CachedSoundPaths;
 TArray<const char*> UPropertyRenderer::CachedSoundItems;
 TArray<FString> UPropertyRenderer::CachedScriptPaths;
 TArray<const char*> UPropertyRenderer::CachedScriptItems;
+TArray<FString> UPropertyRenderer::CachedSkeletalMeshPaths;
+TArray<const char*> UPropertyRenderer::CachedSkeletalMeshItems;
 
 bool UPropertyRenderer::RenderProperty(const FProperty& Property, void* ObjectInstance)
 {
@@ -83,6 +86,10 @@ bool UPropertyRenderer::RenderProperty(const FProperty& Property, void* ObjectIn
 
 	case EPropertyType::StaticMesh:
 		bChanged = RenderStaticMeshProperty(Property, ObjectInstance);
+		break;
+
+	case EPropertyType::SkeletalMesh:
+		bChanged = RenderSkeletalMeshProperty(Property, ObjectInstance);
 		break;
 
 	case EPropertyType::Material:
@@ -370,6 +377,18 @@ void UPropertyRenderer::CacheResources()
             CachedSoundItems.push_back(path.c_str());
         }
     }
+
+	// 스켈레탈 메시
+	if (CachedSkeletalMeshPaths.IsEmpty() && CachedSkeletalMeshItems.IsEmpty())
+	{
+		CachedSkeletalMeshPaths = ResMgr.GetAllFilePaths<USkeletalMesh>();
+		CachedSkeletalMeshItems.Add("None"); // CachedStaticMeshPaths.Insert("", 0)와 짝을 맞춤
+		for (const FString& path : CachedSkeletalMeshPaths)
+		{
+			CachedSkeletalMeshItems.push_back(path.c_str());
+		}
+		CachedSkeletalMeshPaths.Insert("", 0); // "None"에 해당하는 빈 경로
+	}
 }
 
 void UPropertyRenderer::ClearResourcesCache()
@@ -386,6 +405,8 @@ void UPropertyRenderer::ClearResourcesCache()
 	CachedSoundItems.Empty();
 	CachedScriptPaths.Empty();
 	CachedScriptItems.Empty();
+	CachedSkeletalMeshPaths.Empty();
+	CachedSkeletalMeshItems.Empty();
 }
 
 // ===== 타입별 렌더링 구현 =====
@@ -1055,6 +1076,84 @@ bool UPropertyRenderer::RenderStaticMeshProperty(const FProperty& Prop, void* In
 	return false;
 }
 
+bool UPropertyRenderer::RenderSkeletalMeshProperty(const FProperty& Prop, void* Instance)
+{
+	// 1. 프로퍼티에서 현재 USkeletalMesh 포인터를 가져옵니다.
+	USkeletalMesh** MeshPtr = Prop.GetValuePtr<USkeletalMesh*>(Instance);
+
+	// 2. 현재 설정된 리소스의 경로를 가져옵니다.
+	FString CurrentPath;
+	if (*MeshPtr)
+	{
+		CurrentPath = (*MeshPtr)->GetFilePath(); // GetFilePath()는 UResourceBase에 있어야 합니다.
+	}
+
+	// 3. 캐시된 리소스가 없으면 렌더링하지 않습니다.
+	if (CachedSkeletalMeshPaths.empty())
+	{
+		ImGui::Text("%s: <No Skeletal Meshes>", Prop.Name);
+		return false;
+	}
+
+	// 4. 캐시된 경로 목록에서 현재 경로의 인덱스를 찾습니다.
+	int SelectedIdx = -1;
+	for (int i = 0; i < static_cast<int>(CachedSkeletalMeshPaths.size()); ++i)
+	{
+		if (CachedSkeletalMeshPaths[i] == CurrentPath)
+		{
+			SelectedIdx = i;
+			break;
+		}
+	}
+
+	// 5. ImGui 콤보박스를 렌더링합니다.
+	ImGui::SetNextItemWidth(240);
+	if (ImGui::Combo(Prop.Name, &SelectedIdx, CachedSkeletalMeshItems.data(), static_cast<int>(CachedSkeletalMeshItems.size())))
+	{
+		// 6. 콤보박스에서 새 항목을 선택한 경우
+		if (SelectedIdx >= 0 && SelectedIdx < static_cast<int>(CachedSkeletalMeshPaths.size()))
+		{
+			// 리소스 매니저에서 새 리소스를 로드합니다. (경로가 ""이면 nullptr이 로드됨)
+			USkeletalMesh* NewMesh = UResourceManager::GetInstance().Load<USkeletalMesh>(CachedSkeletalMeshPaths[SelectedIdx]);
+
+			// 컴포넌트별 Setter를 호출합니다.
+			UObject* Object = static_cast<UObject*>(Instance);
+			if (USkeletalMeshComponent* SkeletalMeshComponent = Cast<USkeletalMeshComponent>(Object))
+			{
+				SkeletalMeshComponent->SetSkeletalMesh(NewMesh); // 컴포넌트의 Setter 호출
+			}
+			else
+			{
+				*MeshPtr = NewMesh; // 일반 프로퍼티일 경우 직접 할당
+			}
+			return true; // 값이 변경되었음을 반환
+		}
+	}
+
+	// 7. 콤보박스에 마우스를 올렸을 때 툴팁을 표시합니다.
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::BeginTooltip();
+
+		ImGui::TextUnformatted(CurrentPath.c_str());
+
+		// NOTE: 추후 fbx bin 캐싱 추가되면 주석 해제해서 캐싱된 경로 표시
+		//if ((*MeshPtr))
+		//{
+		//	const FString& CachedPath = (*MeshPtr)->GetCacheFilePath();
+		//	if (!CachedPath.empty())
+		//	{
+		//		ImGui::Separator();
+		//		ImGui::Text("Cache: %s", CachedPath.c_str());
+		//	}
+		//}
+
+		ImGui::EndTooltip();
+	}
+
+	return false;
+}
+
 bool UPropertyRenderer::RenderMaterialProperty(const FProperty& Prop, void* Instance)
 {
 	UMaterialInterface** MaterialPtr = Prop.GetValuePtr<UMaterialInterface*>(Instance);
@@ -1193,9 +1292,9 @@ bool UPropertyRenderer::RenderSingleMaterialSlot(const char* Label, UMaterialInt
 
 		// --- 2-2. 텍스처 슬롯 ---
 		// ImGui 위젯 값이 변경될 때만 호출됩니다.
-		UStaticMeshComponent* StaticMeshComp = Cast<UStaticMeshComponent>(OwningObject);
+		UMeshComponent* MeshComponent = Cast<UMeshComponent>(OwningObject);
 
-		if (!StaticMeshComp)
+		if (!MeshComponent)
 		{
 			ImGui::Text("UStaticMeshComponent 만 텍스처를 변경할 수 있습니다");
 			return false;
@@ -1217,7 +1316,7 @@ bool UPropertyRenderer::RenderSingleMaterialSlot(const char* Label, UMaterialInt
 			UTexture* NewTexture = nullptr;
 			if (RenderTextureSelectionCombo(TextureLabel.c_str(), CurrentTexture, NewTexture))
 			{
-				StaticMeshComp->SetMaterialTextureByUser(MaterialIndex, Slot, NewTexture);
+				MeshComponent->SetMaterialTextureByUser(MaterialIndex, Slot, NewTexture);
 				bElementChanged = true;
 			}
 		}
@@ -1238,7 +1337,7 @@ bool UPropertyRenderer::RenderSingleMaterialSlot(const char* Label, UMaterialInt
 		FString DiffuseLabel = "Diffuse Color##" + FString(Label);
 		if (ImGui::ColorEdit3(DiffuseLabel.c_str(), &TempColor.R))
 		{
-			StaticMeshComp->SetMaterialColorByUser(MaterialIndex, "DiffuseColor", TempColor);
+			MeshComponent->SetMaterialColorByUser(MaterialIndex, "DiffuseColor", TempColor);
 			bElementChanged = true;
 		}
 
@@ -1247,7 +1346,7 @@ bool UPropertyRenderer::RenderSingleMaterialSlot(const char* Label, UMaterialInt
 		FString AmbientLabel = "Ambient Color##" + FString(Label);
 		if (ImGui::ColorEdit3(AmbientLabel.c_str(), &TempColor.R))
 		{
-			StaticMeshComp->SetMaterialColorByUser(MaterialIndex, "AmbientColor", TempColor);
+			MeshComponent->SetMaterialColorByUser(MaterialIndex, "AmbientColor", TempColor);
 			bElementChanged = true;
 		}
 
@@ -1256,7 +1355,7 @@ bool UPropertyRenderer::RenderSingleMaterialSlot(const char* Label, UMaterialInt
 		FString SpecularLabel = "Specular Color##" + FString(Label);
 		if (ImGui::ColorEdit3(SpecularLabel.c_str(), &TempColor.R))
 		{
-			StaticMeshComp->SetMaterialColorByUser(MaterialIndex, "SpecularColor", TempColor);
+			MeshComponent->SetMaterialColorByUser(MaterialIndex, "SpecularColor", TempColor);
 			bElementChanged = true;
 		}
 
@@ -1265,7 +1364,7 @@ bool UPropertyRenderer::RenderSingleMaterialSlot(const char* Label, UMaterialInt
 		FString EmissiveLabel = "Emissive Color##" + FString(Label);
 		if (ImGui::ColorEdit3(EmissiveLabel.c_str(), &TempColor.R))
 		{
-			StaticMeshComp->SetMaterialColorByUser(MaterialIndex, "EmissiveColor", TempColor);
+			MeshComponent->SetMaterialColorByUser(MaterialIndex, "EmissiveColor", TempColor);
 			bElementChanged = true;
 		}
 
@@ -1274,7 +1373,7 @@ bool UPropertyRenderer::RenderSingleMaterialSlot(const char* Label, UMaterialInt
 		FString TransmissionLabel = "Transmission Filter##" + FString(Label);
 		if (ImGui::ColorEdit3(TransmissionLabel.c_str(), &TempColor.R))
 		{
-			StaticMeshComp->SetMaterialColorByUser(MaterialIndex, "TransmissionFilter", TempColor);
+			MeshComponent->SetMaterialColorByUser(MaterialIndex, "TransmissionFilter", TempColor);
 			bElementChanged = true;
 		}
 
@@ -1286,7 +1385,7 @@ bool UPropertyRenderer::RenderSingleMaterialSlot(const char* Label, UMaterialInt
 		FString SpecExpLabel = "Specular Exponent##" + FString(Label);
 		if (ImGui::DragFloat(SpecExpLabel.c_str(), &TempFloat, 1.0f, 0.0f, 1024.0f))
 		{
-			StaticMeshComp->SetMaterialScalarByUser(MaterialIndex, "SpecularExponent", TempFloat);
+			MeshComponent->SetMaterialScalarByUser(MaterialIndex, "SpecularExponent", TempFloat);
 			bElementChanged = true;
 		}
 
@@ -1295,7 +1394,7 @@ bool UPropertyRenderer::RenderSingleMaterialSlot(const char* Label, UMaterialInt
 		FString TransparencyLabel = "Transparency##" + FString(Label);
 		if (ImGui::DragFloat(TransparencyLabel.c_str(), &TempFloat, 0.01f, 0.0f, 1.0f))
 		{
-			StaticMeshComp->SetMaterialScalarByUser(MaterialIndex, "Transparency", TempFloat);
+			MeshComponent->SetMaterialScalarByUser(MaterialIndex, "Transparency", TempFloat);
 			bElementChanged = true;
 		}
 
@@ -1304,7 +1403,7 @@ bool UPropertyRenderer::RenderSingleMaterialSlot(const char* Label, UMaterialInt
 		FString OpticalDensityLabel = "Optical Density##" + FString(Label);
 		if (ImGui::DragFloat(OpticalDensityLabel.c_str(), &TempFloat, 0.01f, 0.0f, 10.0f)) // 범위는 임의로 지정
 		{
-			StaticMeshComp->SetMaterialScalarByUser(MaterialIndex, "OpticalDensity", TempFloat);
+			MeshComponent->SetMaterialScalarByUser(MaterialIndex, "OpticalDensity", TempFloat);
 			bElementChanged = true;
 		}
 
@@ -1313,7 +1412,7 @@ bool UPropertyRenderer::RenderSingleMaterialSlot(const char* Label, UMaterialInt
 		FString BumpMultiplierLabel = "Bump Multiplier##" + FString(Label);
 		if (ImGui::DragFloat(BumpMultiplierLabel.c_str(), &TempFloat, 0.01f, 0.0f, 5.0f)) // 범위는 임의로 지정
 		{
-			StaticMeshComp->SetMaterialScalarByUser(MaterialIndex, "BumpMultiplier", TempFloat);
+			MeshComponent->SetMaterialScalarByUser(MaterialIndex, "BumpMultiplier", TempFloat);
 			bElementChanged = true;
 		}
 
@@ -1322,7 +1421,7 @@ bool UPropertyRenderer::RenderSingleMaterialSlot(const char* Label, UMaterialInt
 		FString IllumModelLabel = "Illum Model##" + FString(Label);
 		if (ImGui::DragInt(IllumModelLabel.c_str(), &TempInt, 1, 0, 10)) // 0-10은 OBJ 표준 범위
 		{
-			StaticMeshComp->SetMaterialScalarByUser(MaterialIndex, "IlluminationModel", (float)TempInt);
+			MeshComponent->SetMaterialScalarByUser(MaterialIndex, "IlluminationModel", (float)TempInt);
 			bElementChanged = true;
 		}
 
