@@ -284,24 +284,6 @@ void USkeletalMeshComponent::CollectMeshBatches(TArray<FMeshBatchElement>& OutMe
 	// Material별 Section 처리 (StaticMeshComponent와 동일)
 	const TArray<FGroupInfo>& MeshGroupInfos = SkeletalMesh->GetMeshGroupInfo();
 
-	UE_LOG("[SkeletalMeshComponent] === DIAGNOSTIC: CollectMeshBatches ===");
-	UE_LOG("[SkeletalMeshComponent] Total GroupInfos: %zu", MeshGroupInfos.size());
-	UE_LOG("[SkeletalMeshComponent] Total MaterialSlots: %zu", MaterialSlots.size());
-
-	for (size_t i = 0; i < MeshGroupInfos.size(); i++)
-	{
-		const FGroupInfo& group = MeshGroupInfos[i];
-		UE_LOG("[SkeletalMeshComponent] GroupInfo[%zu]: StartIndex=%u, IndexCount=%u",
-			i, group.StartIndex, group.IndexCount);
-	}
-
-	for (size_t i = 0; i < MaterialSlots.size(); i++)
-	{
-		UMaterialInterface* mat = MaterialSlots[i];
-		UE_LOG("[SkeletalMeshComponent] MaterialSlot[%zu]: %s",
-			i, mat ? "Valid" : "NULL");
-	}
-
 	auto DetermineMaterialAndShader = [&](uint32 SectionIndex) -> TPair<UMaterialInterface*, UShader*>
 	{
 		UMaterialInterface* Material = GetMaterial(SectionIndex);
@@ -340,34 +322,23 @@ void USkeletalMeshComponent::CollectMeshBatches(TArray<FMeshBatchElement>& OutMe
 			const FGroupInfo& Group = MeshGroupInfos[SectionIndex];
 			IndexCount = Group.IndexCount;
 			StartIndex = Group.StartIndex;
-
-			UE_LOG("[SkeletalMeshComponent] Processing Section[%u]: StartIndex=%u, IndexCount=%u",
-				SectionIndex, StartIndex, IndexCount);
 		}
 		else
 		{
 			IndexCount = SkeletalMesh->GetIndexCount();
 			StartIndex = 0;
-
-			UE_LOG("[SkeletalMeshComponent] Processing Section[%u] (no groups): StartIndex=%u, IndexCount=%u",
-				SectionIndex, StartIndex, IndexCount);
 		}
 
 		if (IndexCount == 0)
 		{
-			UE_LOG("[SkeletalMeshComponent] Section[%u] skipped: IndexCount is 0", SectionIndex);
 			continue;
 		}
 
 		auto [MaterialToUse, ShaderToUse] = DetermineMaterialAndShader(SectionIndex);
 		if (!MaterialToUse || !ShaderToUse)
 		{
-			UE_LOG("[SkeletalMeshComponent] Section[%u] skipped: Material or Shader is NULL", SectionIndex);
 			continue;
 		}
-
-		UE_LOG("[SkeletalMeshComponent] Section[%u] using Material: %s",
-			SectionIndex, MaterialToUse ? "Valid" : "NULL");
 
 		FMeshBatchElement BatchElement;
 
@@ -398,12 +369,7 @@ void USkeletalMeshComponent::CollectMeshBatches(TArray<FMeshBatchElement>& OutMe
 		BatchElement.PrimitiveTopology = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 
 		OutMeshBatchElements.Add(BatchElement);
-
-		UE_LOG("[SkeletalMeshComponent] Added BatchElement[%u]: StartIndex=%u, IndexCount=%u",
-			SectionIndex, BatchElement.StartIndex, BatchElement.IndexCount);
 	}
-
-	UE_LOG("[SkeletalMeshComponent] Total BatchElements created: %zu", OutMeshBatchElements.size());
 }
 
 FAABB USkeletalMeshComponent::GetWorldAABB() const
