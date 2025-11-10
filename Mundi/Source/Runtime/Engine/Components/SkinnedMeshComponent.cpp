@@ -16,8 +16,8 @@ IMPLEMENT_CLASS(USkinnedMeshComponent)
 
 BEGIN_PROPERTIES(USkinnedMeshComponent)
 	MARK_AS_COMPONENT("스킨드 메시 컴포넌트", "본이 있는 스켈레탈 메시를 렌더링하는 기본 컴포넌트입니다.")
-	// TODO: EPropertyType::SkeletalMesh 추가 시 활성화
-	 //ADD_PROPERTY(EPropertyType::SkeletalMesh, SkeletalMesh, "Skeletal Mesh", true)
+	// NOTE: USkeletalMesh* 이런식으로 변수타입이 아니라 enum을 넘기는 방식으로 모두 교체? or 타입을 넘지기 않고 자동으로 enum 타입을 찾아서 저장하록 변경
+	ADD_PROPERTY(USkeletalMesh*, SkeletalMesh, "Skeletal Mesh", true)
 	ADD_PROPERTY_ARRAY(EPropertyType::Material, MaterialSlots, "Materials", true)
 END_PROPERTIES()
 

@@ -90,7 +90,17 @@ public:
 	void SetStaticMeshs();
 	const TArray<UStaticMesh*>& GetStaticMeshs() { return StaticMeshs; }
 
-	void SetAudioFiles();  
+	void SetSkeletalMeshes();
+	const TArray<class USkeletalMesh*>& GetSkeletalMeshes() { return SkeletalMeshes; }
+
+	void SetAudioFiles();
+
+	// --- Preload ---
+	/**
+	 * Data/Model/Fbx 폴더의 모든 FBX 파일을 미리 로드
+	 * EditorEngine, GameEngine 초기화 시 호출
+	 */
+	void PreloadSkeletalMeshes();  
 
 	// --- Deprecated (향후 제거될 함수들) ---
 	TArray<UStaticMesh*> GetAllStaticMeshes() { return GetAll<UStaticMesh>(); }
@@ -115,6 +125,7 @@ protected:
 	TMap<FString, FString> TextureToShaderMap;
 
 	TArray<UStaticMesh*> StaticMeshs;
+	TArray<class USkeletalMesh*> SkeletalMeshes;
 
 	TArray<USound*> Sounds;
 
