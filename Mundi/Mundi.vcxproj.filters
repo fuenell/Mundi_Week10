@@ -520,6 +520,16 @@
       <Filter>Source\Runtime\Engine\GameFramework\Camera</Filter>
     </ClCompile>
     <ClCompile Include="Source\Runtime\Renderer\PostProcessing\GammaPass.cpp" />
+    <ClCompile Include="Source\Runtime\Engine\Scripting\LuaBindHelpers.cpp" />
+    <ClCompile Include="Source\Runtime\Engine\Scripting\LuaBindingRegistry.cpp" />
+    <ClCompile Include="Source\Runtime\Engine\Scripting\LuaComponentProxy.cpp" />
+    <ClCompile Include="Source\Slate\Windows\SConsolePanel.cpp" />
+    <ClCompile Include="Source\Slate\Windows\SkeletalMeshEditorWindow.cpp">
+      <Filter>Source\Slate\Windows</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Slate\Widgets\SkeletalMeshViewportWidget.cpp">
+      <Filter>Source\Slate\Widgets</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
@@ -1131,6 +1141,16 @@
     </ClInclude>
     <ClInclude Include="Source\Runtime\Renderer\PostProcessing\GammaPass.h" />
     <ClInclude Include="ThirdParty\ImGui\imgui_curve.hpp" />
+    <ClInclude Include="Source\Runtime\Engine\Scripting\LuaBindHelpers.h" />
+    <ClInclude Include="Source\Runtime\Engine\Scripting\LuaBindingRegistry.h" />
+    <ClInclude Include="Source\Runtime\Engine\Scripting\LuaComponentProxy.h" />
+    <ClInclude Include="Source\Slate\Windows\SConsolePanel.h" />
+    <ClInclude Include="Source\Slate\Windows\SkeletalMeshEditorWindow.h">
+      <Filter>Source\Slate\Windows</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Slate\Widgets\SkeletalMeshViewportWidget.h">
+      <Filter>Source\Slate\Widgets</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Shaders">

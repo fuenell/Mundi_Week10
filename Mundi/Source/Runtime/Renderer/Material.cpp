@@ -46,7 +46,7 @@ void UMaterial::Load(const FString& InFilePath, ID3D11Device* InDevice)
 	}
 	else
 	{
-		throw std::runtime_error("지원하지 않는 파일 형식입니다. (.dds, .png, .jpg, .hlsl만 지원) 현재 입력 파일명 : " + InFilePath);
+		UE_LOG("[error] 지원하지 않는 파일 형식입니다. (.dds, .png, .jpg, .hlsl만 지원) 현재 입력 파일명 : %s", InFilePath.c_str());
 	}
 }
 

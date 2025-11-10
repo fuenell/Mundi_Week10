@@ -18,6 +18,8 @@
 #include "PlatformProcess.h"
 #include "ImGui/imgui_curve.hpp"
 #include "SkeletalMeshComponent.h"
+#include "Windows/UIWindow.h"
+#include "Windows/SkeletalMeshEditorWindow.h"
 
 // 정적 멤버 변수 초기화
 TArray<FString> UPropertyRenderer::CachedStaticMeshPaths;
@@ -1149,6 +1151,32 @@ bool UPropertyRenderer::RenderSkeletalMeshProperty(const FProperty& Prop, void* 
 		//}
 
 		ImGui::EndTooltip();
+	}
+
+	// In MainMenuBarWindow::RenderWindow() or similar main UI loop
+
+	// 1. "도구" 메뉴 (가정
+	if (ImGui::Button("뷰어"))
+	{
+		// 3. UUIManager에게 "Skeletal Mesh Viewer" 창이 이미 있는지 물어봅니다.
+		UUIWindow* FoundWindow = UI.FindUIWindow("Skeletal Mesh Viewer");
+
+		if (FoundWindow)
+		{
+			// 4-A. 이미 존재하면: 그냥 보이게 하고 포커스를 줍니다.
+			FoundWindow->SetWindowState(EUIWindowState::Visible);
+			ImGui::SetWindowFocus("Skeletal Mesh Viewer"); // ImGui 20.0+
+		}
+		else
+		{
+			// 4-B. 존재하지 않으면: **이때 생성하고 등록합니다.**
+			USkeletalMeshEditorWindow* SkelMeshViewer = new USkeletalMeshEditorWindow();
+			SkelMeshViewer->SetWindowTitle("Skeletal Mesh Viewer");
+
+			// RegisterUIWindow가 내부적으로 Window->Initialize()를 호출합니다.
+			// (Initialize에서 프리뷰 월드, RTV/SRV 생성 등 무거운 작업을 수행)
+			UI.RegisterUIWindow(SkelMeshViewer);
+		}
 	}
 
 	return false;
