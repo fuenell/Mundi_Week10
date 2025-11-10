@@ -60,15 +60,19 @@
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="Props\DebugPropertySheet.props" />
   </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug_StandAlone|x64'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="Props\DebugPropertySheet.props" />
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="Props\ReleasePropertySheet.props" />
   </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release_StandAlone|x64'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="Props\ReleasePropertySheet.props" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -106,7 +110,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories);ThirdParty\FBX\lib\$(Configuration)\;ThirdParty\Lua\lib\$(Configuration)\;ThirdParty\DirectXTex\lib\$(Configuration)\;ThirdParty\DirectXTK\lib\$(Configuration)\</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories);ThirdParty\FBX\lib\$(BaseConfiguration)\;ThirdParty\Lua\lib\$(BaseConfiguration)\;ThirdParty\DirectXTex\lib\$(BaseConfiguration)\;ThirdParty\DirectXTK\lib\$(BaseConfiguration)\</AdditionalLibraryDirectories>
       <AdditionalDependencies>libfbxsdk-md.lib;libxml2-md.lib;zlib-md.lib;DirectXTK.lib;DirectXTex.lib;%(AdditionalDependencies);Lua.lib</AdditionalDependencies>
       <AdditionalOptions>/IGNORE:4099 %(AdditionalOptions)</AdditionalOptions>
       <LinkTimeCodeGeneration>Default</LinkTimeCodeGeneration>
@@ -131,7 +135,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories);ThirdParty\FBX\lib\Debug\;ThirdParty\Lua\lib\Debug\;ThirdParty\DirectXTex\lib\Debug\;ThirdParty\DirectXTK\lib\Debug\</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories);ThirdParty\FBX\lib\$(BaseConfiguration)\;ThirdParty\Lua\lib\$(BaseConfiguration)\;ThirdParty\DirectXTex\lib\$(BaseConfiguration)\;ThirdParty\DirectXTK\lib\$(BaseConfiguration)\</AdditionalLibraryDirectories>
       <AdditionalDependencies>libfbxsdk-md.lib;libxml2-md.lib;zlib-md.lib;DirectXTK.lib;DirectXTex.lib;%(AdditionalDependencies);Lua.lib</AdditionalDependencies>
       <AdditionalOptions>/IGNORE:4099 %(AdditionalOptions)</AdditionalOptions>
       <LinkTimeCodeGeneration>Default</LinkTimeCodeGeneration>
@@ -160,7 +164,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories);ThirdParty\FBX\lib\$(Configuration)\;ThirdParty\Lua\lib\$(Configuration)\;ThirdParty\DirectXTex\lib\$(Configuration)\;ThirdParty\DirectXTK\lib\$(Configuration)\</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories);ThirdParty\FBX\lib\$(BaseConfiguration)\;ThirdParty\Lua\lib\$(BaseConfiguration)\;ThirdParty\DirectXTex\lib\$(BaseConfiguration)\;ThirdParty\DirectXTK\lib\$(BaseConfiguration)\</AdditionalLibraryDirectories>
       <AdditionalDependencies>libfbxsdk-md.lib;libxml2-md.lib;zlib-md.lib;DirectXTK.lib;DirectXTex.lib;%(AdditionalDependencies);Lua.lib</AdditionalDependencies>
       <AdditionalOptions>/IGNORE:4099 %(AdditionalOptions)</AdditionalOptions>
     </Link>
@@ -188,7 +192,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories);ThirdParty\FBX\lib\Release\;ThirdParty\Lua\lib\Release\;ThirdParty\DirectXTex\lib\Release\;ThirdParty\DirectXTK\lib\Release\</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories);ThirdParty\FBX\lib\$(BaseConfiguration)\;ThirdParty\Lua\lib\$(BaseConfiguration)\;ThirdParty\DirectXTex\lib\$(BaseConfiguration)\;ThirdParty\DirectXTK\lib\$(BaseConfiguration)\</AdditionalLibraryDirectories>
       <AdditionalDependencies>libfbxsdk-md.lib;libxml2-md.lib;zlib-md.lib;DirectXTK.lib;DirectXTex.lib;%(AdditionalDependencies);Lua.lib</AdditionalDependencies>
       <AdditionalOptions>/IGNORE:4099 %(AdditionalOptions)</AdditionalOptions>
     </Link>
@@ -778,15 +782,14 @@
   <!-- 2. PreBuildEvent 직전에 실행될 커스텀 타겟 정의 -->
   <Target Name="CustomPreBuildCopy" BeforeTargets="PreBuildEvent">
     <!-- 3. 여기에 복사할 PowerShell 스크립트 정의 (빌드 구성에 따라 분기) -->
-    <!-- 3A: Debug 빌드용 스크립트 -->
-    <PropertyGroup Condition="'$(Configuration)'=='Debug'">
+    <PropertyGroup>
       <PowerShellScript>
-        Write-Host '[BuildEvent] Copying Data files (Debug)...';
+        Write-Host '[BuildEvent] Copying Data files ($(BaseConfiguration))...';
         robocopy '$(ProjectDir)Data' '$(OutDir)Data' /E /XO /MT:8 /NFL /NDL /NJH /NJS /nc /ns /np;
         $exitCode = $LASTEXITCODE;
         if ($exitCode -ge 8) { Write-Error 'Robocopy Data failed.' ; exit $exitCode };
 
-        Write-Host '[BuildEvent] Copying Shaders files (Debug)...';
+        Write-Host '[BuildEvent] Copying Shaders files ($(BaseConfiguration))...';
         robocopy '$(ProjectDir)Shaders' '$(OutDir)Shaders' /E /XO /MT:8 /NFL /NDL /NJH /NJS /nc /ns /np;
         $exitCode = $LASTEXITCODE;
         if ($exitCode -ge 8) { Write-Error 'Robocopy Shaders failed.' ; exit $exitCode };
@@ -805,108 +808,11 @@
         Copy-Item -Path '$(ProjectDir)ThirdParty\Lua\bin\lua54.dll' -Destination '$(OutDir)' -Force
         };
 
-        Write-Host '[BuildEvent] Copying FBX SDK DLL (Debug)...';
-        Copy-Item -Path '$(ProjectDir)ThirdParty\FBX\bin\Debug\libfbxsdk.dll' -Destination '$(OutDir)' -Force;
+        Write-Host '[BuildEvent] Copying FBX SDK DLLs ($(BaseConfiguration))...';
 
-        Write-Host '[BuildEvent] Asset copy successful.';
-        exit 0
-      </PowerShellScript>
-    </PropertyGroup>
-    <PropertyGroup Condition="'$(Configuration)'=='Debug_StandAlone'">
-      <PowerShellScript>
-        Write-Host '[BuildEvent] Copying Data files (Debug)...';
-        robocopy '$(ProjectDir)Data' '$(OutDir)Data' /E /XO /MT:8 /NFL /NDL /NJH /NJS /nc /ns /np;
-        $exitCode = $LASTEXITCODE;
-        if ($exitCode -ge 8) { Write-Error 'Robocopy Data failed.' ; exit $exitCode };
-
-        Write-Host '[BuildEvent] Copying Shaders files (Debug)...';
-        robocopy '$(ProjectDir)Shaders' '$(OutDir)Shaders' /E /XO /MT:8 /NFL /NDL /NJH /NJS /nc /ns /np;
-        $exitCode = $LASTEXITCODE;
-        if ($exitCode -ge 8) { Write-Error 'Robocopy Shaders failed.' ; exit $exitCode };
-
-        if (Test-Path '$(ProjectDir)editor.ini') {
-        Write-Host '[BuildEvent] Copying editor.ini...';
-        Copy-Item -Path '$(ProjectDir)editor.ini' -Destination '$(OutDir)' -Force
+        if (Test-Path '$(ProjectDir)ThirdParty\FBXSDK\lib\$(BaseConfiguration)\libfbxsdk.dll') {
+        Copy-Item -Path '$(ProjectDir)ThirdParty\FBXSDK\lib\$(BaseConfiguration)\libfbxsdk.dll' -Destination '$(OutDir)' -Force
         };
-        if (Test-Path '$(ProjectDir)imgui.ini') {
-        Write-Host '[BuildEvent] Copying imgui.ini...';
-        Copy-Item -Path '$(ProjectDir)imgui.ini' -Destination '$(OutDir)' -Force
-        };
-
-        if (Test-Path '$(ProjectDir)ThirdParty\Lua\bin\lua54.dll') {
-        Write-Host '[BuildEvent] Copying lua54.dll...';
-        Copy-Item -Path '$(ProjectDir)ThirdParty\Lua\bin\lua54.dll' -Destination '$(OutDir)' -Force
-        };
-
-        Write-Host '[BuildEvent] Copying FBX SDK DLL (Debug)...';
-        Copy-Item -Path '$(ProjectDir)ThirdParty\FBX\bin\Debug\libfbxsdk.dll' -Destination '$(OutDir)' -Force;
-
-        Write-Host '[BuildEvent] Asset copy successful.';
-        exit 0
-      </PowerShellScript>
-    </PropertyGroup>
-    <!-- 3B: Release 빌드용 스크립트 -->
-    <PropertyGroup Condition="'$(Configuration)'=='Release'">
-      <PowerShellScript>
-        Write-Host '[BuildEvent] Copying Data files (Release)...';
-        robocopy '$(ProjectDir)Data' '$(OutDir)Data' /E /XO /MT:8 /NFL /NDL /NJH /NJS /nc /ns /np;
-        $exitCode = $LASTEXITCODE;
-        if ($exitCode -ge 8) { Write-Error 'Robocopy Data failed.' ; exit $exitCode };
-
-        Write-Host '[BuildEvent] Copying Shaders files (Release)...';
-        robocopy '$(ProjectDir)Shaders' '$(OutDir)Shaders' /E /XO /MT:8 /NFL /NDL /NJH /NJS /nc /ns /np;
-        $exitCode = $LASTEXITCODE;
-        if ($exitCode -ge 8) { Write-Error 'Robocopy Shaders failed.' ; exit $exitCode };
-
-        if (Test-Path '$(ProjectDir)editor.ini') {
-        Write-Host '[BuildEvent] Copying editor.ini...';
-        Copy-Item -Path '$(ProjectDir)editor.ini' -Destination '$(OutDir)' -Force
-        };
-        if (Test-Path '$(ProjectDir)imgui.ini') {
-        Write-Host '[BuildEvent] Copying imgui.ini...';
-        Copy-Item -Path '$(ProjectDir)imgui.ini' -Destination '$(OutDir)' -Force
-        };
-
-        if (Test-Path '$(ProjectDir)ThirdParty\Lua\bin\lua54.dll') {
-        Write-Host '[BuildEvent] Copying lua54.dll...';
-        Copy-Item -Path '$(ProjectDir)ThirdParty\Lua\bin\lua54.dll' -Destination '$(OutDir)' -Force
-        };
-
-        Write-Host '[BuildEvent] Copying FBX SDK DLL (Release)...';
-        Copy-Item -Path '$(ProjectDir)ThirdParty\FBX\bin\Release\libfbxsdk.dll' -Destination '$(OutDir)' -Force;
-
-        Write-Host '[BuildEvent] Asset copy successful.';
-        exit 0
-      </PowerShellScript>
-    </PropertyGroup>
-    <PropertyGroup Condition="'$(Configuration)'=='Release_StandAlone'">
-      <PowerShellScript>
-        Write-Host '[BuildEvent] Copying Data files (Release)...';
-        robocopy '$(ProjectDir)Data' '$(OutDir)Data' /E /XO /MT:8 /NFL /NDL /NJH /NJS /nc /ns /np;
-        $exitCode = $LASTEXITCODE;
-        if ($exitCode -ge 8) { Write-Error 'Robocopy Data failed.' ; exit $exitCode };
-
-        Write-Host '[BuildEvent] Copying Shaders files (Release)...';
-        robocopy '$(ProjectDir)Shaders' '$(OutDir)Shaders' /E /XO /MT:8 /NFL /NDL /NJH /NJS /nc /ns /np;
-        $exitCode = $LASTEXITCODE;
-        if ($exitCode -ge 8) { Write-Error 'Robocopy Shaders failed.' ; exit $exitCode };
-
-        if (Test-Path '$(ProjectDir)editor.ini') {
-        Write-Host '[BuildEvent] Copying editor.ini...';
-        Copy-Item -Path '$(ProjectDir)editor.ini' -Destination '$(OutDir)' -Force
-        };
-        if (Test-Path '$(ProjectDir)imgui.ini') {
-        Write-Host '[BuildEvent] Copying imgui.ini...';
-        Copy-Item -Path '$(ProjectDir)imgui.ini' -Destination '$(OutDir)' -Force
-        };
-
-        if (Test-Path '$(ProjectDir)ThirdParty\Lua\bin\lua54.dll') {
-        Write-Host '[BuildEvent] Copying lua54.dll...';
-        Copy-Item -Path '$(ProjectDir)ThirdParty\Lua\bin\lua54.dll' -Destination '$(OutDir)' -Force
-        };
-
-        Write-Host '[BuildEvent] Copying FBX SDK DLL (Release)...';
-        Copy-Item -Path '$(ProjectDir)ThirdParty\FBX\bin\Release\libfbxsdk.dll' -Destination '$(OutDir)' -Force;
 
         Write-Host '[BuildEvent] Asset copy successful.';
         exit 0
