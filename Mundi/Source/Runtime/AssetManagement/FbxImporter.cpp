@@ -354,10 +354,11 @@ bool FFbxImporter::ImportSkeletalMesh(const FString& FilePath, const FFbxImportO
 	TArray<FSkinnedVertex> mergedVertices;
 	TArray<uint32> mergedIndices;
 	TArray<int32> mergedVertexToControlPointMap;
-	TArray<FGroupInfo> mergedGroupInfos;
+	TArray<int32> mergedPolygonMaterialIndices;
+	TMap<FString, int32> materialNameToGlobalIndex;  // Material 이름 → Global Material Index
+	TArray<FString> globalMaterialNames;
 
 	uint32 currentVertexOffset = 0;
-	uint32 currentIndexOffset = 0;
 
 	for (size_t meshIdx = 0; meshIdx < meshNodes.size(); meshIdx++)
 	{
@@ -395,23 +396,102 @@ bool FFbxImporter::ImportSkeletalMesh(const FString& FilePath, const FFbxImportO
 			tempMeshData.VertexToControlPointMap.begin(),
 			tempMeshData.VertexToControlPointMap.end());
 
-		// GroupInfo 병합 (Index Offset 적용)
-		// Material 이름은 ExtractMeshData에서 이미 설정됨
-		for (FGroupInfo& groupInfo : tempMeshData.GroupInfos)
+		// Material 이름을 Global Material Index로 변환
+		for (const FString& localMatName : tempMeshData.MaterialNames)
 		{
-			groupInfo.StartIndex += currentIndexOffset;
-			mergedGroupInfos.push_back(groupInfo);
+			if (materialNameToGlobalIndex.find(localMatName) == materialNameToGlobalIndex.end())
+			{
+				int32 newGlobalIndex = static_cast<int32>(globalMaterialNames.size());
+				materialNameToGlobalIndex[localMatName] = newGlobalIndex;
+				globalMaterialNames.push_back(localMatName);
+			}
+		}
+
+		// Polygon Material Index 병합 (Local Index → Global Index 변환)
+		for (int32 localMatIndex : tempMeshData.PolygonMaterialIndices)
+		{
+			// Local Material Index를 Material 이름으로 변환
+			if (localMatIndex >= 0 && localMatIndex < tempMeshData.MaterialNames.size())
+			{
+				const FString& matName = tempMeshData.MaterialNames[localMatIndex];
+				int32 globalMatIndex = materialNameToGlobalIndex[matName];
+				mergedPolygonMaterialIndices.push_back(globalMatIndex);
+			}
+			else
+			{
+				mergedPolygonMaterialIndices.push_back(0); // Default
+			}
 		}
 
 		currentVertexOffset += static_cast<uint32>(tempMeshData.Vertices.size());
-		currentIndexOffset += static_cast<uint32>(tempMeshData.Indices.size());
+	}
+
+	// 8. 병합된 Mesh에서 Material별로 Index Buffer 재배치 및 GroupInfo 생성
+	TArray<FGroupInfo> finalGroupInfos;
+	TArray<uint32> finalIndices;
+
+	if (!mergedPolygonMaterialIndices.empty())
+	{
+		// Material별로 Polygon 그룹화
+		TMap<int32, TArray<int32>> materialToPolygons;
+		int32 polygonCount = static_cast<int32>(mergedPolygonMaterialIndices.size());
+
+		for (int32 polyIndex = 0; polyIndex < polygonCount; polyIndex++)
+		{
+			int32 matIndex = mergedPolygonMaterialIndices[polyIndex];
+			materialToPolygons[matIndex].push_back(polyIndex);
+		}
+
+		// Material별로 Index 재배치
+		uint32 currentStartIndex = 0;
+
+		for (auto& pair : materialToPolygons)
+		{
+			int32 matIndex = pair.first;
+			const TArray<int32>& polygons = pair.second;
+
+			if (polygons.empty())
+				continue;
+
+			FGroupInfo groupInfo;
+			groupInfo.StartIndex = currentStartIndex;
+			groupInfo.IndexCount = static_cast<uint32>(polygons.size() * 3);
+
+			// Global Material 이름 설정
+			if (matIndex >= 0 && matIndex < globalMaterialNames.size())
+			{
+				groupInfo.InitialMaterialName = globalMaterialNames[matIndex];
+			}
+
+			// 이 Material의 모든 Polygon Index를 새 버퍼에 추가
+			for (int32 polyIndex : polygons)
+			{
+				uint32 polyStartIdx = polyIndex * 3;
+				finalIndices.push_back(mergedIndices[polyStartIdx + 0]);
+				finalIndices.push_back(mergedIndices[polyStartIdx + 1]);
+				finalIndices.push_back(mergedIndices[polyStartIdx + 2]);
+			}
+
+			currentStartIndex += groupInfo.IndexCount;
+			finalGroupInfos.push_back(groupInfo);
+		}
+	}
+	else
+	{
+		// Material 정보가 없으면 전체를 하나의 그룹으로
+		finalIndices = mergedIndices;
+		FGroupInfo groupInfo;
+		groupInfo.StartIndex = 0;
+		groupInfo.IndexCount = static_cast<uint32>(finalIndices.size());
+		groupInfo.InitialMaterialName = "";
+		finalGroupInfos.push_back(groupInfo);
 	}
 
 	// 병합된 데이터를 OutMeshData에 설정
 	OutMeshData.Vertices = std::move(mergedVertices);
-	OutMeshData.Indices = std::move(mergedIndices);
+	OutMeshData.Indices = std::move(finalIndices);
 	OutMeshData.VertexToControlPointMap = std::move(mergedVertexToControlPointMap);
-	OutMeshData.GroupInfos = std::move(mergedGroupInfos);
+	OutMeshData.GroupInfos = std::move(finalGroupInfos);
 
 	return true;
 }
@@ -573,6 +653,7 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, FSkeletalMesh& OutMeshData
 	FbxGeometryElementUV* UvElement = FbxMesh->GetElementUV();
 	FbxGeometryElementTangent* TangentElement = FbxMesh->GetElementTangent();
 
+
 	// Skeleton 정보 (Static vs Skeletal 구분용)
 	USkeleton* Skeleton = OutMeshData.Skeleton;
 
@@ -663,6 +744,7 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, FSkeletalMesh& OutMeshData
 				FbxVector2 FbxUV;
 				bool bUnmapped;
 				FbxMesh->GetPolygonVertexUV(PolyIndex, VertInPoly, UvElement->GetName(), FbxUV, bUnmapped);
+
 				// DirectX UV 좌표계: V를 반전 (OpenGL/Blender는 V가 아래→위, DirectX는 위→아래)
 				Vertex.UV = FVector2D(
 					static_cast<float>(FbxUV[0]),      // U (그대로)
@@ -718,93 +800,23 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, FSkeletalMesh& OutMeshData
 
 	UE_LOG("[FBX] Extracted %zu vertices, %zu indices", Vertices.Num(), Indices.Num());
 
-	// Material별로 GroupInfo 생성 및 Index Buffer 재배치
-	// Polygon이 Material별로 섞여있을 수 있으므로 정렬 필요
-	TArray<FGroupInfo> groupInfos;
-
-	if (!polygonMaterialIndices.empty())
+	// Material 이름 배열 생성
+	TArray<FString> materialNames;
+	for (int32 i = 0; i < MeshNode->GetMaterialCount(); i++)
 	{
-		// Material 인덱스별로 Polygon 그룹화
-		TMap<int32, TArray<int32>> materialToPolygons;
-
-		for (int32 polyIndex = 0; polyIndex < polygonMaterialIndices.size(); polyIndex++)
+		FbxSurfaceMaterial* mat = MeshNode->GetMaterial(i);
+		if (mat)
 		{
-			int32 materialIndex = polygonMaterialIndices[polyIndex];
-			materialToPolygons[materialIndex].push_back(polyIndex);
+			materialNames.push_back(mat->GetName());
 		}
-
-		UE_LOG("[FBX] === DIAGNOSTIC: Material Grouping ===");
-		UE_LOG("[FBX] Total unique materials: %zu", materialToPolygons.size());
-
-		for (auto& pair : materialToPolygons)
-		{
-			UE_LOG("[FBX] Material[%d]: %zu polygons", pair.first, pair.second.size());
-		}
-
-		UE_LOG("[FBX] Reorganizing index buffer by material...");
-
-		// 원본 Index Buffer 백업
-		TArray<uint32> originalIndices = Indices;
-
-		// 새로운 Index Buffer 생성 (Material별로 재배치)
-		Indices.clear();
-		uint32 currentStartIndex = 0;
-
-		// 각 Material별로 GroupInfo 생성 및 Index 추가
-		for (auto& pair : materialToPolygons)
-		{
-			int32 materialIndex = pair.first;
-			const TArray<int32>& polygons = pair.second;
-
-			if (polygons.empty())
-				continue;
-
-			FGroupInfo groupInfo;
-			groupInfo.StartIndex = currentStartIndex;
-			groupInfo.IndexCount = polygons.size() * 3;
-			groupInfo.InitialMaterialName = "";
-
-			// Material 이름 설정
-			if (materialIndex >= 0 && materialIndex < MeshNode->GetMaterialCount())
-			{
-				FbxSurfaceMaterial* mat = MeshNode->GetMaterial(materialIndex);
-				if (mat)
-				{
-					groupInfo.InitialMaterialName = mat->GetName();
-				}
-			}
-
-			// 이 Material의 모든 Polygon의 Index를 새 버퍼에 추가
-			for (int32 polyIndex : polygons)
-			{
-				// 각 Polygon은 3개의 Index를 가짐
-				uint32 polyStartIdx = polyIndex * 3;
-				Indices.push_back(originalIndices[polyStartIdx + 0]);
-				Indices.push_back(originalIndices[polyStartIdx + 1]);
-				Indices.push_back(originalIndices[polyStartIdx + 2]);
-			}
-
-			currentStartIndex += groupInfo.IndexCount;
-			groupInfos.push_back(groupInfo);
-		}
-	}
-	else
-	{
-		// Material 정보가 없으면 전체를 하나의 그룹으로
-		FGroupInfo groupInfo;
-		groupInfo.StartIndex = 0;
-		groupInfo.IndexCount = static_cast<uint32>(Indices.size());
-		groupInfo.InitialMaterialName = "";
-		groupInfos.push_back(groupInfo);
 	}
 
 	// FSkeletalMesh에 데이터 설정 (Move Semantics)
 	OutMeshData.Vertices = std::move(Vertices);
 	OutMeshData.Indices = std::move(Indices);
 	OutMeshData.VertexToControlPointMap = std::move(VertexToControlPointMap);
-	OutMeshData.GroupInfos = std::move(groupInfos);
-
-	UE_LOG("[FBX] Stored vertex to control point mapping (%zu entries)", VertexToControlPointMap.Num());
+	OutMeshData.PolygonMaterialIndices = std::move(polygonMaterialIndices);
+	OutMeshData.MaterialNames = std::move(materialNames);
 
 	// STATIC MESH 처리: Skeleton이 없는 경우 Unreal Engine 방식 적용
 	// Skeletal Mesh는 ExtractSkinWeights()에서 변환되므로 여기서는 건너뜀

@@ -83,9 +83,13 @@ struct FSkeletalMesh
 	TArray<uint32> Indices;
 	TArray<int32> VertexToControlPointMap;
 
+	// Material 정보 (병합 후 처리용)
+	TArray<int32> PolygonMaterialIndices;  // 각 Polygon(Triangle)의 Material Index
+	TArray<FString> MaterialNames;          // Material 이름 배열
+
 	TArray<FGroupInfo> GroupInfos;
 
-	
+
 	// Skeleton 데이터
 	USkeleton* Skeleton = nullptr;
 
@@ -97,6 +101,9 @@ struct FSkeletalMesh
 		: Vertices(std::move(Other.Vertices))
 		, Indices(std::move(Other.Indices))
 		, VertexToControlPointMap(std::move(Other.VertexToControlPointMap))
+		, PolygonMaterialIndices(std::move(Other.PolygonMaterialIndices))
+		, MaterialNames(std::move(Other.MaterialNames))
+		, GroupInfos(std::move(Other.GroupInfos))
 		, Skeleton(Other.Skeleton)
 	{
 		Other.Skeleton = nullptr;
@@ -110,6 +117,9 @@ struct FSkeletalMesh
 			Vertices = std::move(Other.Vertices);
 			Indices = std::move(Other.Indices);
 			VertexToControlPointMap = std::move(Other.VertexToControlPointMap);
+			PolygonMaterialIndices = std::move(Other.PolygonMaterialIndices);
+			MaterialNames = std::move(Other.MaterialNames);
+			GroupInfos = std::move(Other.GroupInfos);
 			Skeleton = Other.Skeleton;
 			Other.Skeleton = nullptr;
 		}
