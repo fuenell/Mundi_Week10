@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "FFbxDataConverter.h"
+#include "FbxImporter.h"
 
 // Static 멤버 초기화
 FbxAMatrix FFbxDataConverter::AxisConversionMatrix;
@@ -64,13 +64,13 @@ FVector FFbxDataConverter::ConvertPos(const FbxVector4& Vector)
 
 FVector FFbxDataConverter::ConvertDir(const FbxVector4& Vector)
 {
-	FVector result(
+	FVector Result(
 		static_cast<float>(Vector[0]),
 		static_cast<float>(-Vector[1]),  // Y축 반전
 		static_cast<float>(Vector[2])
 	);
-	result.Normalize();
-	return result;
+	Result.Normalize();
+	return Result;
 }
 
 FQuat FFbxDataConverter::ConvertRotToQuat(const FbxQuaternion& Quaternion)
@@ -94,38 +94,38 @@ FVector FFbxDataConverter::ConvertScale(const FbxVector4& Vector)
 
 FTransform FFbxDataConverter::ConvertTransform(const FbxAMatrix& Matrix)
 {
-	FTransform result;
+	FTransform Result;
 
 	// Position
-	result.Translation = ConvertPos(Matrix.GetT());
+	Result.Translation = ConvertPos(Matrix.GetT());
 
 	// Rotation
-	result.Rotation = ConvertRotToQuat(Matrix.GetQ());
+	Result.Rotation = ConvertRotToQuat(Matrix.GetQ());
 
 	// Scale
-	result.Scale3D = ConvertScale(Matrix.GetS());
+	Result.Scale3D = ConvertScale(Matrix.GetS());
 
-	return result;
+	return Result;
 }
 
-FMatrix FFbxDataConverter::ConvertMatrix(const FbxMatrix& fbxMatrix)
+FMatrix FFbxDataConverter::ConvertMatrix(const FbxMatrix& FbxMatrix)
 {
-	FMatrix result;
+	FMatrix Result;
 
 	// 행렬 복사
-	for (int row = 0; row < 4; row++)
+	for (int Row = 0; Row < 4; Row++)
 	{
-		for (int col = 0; col < 4; col++)
+		for (int Col = 0; Col < 4; Col++)
 		{
-			result.M[row][col] = static_cast<float>(fbxMatrix.Get(row, col));
+			Result.M[Row][Col] = static_cast<float>(FbxMatrix.Get(Row, Col));
 		}
 	}
 
 	// Y축 관련 요소 반전 (Right-Handed → Left-Handed)
-	result.M[1][0] = -result.M[1][0];
-	result.M[1][1] = -result.M[1][1];
-	result.M[1][2] = -result.M[1][2];
-	result.M[1][3] = -result.M[1][3];  // Translation Y
+	Result.M[1][0] = -Result.M[1][0];
+	Result.M[1][1] = -Result.M[1][1];
+	Result.M[1][2] = -Result.M[1][2];
+	Result.M[1][3] = -Result.M[1][3];  // Translation Y
 
-	return result;
+	return Result;
 }

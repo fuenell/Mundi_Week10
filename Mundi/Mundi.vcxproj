@@ -343,7 +343,7 @@
     <ClCompile Include="Source\Editor\SelectionManager.cpp" />
     <ClCompile Include="Source\Runtime\AssetManagement\DynamicMesh.cpp" />
     <ClCompile Include="Source\Runtime\AssetManagement\FbxImporter.cpp" />
-    <ClCompile Include="Source\Runtime\AssetManagement\FFbxDataConverter.cpp" />
+    <ClCompile Include="Source\Runtime\AssetManagement\FbxUtilsImport.cpp" />
     <ClCompile Include="Source\Runtime\AssetManagement\Line.cpp" />
     <ClCompile Include="Source\Runtime\AssetManagement\LineDynamicMesh.cpp" />
     <ClCompile Include="Source\Runtime\AssetManagement\MeshLoader.cpp" />
@@ -653,7 +653,6 @@
     <ClInclude Include="Source\Runtime\AssetManagement\Cube.h" />
     <ClInclude Include="Source\Runtime\AssetManagement\DynamicMesh.h" />
     <ClInclude Include="Source\Runtime\AssetManagement\FbxImporter.h" />
-    <ClInclude Include="Source\Runtime\AssetManagement\FFbxDataConverter.h" />
     <ClInclude Include="Source\Runtime\AssetManagement\FbxImportOptions.h" />
     <ClInclude Include="Source\Runtime\AssetManagement\Line.h" />
     <ClInclude Include="Source\Runtime\AssetManagement\LineDynamicMesh.h" />
