@@ -2,6 +2,7 @@
 
 #include "pch.h"
 #include "FbxImportOptions.h"
+#include "FFbxDataConverter.h"
 #include <fbxsdk.h>
 
 // Forward declarations
@@ -76,14 +77,11 @@ private:
 	/**
 	 * FBX Scene을 Mundi 좌표계로 변환
 	 * Mundi: Z-Up, X-Forward, Y-Right, Left-Handed
+	 *
+	 * 이 함수는 좌표계 변환과 단위 변환을 모두 수행합니다.
+	 * bConvertSceneUnit 옵션에 따라 meter (m) 단위로 변환 여부가 결정됩니다.
 	 */
 	void ConvertScene();
-
-	/**
-	 * FBX Scene의 단위를 변환
-	 * @param ScaleFactor - 스케일 배율
-	 */
-	void ConvertSceneUnit(float ScaleFactor);
 
 	/**
 	 * 현재 Scene 정리

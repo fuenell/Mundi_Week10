@@ -88,93 +88,131 @@ void FFbxImporter::ConvertScene()
 	if (!Scene)
 		return;
 
-	// 원본 Scene Axis System 정보 출력
-	FbxAxisSystem sceneAxis = Scene->GetGlobalSettings().GetAxisSystem();
+	// Axis Conversion Matrix 초기화 (Identity)
+	FbxAMatrix axisConversionMatrix;
+	axisConversionMatrix.SetIdentity();
 
-	int upSign;
-	FbxAxisSystem::EUpVector upVector = sceneAxis.GetUpVector(upSign);
-	int frontSign;
-	FbxAxisSystem::EFrontVector frontVector = sceneAxis.GetFrontVector(frontSign);
-	FbxAxisSystem::ECoordSystem coordSystem = sceneAxis.GetCoorSystem();
+	// Joint Post-Conversion Matrix 초기화 (Identity) - SkeletalMesh 전용
+	FbxAMatrix jointPostConversionMatrix;
+	jointPostConversionMatrix.SetIdentity();
 
-	UE_LOG("[FBX DEBUG] === Original Scene Coordinate System ===");
-	UE_LOG("[FBX DEBUG] UpVector: %d (sign: %d)", (int)upVector, upSign);
-	UE_LOG("[FBX DEBUG] FrontVector: %d (sign: %d)", (int)frontVector, frontSign);
-	UE_LOG("[FBX DEBUG] CoordSystem: %s", coordSystem == FbxAxisSystem::eRightHanded ? "RightHanded" : "LeftHanded");
-
-	// UNREAL ENGINE 방식: Z-Up, -Y-Forward, Right-Handed로 변환
-	// "we use -Y as forward axis here when we import. This is odd considering our forward axis is technically +X
-	// but this is to mimic Maya/Max behavior where if you make a model facing +X facing,
-	// when you import that mesh, you want +X facing in engine."
-	// - Unreal Engine FbxMainImport.cpp:1528-1532
-	//
-	// IMPORTANT: Unreal은 Right-Handed로 변환 후, ConvertPos()에서 Y축만 반전 (Left-Handed로 변경)
-	FbxAxisSystem::ECoordSystem CoordSystem = FbxAxisSystem::eRightHanded;
-	FbxAxisSystem::EUpVector UpVector = FbxAxisSystem::eZAxis;
-	FbxAxisSystem::EFrontVector FrontVector = (FbxAxisSystem::EFrontVector)-FbxAxisSystem::eParityOdd;  // -Y Forward
-
-	FbxAxisSystem UnrealImportAxis(UpVector, FrontVector, CoordSystem);
-
-	if (sceneAxis != UnrealImportAxis)
+	// === 좌표계 변환 (Unreal Engine 방식) ===
+	if (CurrentOptions.bConvertScene)
 	{
-		// UNREAL ENGINE 방식: 좌표계 변환 전에 불필요한 FBX Root 노드 제거
-		UE_LOG("[FBX] Removing FBX root nodes (Unreal Engine style)");
-		FbxRootNodeUtility::RemoveAllFbxRoots(Scene);
+		// 원본 Scene Axis System 정보 출력
+		FbxAxisSystem sceneAxis = Scene->GetGlobalSettings().GetAxisSystem();
 
-		UE_LOG("[FBX] Converting scene to Unreal-style coordinate system (Z-Up, -Y-Forward, Right-Handed)");
-		UnrealImportAxis.ConvertScene(Scene);
+		int upSign;
+		FbxAxisSystem::EUpVector upVector = sceneAxis.GetUpVector(upSign);
+		int frontSign;
+		FbxAxisSystem::EFrontVector frontVector = sceneAxis.GetFrontVector(frontSign);
+		FbxAxisSystem::ECoordSystem coordSystem = sceneAxis.GetCoorSystem();
 
-		// 변환 후 검증
-		FbxAxisSystem convertedAxis = Scene->GetGlobalSettings().GetAxisSystem();
-		int convertedUpSign;
-		FbxAxisSystem::EUpVector convertedUpVector = convertedAxis.GetUpVector(convertedUpSign);
-		int convertedFrontSign;
-		FbxAxisSystem::EFrontVector convertedFrontVector = convertedAxis.GetFrontVector(convertedFrontSign);
-		FbxAxisSystem::ECoordSystem convertedCoordSystem = convertedAxis.GetCoorSystem();
+		UE_LOG("[FBX DEBUG] === Original Scene Coordinate System ===");
+		UE_LOG("[FBX DEBUG] UpVector: %d (sign: %d)", (int)upVector, upSign);
+		UE_LOG("[FBX DEBUG] FrontVector: %d (sign: %d)", (int)frontVector, frontSign);
+		UE_LOG("[FBX DEBUG] CoordSystem: %s", coordSystem == FbxAxisSystem::eRightHanded ? "RightHanded" : "LeftHanded");
 
-		UE_LOG("[FBX DEBUG] === After Conversion ===");
-		UE_LOG("[FBX DEBUG] UpVector: %d (sign: %d)", (int)convertedUpVector, convertedUpSign);
-		UE_LOG("[FBX DEBUG] FrontVector: %d (sign: %d)", (int)convertedFrontVector, convertedFrontSign);
-		UE_LOG("[FBX DEBUG] CoordSystem: %s", convertedCoordSystem == FbxAxisSystem::eRightHanded ? "RightHanded" : "LeftHanded");
-		UE_LOG("[FBX] ConvertPos() will flip Y-axis to convert Right-Handed to Left-Handed");
+		// Target 좌표계 설정 (Unreal Engine 스타일)
+		FbxAxisSystem::ECoordSystem CoordSystem = FbxAxisSystem::eRightHanded;
+		FbxAxisSystem::EUpVector UpVector = FbxAxisSystem::eZAxis;
+		FbxAxisSystem::EFrontVector FrontVector = (FbxAxisSystem::EFrontVector)-FbxAxisSystem::eParityOdd;  // -Y Forward
+
+		// bForceFrontXAxis 옵션 체크
+		if (CurrentOptions.bForceFrontXAxis)
+		{
+			FrontVector = FbxAxisSystem::eParityEven;  // +X Forward
+			UE_LOG("[FBX] bForceFrontXAxis enabled - using +X as Forward axis");
+		}
+
+		FbxAxisSystem UnrealImportAxis(UpVector, FrontVector, CoordSystem);
+
+		// 좌표계가 다른 경우만 변환
+		if (sceneAxis != UnrealImportAxis)
+		{
+			UE_LOG("[FBX] Converting scene coordinate system...");
+
+			// CRITICAL: FBX Root 노드 제거 먼저 수행!
+			UE_LOG("[FBX] Removing FBX root nodes (Unreal Engine style)");
+			FbxRootNodeUtility::RemoveAllFbxRoots(Scene);
+
+			// 좌표계 변환 수행
+			UE_LOG("[FBX] Applying FbxAxisSystem::ConvertScene()");
+			UnrealImportAxis.ConvertScene(Scene);
+
+			// CRITICAL: bForceFrontXAxis = true면 JointOrientationMatrix 설정
+			// -Y Forward → +X Forward 변환 (SkeletalMesh Bone Hierarchy 전용)
+			if (CurrentOptions.bForceFrontXAxis)
+			{
+				jointPostConversionMatrix.SetR(FbxVector4(-90.0, -90.0, 0.0));
+				UE_LOG("[FBX] JointOrientationMatrix set: (-90 degrees, -90 degrees, 0 degrees)");
+				UE_LOG("[FBX] This will convert Bone Hierarchy from -Y Forward to +X Forward");
+			}
+
+			// Axis Conversion Matrix 계산
+			FbxAMatrix sourceMatrix, targetMatrix;
+			sceneAxis.GetMatrix(sourceMatrix);
+			UnrealImportAxis.GetMatrix(targetMatrix);
+			axisConversionMatrix = sourceMatrix.Inverse() * targetMatrix;
+
+			UE_LOG("[FBX] Axis Conversion Matrix calculated");
+
+			// 변환 후 검증
+			FbxAxisSystem convertedAxis = Scene->GetGlobalSettings().GetAxisSystem();
+			int convertedUpSign;
+			FbxAxisSystem::EUpVector convertedUpVector = convertedAxis.GetUpVector(convertedUpSign);
+			int convertedFrontSign;
+			FbxAxisSystem::EFrontVector convertedFrontVector = convertedAxis.GetFrontVector(convertedFrontSign);
+			FbxAxisSystem::ECoordSystem convertedCoordSystem = convertedAxis.GetCoorSystem();
+
+			UE_LOG("[FBX DEBUG] === After Conversion ===");
+			UE_LOG("[FBX DEBUG] UpVector: %d (sign: %d)", (int)convertedUpVector, convertedUpSign);
+			UE_LOG("[FBX DEBUG] FrontVector: %d (sign: %d)", (int)convertedFrontVector, convertedFrontSign);
+			UE_LOG("[FBX DEBUG] CoordSystem: %s", convertedCoordSystem == FbxAxisSystem::eRightHanded ? "RightHanded" : "LeftHanded");
+		}
+		else
+		{
+			UE_LOG("[FBX] Scene already in target coordinate system");
+		}
 	}
 	else
 	{
-		UE_LOG("[FBX] Scene already in Unreal-style coordinate system");
+		UE_LOG("[FBX] bConvertScene = false - skipping coordinate conversion");
+		UE_LOG("[FBX] Only Y-axis flip will be applied during vertex transformation");
+	}
+
+	// FFbxDataConverter에 Matrix 저장
+	FFbxDataConverter::SetAxisConversionMatrix(axisConversionMatrix);
+	FFbxDataConverter::SetJointPostConversionMatrix(jointPostConversionMatrix);
+
+	// === 단위 변환 ===
+	if (CurrentOptions.bConvertSceneUnit)
+	{
+		FbxSystemUnit sceneUnit = Scene->GetGlobalSettings().GetSystemUnit();
+		double sceneScale = sceneUnit.GetScaleFactor();
+
+		UE_LOG("[FBX] Original scene unit scale factor: %.6f", sceneScale);
+
+		if (sceneUnit != FbxSystemUnit::m)
+		{
+			UE_LOG("[FBX] Converting scene unit to meters (m)");
+			FbxSystemUnit::m.ConvertScene(Scene);
+		}
+		else
+		{
+			UE_LOG("[FBX] Scene already in meter (m) unit");
+		}
+	}
+	else
+	{
+		UE_LOG("[FBX] bConvertSceneUnit = false - keeping original unit");
 	}
 
 	// Animation Evaluator Reset (Unreal Engine 방식)
 	Scene->GetAnimationEvaluator()->Reset();
-}
 
-void FFbxImporter::ConvertSceneUnit(float ScaleFactor)
-{
-	if (!Scene)
-		return;
-
-	FbxSystemUnit sceneUnit = Scene->GetGlobalSettings().GetSystemUnit();
-
-	// Unreal Engine 방식: Scene Unit을 자동으로 m (meter) 단위로 변환
-	// FBX 파일은 보통 cm 단위로 저장됨 (100cm = 1m)
-	if (sceneUnit != FbxSystemUnit::m)
-	{
-		double sceneScale = sceneUnit.GetScaleFactor();
-		UE_LOG("[FBX] Scene uses non-meter unit (scale: %.6f). Converting to meters...", sceneScale);
-		FbxSystemUnit::m.ConvertScene(Scene);
-		UE_LOG("[FBX] Scene unit converted to meters (1.0)");
-	}
-	else
-	{
-		UE_LOG("[FBX] Scene already uses meter unit (1.0)");
-	}
-
-	// 추가 사용자 지정 스케일 적용
-	if (ScaleFactor != 1.0f)
-	{
-		FbxSystemUnit customUnit(ScaleFactor);
-		UE_LOG("[FBX] Applying additional custom scale: %.2f", ScaleFactor);
-		customUnit.ConvertScene(Scene);
-	}
+	UE_LOG("[FBX] ConvertScene() complete");
+	UE_LOG("[FBX] Next: Per-vertex Y-flip will convert Right-Handed to Left-Handed");
 }
 
 void FFbxImporter::ReleaseScene()
@@ -241,15 +279,20 @@ USkeletalMesh* FFbxImporter::ImportSkeletalMesh(const FString& FilePath, const F
 		return nullptr;
 	}
 
-	// 2. 단위 변환 (먼저 수행 - Unreal Engine 방식)
-	// ConvertSceneUnit()은 자동으로 Scene Unit을 m로 변환하고,
-	// 필요시 추가 사용자 지정 스케일을 적용
-	ConvertSceneUnit(CurrentOptions.ImportScale);
-
-	// 3. 좌표계 변환 (Unit 변환 이후 수행)
+	// 2. 좌표계 및 단위 변환
+	// ConvertScene()은 좌표계 변환 + 단위 변환(cm)을 수행 (Unreal Engine 방식)
+	// bConvertSceneUnit 옵션에 따라 단위 변환 수행 여부 결정
 	if (CurrentOptions.bConvertScene)
 	{
 		ConvertScene();
+	}
+
+	// 3. 추가 사용자 지정 스케일 적용 (ImportScale != 1.0일 때만)
+	if (CurrentOptions.ImportScale != 1.0f)
+	{
+		FbxSystemUnit customUnit(CurrentOptions.ImportScale);
+		UE_LOG("[FBX] Applying additional custom scale: %.2f", CurrentOptions.ImportScale);
+		customUnit.ConvertScene(Scene);
 	}
 
 	// 4. Scene 전처리 (Triangulate, 중복 제거 등)
@@ -1103,6 +1146,12 @@ bool FFbxImporter::ExtractBindPose(FbxScene* Scene, USkeleton* OutSkeleton)
 		// bindPose->GetMatrix(i)는 변환 전 원본 데이터이므로 사용하지 않음
 		// node->EvaluateGlobalTransform()은 ConvertScene() 적용 후의 Global Transform
 		FbxAMatrix fbxBindMatrix = node->EvaluateGlobalTransform();
+
+		// CRITICAL: JointPostConversionMatrix 적용 (Unreal Engine 방식)
+		// bForceFrontXAxis = true일 때만 적용됨 (기본값 Identity)
+		// -Y Forward → +X Forward 변환 (SkeletalMesh Bone Hierarchy 전용)
+		FbxAMatrix jointPostMatrix = FFbxDataConverter::GetJointPostConversionMatrix();
+		fbxBindMatrix = fbxBindMatrix * jointPostMatrix;
 
 		// Inverse Bind Pose Matrix 계산
 		// Skinning 시 Vertex를 Bone Space로 변환하는데 사용
