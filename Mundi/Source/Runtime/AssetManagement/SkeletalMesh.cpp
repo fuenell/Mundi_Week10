@@ -1,5 +1,6 @@
 ﻿#include "pch.h"
 #include "SkeletalMesh.h"
+#include "FbxImporter.h"
 #include "GlobalConsole.h"
 
 IMPLEMENT_CLASS(USkeletalMesh)
@@ -232,6 +233,62 @@ void USkeletalMesh::ReleaseGPUResources()
 		IndexBuffer->Release();
 		IndexBuffer = nullptr;
 	}
+}
+
+void USkeletalMesh::Load(const FString& InFilePath, ID3D11Device* InDevice, const FFbxImportOptions& InOptions)
+{
+	if (!InDevice)
+	{
+		UE_LOG("[error] USkeletalMesh::Load failed: Device is null");
+		return;
+	}
+
+	if (InFilePath.empty())
+	{
+		UE_LOG("[error] USkeletalMesh::Load failed: Empty file path");
+		return;
+	}
+
+	UE_LOG("[SkeletalMesh] Loading FBX file: %s", InFilePath.c_str());
+
+	// 1. FBX Importer 생성 및 데이터 Import
+	FFbxImporter FbxImporter;
+	FSkeletalMesh MeshData;
+
+	if (!FbxImporter.ImportSkeletalMesh(InFilePath, InOptions, MeshData))
+	{
+		UE_LOG("[error] USkeletalMesh::Load failed: FBX Import error - %s", FbxImporter.GetLastError().c_str());
+		return;
+	}
+
+	if (!MeshData.IsValid())
+	{
+		UE_LOG("[error] USkeletalMesh::Load failed: Invalid mesh data from FBX");
+		return;
+	}
+
+	UE_LOG("[SkeletalMesh] FBX Import successful (Vertices: %zu, Indices: %zu)",
+		MeshData.Vertices.size(), MeshData.Indices.size());
+
+	// 2. Move mesh data to this object
+	Vertices = std::move(MeshData.Vertices);
+	Indices = std::move(MeshData.Indices);
+	VertexToControlPointMap = std::move(MeshData.VertexToControlPointMap);
+	Skeleton = MeshData.Skeleton;
+
+	VertexCount = static_cast<uint32>(Vertices.size());
+	IndexCount = static_cast<uint32>(Indices.size());
+
+	UE_LOG("[SkeletalMesh] Mesh data loaded successfully");
+
+	// 3. Create Dynamic GPU resources for CPU Skinning
+	if (!CreateDynamicGPUResources(InDevice))
+	{
+		UE_LOG("[error] USkeletalMesh::Load failed: Failed to create GPU resources");
+		return;
+	}
+
+	UE_LOG("[SkeletalMesh] Load completed successfully (Dynamic Buffer for CPU Skinning)");
 }
 
 void USkeletalMesh::Serialize(bool bIsLoading, JSON& InOutHandle)

@@ -3,6 +3,7 @@
 #include "ResourceBase.h"
 #include "Skeleton.h"
 #include "Enums.h"
+#include "FbxImportOptions.h"
 #include <d3d11.h>
 
 /**
@@ -67,6 +68,59 @@ struct FSkinnedVertex
 			BoneIndices[i] = 0;
 			BoneWeights[i] = 0.0f;
 		}
+	}
+};
+
+/**
+ * Skeletal Mesh 데이터 구조체 (Serialization 전용)
+ * FBX Import 결과를 담는 순수 데이터 컨테이너
+ * USkeletalMesh::Load() 함수에서 이 데이터를 받아서 UObject로 변환
+ */
+struct FSkeletalMesh
+{
+	// Mesh 데이터
+	TArray<FSkinnedVertex> Vertices;
+	TArray<uint32> Indices;
+	TArray<int32> VertexToControlPointMap;
+
+	// Skeleton 데이터
+	USkeleton* Skeleton = nullptr;
+
+	// 기본 생성자
+	FSkeletalMesh() = default;
+
+	// 이동 생성자
+	FSkeletalMesh(FSkeletalMesh&& Other) noexcept
+		: Vertices(std::move(Other.Vertices))
+		, Indices(std::move(Other.Indices))
+		, VertexToControlPointMap(std::move(Other.VertexToControlPointMap))
+		, Skeleton(Other.Skeleton)
+	{
+		Other.Skeleton = nullptr;
+	}
+
+	// 이동 대입 연산자
+	FSkeletalMesh& operator=(FSkeletalMesh&& Other) noexcept
+	{
+		if (this != &Other)
+		{
+			Vertices = std::move(Other.Vertices);
+			Indices = std::move(Other.Indices);
+			VertexToControlPointMap = std::move(Other.VertexToControlPointMap);
+			Skeleton = Other.Skeleton;
+			Other.Skeleton = nullptr;
+		}
+		return *this;
+	}
+
+	// 복사 방지
+	FSkeletalMesh(const FSkeletalMesh&) = delete;
+	FSkeletalMesh& operator=(const FSkeletalMesh&) = delete;
+
+	// 유효성 검사
+	bool IsValid() const
+	{
+		return !Vertices.empty() && !Indices.empty() && Skeleton != nullptr;
 	}
 };
 
@@ -229,6 +283,17 @@ public:
 	 *       GPU 버퍼는 FNormalVertex(64 bytes)로 변환하여 전송
 	 */
 	uint32 GetVertexStride() const { return sizeof(FNormalVertex); }
+
+	// === Loading ===
+
+	/**
+	 * FBX 파일로부터 SkeletalMesh 로드
+	 * ResourceManager 패턴에 맞춰 설계됨
+	 * @param InFilePath - FBX 파일 경로
+	 * @param InDevice - D3D11 Device (GPU 리소스 생성용)
+	 * @param InOptions - FBX Import 옵션 (기본값 사용 가능)
+	 */
+	void Load(const FString& InFilePath, ID3D11Device* InDevice, const FFbxImportOptions& InOptions = FFbxImportOptions());
 
 	// === Serialization ===
 
