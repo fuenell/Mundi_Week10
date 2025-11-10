@@ -7,7 +7,9 @@
 4. [Import 파이프라인](#import-파이프라인)
 5. [Static Mesh vs Skeletal Mesh](#static-mesh-vs-skeletal-mesh)
 6. [핵심 함수 레퍼런스](#핵심-함수-레퍼런스)
-7. [Unreal Engine과의 차이점](#unreal-engine과의-차이점)
+7. [FFbxDataConverter 유틸리티 클래스](#ffbxdataconverter-유틸리티-클래스)
+8. [Import 옵션](#import-옵션)
+9. [Unreal Engine과의 차이점](#unreal-engine과의-차이점)
 
 ---
 
@@ -17,13 +19,20 @@ Mundi 엔진의 FBX Import 시스템은 Autodesk FBX SDK를 사용하여 FBX 파
 
 ### 지원 기능
 - ✅ **Static Mesh Import** - 단순 3D 모델
-- ✅ **Skeletal Mesh Import** - Skeleton + Skin Weights + Bind Pose
+- ✅ **Skeletal Mesh Import** - Skeleton + Skin Weights + Bind Pose (CPU Skinning)
 - 🚧 **Animation Import** (향후 지원 예정)
 
 ### 좌표계
 - **Mundi 엔진**: Z-Up, X-Forward, Y-Right, **Left-Handed**
 - **D3D11 Winding Order**: **Clockwise (CW) = Front Face** (기본값)
 - **FBX**: 다양한 좌표계 지원 → FBX SDK로 자동 변환
+
+### 주요 클래스
+- `FFbxImporter` - FBX Import 메인 클래스
+- `FFbxDataConverter` - 좌표 변환 유틸리티 (Static)
+- `FFbxImportOptions` - Import 옵션 구조체
+- `USkeletalMesh` - Skeletal Mesh 데이터 관리
+- `USkeleton` - Bone Hierarchy 관리
 
 ---
 
@@ -34,10 +43,20 @@ Mundi 엔진의 FBX Import 시스템은 Autodesk FBX SDK를 사용하여 FBX 파
 FBX SDK의 `FbxAxisSystem::ConvertScene()`을 사용하여 Scene 전체를 Unreal Engine 스타일의 좌표계로 변환:
 
 ```cpp
-// Unreal Engine 방식: Z-Up, -Y-Forward, Right-Handed
+// Unreal Engine 방식: Z-Up, -Y-Forward (또는 +X-Forward), Right-Handed
 FbxAxisSystem::ECoordSystem CoordSystem = FbxAxisSystem::eRightHanded;
 FbxAxisSystem::EUpVector UpVector = FbxAxisSystem::eZAxis;
-FbxAxisSystem::EFrontVector FrontVector = (FbxAxisSystem::EFrontVector)-FbxAxisSystem::eParityOdd;  // -Y Forward
+
+// bForceFrontXAxis 옵션에 따라 Forward 축 결정
+FbxAxisSystem::EFrontVector FrontVector;
+if (Options.bForceFrontXAxis)
+{
+    FrontVector = FbxAxisSystem::eParityEven;  // +X Forward
+}
+else
+{
+    FrontVector = (FbxAxisSystem::EFrontVector)-FbxAxisSystem::eParityOdd;  // -Y Forward (기본)
+}
 
 FbxAxisSystem UnrealImportAxis(UpVector, FrontVector, CoordSystem);
 UnrealImportAxis.ConvertScene(Scene);
@@ -45,27 +64,56 @@ UnrealImportAxis.ConvertScene(Scene);
 
 **변환 결과:**
 - **Before**: 임의의 FBX 좌표계 (Y-Up, Z-Up, Left/Right-Handed 등)
-- **After**: Z-Up, -Y-Forward, **Right-Handed**
+- **After**: Z-Up, -Y-Forward (또는 +X-Forward), **Right-Handed**
 
 **중요**: 이 단계에서는 **Right-Handed**로 변환됩니다!
 
-### 2단계: Y축 반전 (ConvertFbxPosition)
+#### Axis Conversion Matrix 저장
+
+ConvertScene() 후 Axis Conversion Matrix를 계산하여 FFbxDataConverter에 저장:
+
+```cpp
+FbxAMatrix SourceMatrix, TargetMatrix;
+SourceAxis.GetMatrix(SourceMatrix);
+TargetAxis.GetMatrix(TargetMatrix);
+FbxAMatrix AxisConversionMatrix = SourceMatrix.Inverse() * TargetMatrix;
+
+FFbxDataConverter::SetAxisConversionMatrix(AxisConversionMatrix);
+```
+
+#### Joint Post-Conversion Matrix (Skeletal Mesh 전용)
+
+`bForceFrontXAxis = true`일 때 Bone Hierarchy에 추가 회전 적용:
+
+```cpp
+// -Y Forward → +X Forward 변환 (-90°, -90°, 0°)
+if (Options.bForceFrontXAxis)
+{
+    FbxAMatrix JointPostMatrix;
+    JointPostMatrix.SetR(FbxVector4(-90.0, -90.0, 0.0));
+    FFbxDataConverter::SetJointPostConversionMatrix(JointPostMatrix);
+}
+```
+
+**역할**: Skeletal Mesh의 Bind Pose에만 적용되며, Static Mesh에는 영향 없음
+
+### 2단계: Y축 반전 (FFbxDataConverter::ConvertPos)
 
 Vertex별로 Y축을 반전하여 Left-Handed로 변환:
 
 ```cpp
-FVector FFbxImporter::ConvertFbxPosition(const FbxVector4& pos)
+FVector FFbxDataConverter::ConvertPos(const FbxVector4& Vector)
 {
     return FVector(
-        static_cast<float>(pos[0]),      // X unchanged
-        -static_cast<float>(pos[1]),     // Y FLIPPED
-        static_cast<float>(pos[2])       // Z unchanged
+        static_cast<float>(Vector[0]),      // X unchanged
+        -static_cast<float>(Vector[1]),     // Y FLIPPED
+        static_cast<float>(Vector[2])       // Z unchanged
     );
 }
 ```
 
 **변환 결과:**
-- **Before**: Z-Up, -Y-Forward, Right-Handed
+- **Before**: Z-Up, -Y-Forward (또는 +X-Forward), Right-Handed
 - **After**: Z-Up, X-Forward, **Left-Handed** (Mundi 좌표계)
 
 ### 3단계: Index Reversal (Mundi 전용)
@@ -74,10 +122,10 @@ Y축 반전은 **Handedness만 변경**하고, **Winding Order는 변경하지 �
 
 ```cpp
 // Mundi 엔진: CW = Front Face (D3D11 기본)
-TArray<uint32>& indicesRef = OutSkeletalMesh->GetIndicesRef();
-for (size_t i = 0; i < indicesRef.size(); i += 3)
+TArray<uint32>& IndicesRef = OutSkeletalMesh->GetIndicesRef();
+for (size_t i = 0; i < IndicesRef.Num(); i += 3)
 {
-    std::swap(indicesRef[i], indicesRef[i + 2]);  // [0,1,2] → [2,1,0] (CCW → CW)
+    std::swap(IndicesRef[i], IndicesRef[i + 2]);  // [0,1,2] → [2,1,0] (CCW → CW)
 }
 ```
 
@@ -144,16 +192,27 @@ deafultrasterizerdesc.DepthClipEnable = TRUE;
                      │
                      ▼
 ┌──────────────────────────────────────────────────────────────┐
-│ 2. ConvertScene()                                            │
-│    - FBX SDK: 좌표계 변환 (Z-Up, -Y-Forward, Right-Handed)  │
+│ 2. ConvertScene() (옵션에 따라)                              │
+│    - FBX SDK: 좌표계 변환 (Z-Up, Forward 설정, RH)          │
 │    - RemoveAllFbxRoots() (Unreal Engine 방식)               │
+│    - AxisConversionMatrix 계산 및 저장                       │
+│    - JointPostConversionMatrix 설정 (bForceFrontXAxis)      │
+│    - 단위 변환 (bConvertSceneUnit)                           │
 └────────────────────┬─────────────────────────────────────────┘
                      │
                      ▼
 ┌──────────────────────────────────────────────────────────────┐
-│ 3. ExtractMeshData()                                         │
+│ 3. ExtractSkeleton()                                         │
+│    - Bone Hierarchy 재귀적 추출                              │
+│    - Local Transform 저장                                    │
+└────────────────────┬─────────────────────────────────────────┘
+                     │
+                     ▼
+┌──────────────────────────────────────────────────────────────┐
+│ 4. ExtractMeshData()                                         │
 │    - Vertex, Index, Normal, UV, Tangent 추출                │
-│    - Raw FBX 데이터 → Component Space                       │
+│    - **원본 Local Space 유지 (좌표 변환 안 함!)**           │
+│    - Vertex → Control Point 매핑 저장                        │
 └────────────────────┬─────────────────────────────────────────┘
                      │
                      ▼
@@ -163,24 +222,32 @@ deafultrasterizerdesc.DepthClipEnable = TRUE;
 ┌──────────────────┐    ┌──────────────────┐
 │  STATIC MESH     │    │ SKELETAL MESH    │
 │                  │    │                  │
-│ 4a. Transform    │    │ 4b. Extract      │
-│   Vertices       │    │   Skeleton       │
-│   (Global Space) │    │   (Hierarchy)    │
+│ 5a. Transform    │    │ 5b. Extract      │
+│   (ExtractMesh   │    │   SkinWeights    │
+│    Data 내부)    │    │   (Cluster 기반) │
 │                  │    │                  │
-│ 5a. Y-Flip       │    │ 5b. Extract      │
-│   ConvertPos()   │    │   SkinWeights    │
+│ - TotalTransform │    │ - TransformMatrix│
+│   (Global Space) │    │   (Mesh Global)  │
+│                  │    │                  │
+│ - Y-Flip         │    │ - Vertex         │
+│   ConvertPos()   │    │   Transform      │
 │                  │    │   + Y-Flip       │
 │                  │    │                  │
-│ 6a. Index        │    │ 6b. Extract      │
-│   Reversal       │    │   BindPose       │
-│   (CCW→CW)       │    │   + Index        │
-│                  │    │     Reversal     │
+│ - Index Reversal │    │ - Bind Pose      │
+│   (CCW→CW)       │    │   추출 & 저장    │
+│                  │    │                  │
+│                  │    │ - Inverse Bind   │
+│                  │    │   Pose 계산      │
+│                  │    │                  │
+│                  │    │ - Index Reversal │
+│                  │    │   (CCW→CW)       │
 └──────────────────┘    └──────────────────┘
 ```
 
 ### 단계별 설명
 
 #### Phase 1: LoadScene
+
 ```cpp
 bool FFbxImporter::LoadScene(const FString& FilePath)
 {
@@ -188,34 +255,84 @@ bool FFbxImporter::LoadScene(const FString& FilePath)
     Importer->Initialize(FilePath.c_str(), -1, SdkManager->GetIOSettings());
     Importer->Import(Scene);
 
-    // 2. Triangulate (모든 Polygon을 Triangle로 변환)
-    FbxGeometryConverter geometryConverter(SdkManager);
-    geometryConverter.Triangulate(Scene, true);
-
+    UE_LOG("[FBX] Scene loaded successfully: %s", FilePath.c_str());
     return true;
 }
 ```
 
 **역할:**
 - FBX 파일을 Scene으로 로드
-- 모든 Polygon을 Triangle로 변환 (Quad → 2 Triangles)
-- 이후 단계에서 모든 face가 정확히 3개의 vertex를 가짐
+- 파일 I/O 수행
+- Scene 객체 초기화
 
 #### Phase 2: ConvertScene
+
 ```cpp
 void FFbxImporter::ConvertScene()
 {
-    // Unreal Engine 방식: 불필요한 FBX Root 노드 제거
-    FbxRootNodeUtility::RemoveAllFbxRoots(Scene);
+    FbxAMatrix AxisConversionMatrix;
+    AxisConversionMatrix.SetIdentity();
 
-    // Z-Up, -Y-Forward, Right-Handed로 변환
-    FbxAxisSystem UnrealImportAxis(
-        FbxAxisSystem::eZAxis,                                    // Z-Up
-        (FbxAxisSystem::EFrontVector)-FbxAxisSystem::eParityOdd, // -Y Forward
-        FbxAxisSystem::eRightHanded                               // Right-Handed
-    );
+    FbxAMatrix JointPostConversionMatrix;
+    JointPostConversionMatrix.SetIdentity();
 
-    UnrealImportAxis.ConvertScene(Scene);
+    // 좌표계 변환 (옵션에 따라)
+    if (CurrentOptions.bConvertScene)
+    {
+        // 원본 좌표계 정보 출력
+        FbxAxisSystem SceneAxis = Scene->GetGlobalSettings().GetAxisSystem();
+        // ... 디버그 로그 ...
+
+        // Target 좌표계 설정
+        FbxAxisSystem::EUpVector TargetUpVector = FbxAxisSystem::eZAxis;
+        FbxAxisSystem::EFrontVector TargetFrontVector;
+
+        if (CurrentOptions.bForceFrontXAxis)
+        {
+            TargetFrontVector = FbxAxisSystem::eParityEven;  // +X Forward
+        }
+        else
+        {
+            TargetFrontVector = (FbxAxisSystem::EFrontVector)-FbxAxisSystem::eParityOdd;  // -Y Forward
+        }
+
+        FbxAxisSystem UnrealImportAxis(TargetUpVector, TargetFrontVector, FbxAxisSystem::eRightHanded);
+
+        // 좌표계가 다른 경우만 변환
+        if (SceneAxis != UnrealImportAxis)
+        {
+            // FBX Root 노드 제거 (Unreal Engine 방식)
+            FbxRootNodeUtility::RemoveAllFbxRoots(Scene);
+
+            // 좌표계 변환 수행
+            UnrealImportAxis.ConvertScene(Scene);
+
+            // bForceFrontXAxis = true면 JointOrientationMatrix 설정
+            if (CurrentOptions.bForceFrontXAxis)
+            {
+                JointPostConversionMatrix.SetR(FbxVector4(-90.0, -90.0, 0.0));
+            }
+
+            // Axis Conversion Matrix 계산
+            FbxAMatrix SourceMatrix, TargetMatrix;
+            SceneAxis.GetMatrix(SourceMatrix);
+            UnrealImportAxis.GetMatrix(TargetMatrix);
+            AxisConversionMatrix = SourceMatrix.Inverse() * TargetMatrix;
+        }
+    }
+
+    // FFbxDataConverter에 Matrix 저장
+    FFbxDataConverter::SetAxisConversionMatrix(AxisConversionMatrix);
+    FFbxDataConverter::SetJointPostConversionMatrix(JointPostConversionMatrix);
+
+    // 단위 변환
+    if (CurrentOptions.bConvertSceneUnit)
+    {
+        if (SceneUnit != FbxSystemUnit::m)
+        {
+            FbxSystemUnit::m.ConvertScene(Scene);
+        }
+    }
 
     // Animation Evaluator Reset
     Scene->GetAnimationEvaluator()->Reset();
@@ -224,52 +341,133 @@ void FFbxImporter::ConvertScene()
 
 **역할:**
 - FBX Scene을 통일된 좌표계로 변환
+- AxisConversionMatrix와 JointPostConversionMatrix 계산 및 저장
+- 단위 변환 (meter)
 - **중요**: 아직 Right-Handed 상태 (Left-Handed 변환은 나중에 Vertex별로 수행)
-- Unreal Engine의 Import 방식을 그대로 따름
 
-#### Phase 3: ExtractMeshData
+#### Phase 3: ExtractSkeleton
+
 ```cpp
-bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletalMesh)
+USkeleton* FFbxImporter::ExtractSkeleton(FbxNode* RootNode)
 {
-    FbxMesh* fbxMesh = MeshNode->GetMesh();
+    USkeleton* Skeleton = ObjectFactory::NewObject<USkeleton>();
 
-    // Polygon 순회 (모든 Triangle)
-    for (int32 polyIndex = 0; polyIndex < polygonCount; polyIndex++)
+    // FbxNode* → Mundi Bone Index 매핑
+    TMap<FbxNode*, int32> NodeToIndexMap;
+
+    // Bone Hierarchy 재귀적 추출
+    std::function<void(FbxNode*, int32)> ExtractBoneHierarchy;
+    ExtractBoneHierarchy = [&](FbxNode* Node, int32 ParentIndex)
     {
-        for (int32 vertInPoly = 0; vertInPoly < 3; vertInPoly++)
+        FbxNodeAttribute* Attr = Node->GetNodeAttribute();
+        if (Attr && Attr->GetAttributeType() == FbxNodeAttribute::eSkeleton)
         {
-            // 1. Control Point (Vertex Position)
-            int32 controlPointIndex = fbxMesh->GetPolygonVertex(polyIndex, vertInPoly);
-            FbxVector4 fbxPos = fbxMesh->GetControlPointAt(controlPointIndex);
-            vertex.Position = FVector(fbxPos[0], fbxPos[1], fbxPos[2]);  // Raw, 아직 변환 안함
+            FString BoneName = Node->GetName();
+            int32 CurrentIndex = Skeleton->AddBone(BoneName, ParentIndex);
 
-            // 2. Normal
-            FbxVector4 fbxNormal;
-            fbxMesh->GetPolygonVertexNormal(polyIndex, vertInPoly, fbxNormal);
-            vertex.Normal = FVector(fbxNormal[0], fbxNormal[1], fbxNormal[2]);
+            // Local Transform 추출
+            FbxAMatrix LocalMatrix = Node->EvaluateLocalTransform();
+            FTransform LocalTransform = ConvertFbxTransform(LocalMatrix);
+            Skeleton->SetBindPoseTransform(CurrentIndex, LocalTransform);
 
-            // 3. UV
-            FbxVector2 fbxUV;
-            fbxMesh->GetPolygonVertexUV(polyIndex, vertInPoly, uvSetName, fbxUV, unmapped);
-            vertex.TexCoord = FVector2(fbxUV[0], 1.0f - fbxUV[1]);  // V축 반전
-
-            // 4. Tangent (있는 경우)
-            vertex.Tangent = ...;
-
-            vertices.push_back(vertex);
-            indices.push_back(vertexIndexCounter++);
+            NodeToIndexMap[Node] = CurrentIndex;
         }
-    }
 
-    OutSkeletalMesh->SetVertices(vertices);
-    OutSkeletalMesh->SetIndices(indices);
+        // 자식 노드 재귀 탐색
+        for (int i = 0; i < Node->GetChildCount(); i++)
+        {
+            ExtractBoneHierarchy(Node->GetChild(i), ParentIndex);
+        }
+    };
+
+    ExtractBoneHierarchy(RootNode, -1);
+    Skeleton->FinalizeBones();
+
+    return Skeleton;
 }
 ```
 
 **역할:**
-- Raw FBX 데이터 추출
-- 아직 좌표 변환 없음 (Component Space)
-- Polygon → Vertex 매핑 수행
+- FBX Node Hierarchy → Bone Hierarchy
+- 각 Bone의 Local Transform 추출 (부모 기준 상대 Transform)
+- Parent-Child 관계 유지
+
+#### Phase 4: ExtractMeshData
+
+```cpp
+bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletalMesh)
+{
+    FbxMesh* FbxMesh = MeshNode->GetMesh();
+
+    // Vertex 및 Index 데이터 준비
+    TArray<FSkinnedVertex> Vertices;
+    TArray<uint32> Indices;
+    TArray<int32> VertexToControlPointMap;
+
+    FbxVector4* ControlPoints = FbxMesh->GetControlPoints();
+
+    // IMPORTANT: Vertex는 원본 그대로 유지 (Mesh Local Space)
+    // 좌표계 변환은 Static의 경우 여기서, Skeletal의 경우 ExtractSkinWeights에서 처리
+
+    // Polygon 순회
+    for (int32 PolyIndex = 0; PolyIndex < PolygonCount; PolyIndex++)
+    {
+        for (int32 VertInPoly = 0; VertInPoly < 3; VertInPoly++)
+        {
+            FSkinnedVertex Vertex;
+
+            // Control Point Index
+            int32 ControlPointIndex = FbxMesh->GetPolygonVertex(PolyIndex, VertInPoly);
+
+            // Position 추출 (원본 Local Space 유지)
+            FbxVector4 FbxPos = ControlPoints[ControlPointIndex];
+            Vertex.Position = FVector(FbxPos[0], FbxPos[1], FbxPos[2]);
+
+            // Normal 추출 (원본 Local Space 유지)
+            // ... Normal, UV, Tangent 추출 ...
+
+            Vertices.Add(Vertex);
+            Indices.Add(VertexIndexCounter++);
+            VertexToControlPointMap.Add(ControlPointIndex);
+        }
+    }
+
+    OutSkeletalMesh->SetVertices(Vertices);
+    OutSkeletalMesh->SetIndices(Indices);
+    OutSkeletalMesh->SetVertexToControlPointMap(VertexToControlPointMap);
+
+    // STATIC MESH 처리: Skeleton이 없는 경우
+    if (!Skeleton || Skeleton->GetBoneCount() == 0)
+    {
+        // Geometry Transform 가져오기
+        FbxAMatrix GeometryTransform(...);
+        FbxAMatrix GlobalTransform = Scene->GetAnimationEvaluator()->GetNodeGlobalTransform(MeshNode);
+        FbxAMatrix TotalTransform = GlobalTransform * GeometryTransform;
+
+        // Vertex 변환 (TotalTransform + Y-Flip)
+        for (auto& Vertex : Vertices)
+        {
+            FbxVector4 TransformedPos = TotalTransform.MultT(FbxPos);
+            Vertex.Position = ConvertFbxPosition(TransformedPos);  // Y축 반전
+            // ... Normal, Tangent 변환 ...
+        }
+
+        // Index Reversal (CCW → CW)
+        for (size_t i = 0; i < Indices.Num(); i += 3)
+        {
+            std::swap(Indices[i], Indices[i + 2]);
+        }
+    }
+
+    return true;
+}
+```
+
+**역할:**
+- Raw FBX 데이터 추출 (Position, Normal, UV, Tangent)
+- **원본 Local Space 유지** (좌표 변환 안 함!)
+- Static Mesh인 경우 TotalTransform 적용 + Y-Flip + Index Reversal
+- Skeletal Mesh인 경우 ExtractSkinWeights에서 변환
 
 ---
 
@@ -277,22 +475,22 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletal
 
 ### Static Mesh Pipeline
 
-Static Mesh는 Skeleton이 없는 단순 3D 모델입니다.
+Static Mesh는 Skeleton이 없는 단순 3D 모델입니다. ExtractMeshData() 내부에서 직접 변환 처리됩니다.
 
 #### 1. Transform Vertices (Global Space)
 
 ```cpp
 // Geometry Transform (Pivot/Offset)
-FbxVector4 geoTranslation = MeshNode->GetGeometricTranslation(FbxNode::eSourcePivot);
-FbxVector4 geoRotation = MeshNode->GetGeometricRotation(FbxNode::eSourcePivot);
-FbxVector4 geoScaling = MeshNode->GetGeometricScaling(FbxNode::eSourcePivot);
-FbxAMatrix geometryTransform(geoTranslation, geoRotation, geoScaling);
+FbxVector4 GeoTranslation = MeshNode->GetGeometricTranslation(FbxNode::eSourcePivot);
+FbxVector4 GeoRotation = MeshNode->GetGeometricRotation(FbxNode::eSourcePivot);
+FbxVector4 GeoScaling = MeshNode->GetGeometricScaling(FbxNode::eSourcePivot);
+FbxAMatrix GeometryTransform(GeoTranslation, GeoRotation, GeoScaling);
 
 // Global Transform (Scene에서의 위치)
-FbxAMatrix globalTransform = Scene->GetAnimationEvaluator()->GetNodeGlobalTransform(MeshNode);
+FbxAMatrix GlobalTransform = Scene->GetAnimationEvaluator()->GetNodeGlobalTransform(MeshNode);
 
 // Total Transform = GlobalTransform * Geometry (Unreal Engine 방식)
-FbxAMatrix totalTransform = globalTransform * geometryTransform;
+FbxAMatrix TotalTransform = GlobalTransform * GeometryTransform;
 ```
 
 **Unreal Engine의 ComputeTotalMatrix() 구현:**
@@ -304,25 +502,27 @@ FbxAMatrix totalTransform = globalTransform * geometryTransform;
 
 ```cpp
 // Vertex 변환
-for (auto& vertex : verticesRef)
+TArray<FSkinnedVertex>& VerticesRef = OutSkeletalMesh->GetVerticesRef();
+
+for (auto& Vertex : VerticesRef)
 {
-    // 1. TotalTransform 적용
-    FbxVector4 fbxPos(vertex.Position.X, vertex.Position.Y, vertex.Position.Z, 1.0);
-    FbxVector4 transformedPos = totalTransform.MultT(fbxPos);
+    // 1. TotalTransform 적용 (FBX Space)
+    FbxVector4 FbxPos(Vertex.Position.X, Vertex.Position.Y, Vertex.Position.Z, 1.0);
+    FbxVector4 TransformedPos = TotalTransform.MultT(FbxPos);
 
-    // 2. Y축 반전 (RightHanded → LeftHanded)
-    vertex.Position = ConvertFbxPosition(transformedPos);
+    // 2. ConvertPos() - Y축 반전 (RightHanded → LeftHanded)
+    Vertex.Position = ConvertFbxPosition(TransformedPos);
 
-    // 3. Normal, Tangent도 동일하게 변환
-    vertex.Normal = ConvertFbxDirection(transformedNormal);
-    vertex.Tangent = ...;
+    // 3. Normal, Tangent 변환
+    Vertex.Normal = ConvertFbxDirection(TransformedNormal);
+    // ...
 }
 
 // Index Reversal (CCW → CW)
-TArray<uint32>& indicesRef = OutSkeletalMesh->GetIndicesRef();
-for (size_t i = 0; i < indicesRef.size(); i += 3)
+TArray<uint32>& IndicesRef = OutSkeletalMesh->GetIndicesRef();
+for (size_t i = 0; i < IndicesRef.Num(); i += 3)
 {
-    std::swap(indicesRef[i], indicesRef[i + 2]);  // [0,1,2] → [2,1,0]
+    std::swap(IndicesRef[i], IndicesRef[i + 2]);  // [0,1,2] → [2,1,0]
 }
 ```
 
@@ -330,198 +530,186 @@ for (size_t i = 0; i < indicesRef.size(); i += 3)
 
 Skeletal Mesh는 Skeleton + Skin Weights를 가진 애니메이션 가능한 모델입니다.
 
-#### 1. Extract Skeleton (Bone Hierarchy)
+#### 1. Extract Skeleton (이미 완료)
+
+ExtractSkeleton()에서 Bone Hierarchy와 Local Transform이 추출됩니다.
+
+#### 2. Extract Skin Weights (Cluster 기반 Bind Pose 추출)
 
 ```cpp
-USkeleton* FFbxImporter::ExtractSkeleton(FbxNode* RootNode)
+bool FFbxImporter::ExtractSkinWeights(FbxMesh* FbxMeshPtr, USkeletalMesh* OutSkeletalMesh)
 {
-    USkeleton* skeleton = ObjectFactory::NewObject<USkeleton>();
+    FbxSkin* SkinDeformer = static_cast<FbxSkin*>(FbxMeshPtr->GetDeformer(0, FbxDeformer::eSkin));
 
-    // Bone Hierarchy 재귀적 탐색
-    std::function<void(FbxNode*, int32)> ProcessBone = [&](FbxNode* Node, int32 ParentIndex)
+    // Geometry Transform 추출
+    FbxNode* MeshNode = FbxMeshPtr->GetNode();
+    FbxAMatrix GeometryTransform(...);
+
+    // Control Point별 Bone Influences 저장
+    TArray<FControlPointInfluence> ControlPointInfluences;
+
+    // 첫 번째 Cluster 처리 시 Mesh Global Transform 추출
+    FbxAMatrix MeshGlobalTransform;
+    bool bMeshTransformExtracted = false;
+
+    // 각 Cluster (Bone) 순회
+    for (int32 ClusterIndex = 0; ClusterIndex < ClusterCount; ClusterIndex++)
     {
-        // Bone 정보 생성
-        FBoneInfo boneInfo;
-        boneInfo.Name = Node->GetName();
-        boneInfo.ParentIndex = ParentIndex;
+        FbxCluster* Cluster = SkinDeformer->GetCluster(ClusterIndex);
+        FbxNode* LinkNode = Cluster->GetLink();
 
-        // Local Transform (부모 기준 상대 Transform)
-        FbxAMatrix localTransform = Node->EvaluateLocalTransform();
-        boneInfo.LocalTransform = ConvertFbxTransform(localTransform);
+        FString BoneName = LinkNode->GetName();
+        int32 BoneIndex = Skeleton->FindBoneIndex(BoneName);
 
-        int32 boneIndex = skeleton->AddBone(boneInfo);
+        // CRITICAL: Cluster에서 Bind Pose 직접 추출
+        FbxAMatrix TransformLinkMatrix;  // Bone Global at Bind Pose
+        FbxAMatrix TransformMatrix;      // Mesh Global at Bind Pose
+        Cluster->GetTransformLinkMatrix(TransformLinkMatrix);
+        Cluster->GetTransformMatrix(TransformMatrix);
 
-        // 자식 Bone 재귀 처리
-        for (int32 i = 0; i < Node->GetChildCount(); i++)
+        // 첫 번째 Cluster 처리 시: Vertex를 Mesh Global Space로 변환
+        if (!bMeshTransformExtracted)
         {
-            ProcessBone(Node->GetChild(i), boneIndex);
-        }
-    };
+            MeshGlobalTransform = TransformMatrix;
+            bMeshTransformExtracted = true;
 
-    ProcessBone(RootNode, -1);
-    return skeleton;
-}
-```
+            FbxAMatrix TotalTransform = TransformMatrix * GeometryTransform;
 
-**역할:**
-- FBX Node Hierarchy → Bone Hierarchy
-- 각 Bone의 Local Transform 추출
-- Parent-Child 관계 유지
-
-#### 2. Extract Skin Weights (Vertex → Bone Mapping)
-
-```cpp
-bool FFbxImporter::ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkeletalMesh)
-{
-    FbxSkin* fbxSkin = (FbxSkin*)fbxMesh->GetDeformer(0, FbxDeformer::eSkin);
-
-    // 각 Bone Cluster 순회
-    for (int32 clusterIndex = 0; clusterIndex < fbxSkin->GetClusterCount(); clusterIndex++)
-    {
-        FbxCluster* cluster = fbxSkin->GetCluster(clusterIndex);
-        FbxNode* linkNode = cluster->GetLink();
-        int32 boneIndex = skeleton->FindBoneIndexByName(linkNode->GetName());
-
-        // Bind Pose Matrix 가져오기
-        FbxAMatrix transformMatrix;       // Mesh의 Global Transform (Bind Pose 시점)
-        FbxAMatrix transformLinkMatrix;   // Bone의 Global Transform (Bind Pose 시점)
-        cluster->GetTransformMatrix(transformMatrix);
-        cluster->GetTransformLinkMatrix(transformLinkMatrix);
-
-        // 이 Cluster가 영향을 주는 Control Point (Vertex) 순회
-        int32* controlPointIndices = cluster->GetControlPointIndices();
-        double* controlPointWeights = cluster->GetControlPointWeights();
-
-        for (int32 i = 0; i < cluster->GetControlPointIndicesCount(); i++)
-        {
-            int32 controlPointIndex = controlPointIndices[i];
-            float weight = static_cast<float>(controlPointWeights[i]);
-
-            // 이 Control Point를 사용하는 모든 Vertex에 Weight 적용
-            // (FBX에서는 Control Point 기준, Mundi는 Vertex 기준)
-            for (int32 vertexIndex : vertexToControlPointMap)
+            // Vertex 변환 (TotalTransform + Y-Flip)
+            TArray<FSkinnedVertex>& Vertices = OutSkeletalMesh->GetVerticesRef();
+            for (auto& Vertex : Vertices)
             {
-                if (vertexToControlPointMap[vertexIndex] == controlPointIndex)
-                {
-                    AddBoneInfluence(vertices[vertexIndex], boneIndex, weight);
-                }
+                FbxVector4 TransformedPos = TotalTransform.MultT(FbxPos);
+                Vertex.Position = ConvertFbxPosition(TransformedPos);  // Y축 반전
+                // ... Normal, Tangent 변환 ...
+            }
+
+            // Index Reversal (CCW → CW)
+            TArray<uint32>& IndicesRef = OutSkeletalMesh->GetIndicesRef();
+            for (size_t i = 0; i < IndicesRef.Num(); i += 3)
+            {
+                std::swap(IndicesRef[i], IndicesRef[i + 2]);
             }
         }
 
-        // Vertex Transform to Mesh Global Space
-        FbxAMatrix totalTransform = transformMatrix * geometryTransform;
+        // Global Bind Pose Matrix 저장 (Y축 반전 적용)
+        FMatrix GlobalBindPoseMatrix = ConvertFbxMatrixWithYAxisFlip(FbxMatrix(TransformLinkMatrix));
+        Skeleton->SetGlobalBindPoseMatrix(BoneIndex, GlobalBindPoseMatrix);
 
-        for (auto& vertex : vertices)
-        {
-            vertex.Position = ConvertFbxPosition(totalTransform.MultT(fbxPos));
-            vertex.Normal = ConvertFbxDirection(normalTransform.MultT(fbxNormal));
-            vertex.Tangent = ...;
-        }
+        // Inverse Bind Pose Matrix 계산 (Y축 반전 적용)
+        FbxAMatrix InverseBindMatrix = TransformLinkMatrix.Inverse();
+        FMatrix InverseBindPoseMatrix = ConvertFbxMatrixWithYAxisFlip(FbxMatrix(InverseBindMatrix));
+        Skeleton->SetInverseBindPoseMatrix(BoneIndex, InverseBindPoseMatrix);
 
-        // Index Reversal (CCW → CW)
-        for (size_t i = 0; i < indicesRef.size(); i += 3)
+        // Control Point별 Bone Influence 수집
+        int32* ControlPointIndices = Cluster->GetControlPointIndices();
+        double* Weights = Cluster->GetControlPointWeights();
+        for (int32 i = 0; i < IndexCount; i++)
         {
-            std::swap(indicesRef[i], indicesRef[i + 2]);
+            ControlPointInfluences[ControlPointIndices[i]].BoneIndices.Add(BoneIndex);
+            ControlPointInfluences[ControlPointIndices[i]].Weights.Add(Weights[i]);
         }
     }
+
+    // Vertex에 Bone Weight 적용
+    TArray<FSkinnedVertex>& Vertices = OutSkeletalMesh->GetVerticesRef();
+    for (size_t VertIndex = 0; VertIndex < Vertices.Num(); VertIndex++)
+    {
+        int32 ControlPointIndex = VertexToControlPointMap[VertIndex];
+        const FControlPointInfluence& Influence = ControlPointInfluences[ControlPointIndex];
+
+        // 최대 4개 Bone Influence, Weight 정규화
+        for (int32 i = 0; i < 4; i++)
+        {
+            if (i < InfluenceCount)
+            {
+                Vertices[VertIndex].BoneIndices[i] = Influence.BoneIndices[i];
+                Vertices[VertIndex].BoneWeights[i] = Influence.Weights[i] / TotalWeight;
+            }
+        }
+    }
+
+    return true;
 }
 ```
 
 **역할:**
-- Vertex → Bone 영향도 매핑
-- 각 Vertex는 최대 4개의 Bone에 영향받음
-- Weight 정규화 (합이 1.0)
+- FbxCluster에서 직접 Bind Pose 추출 (TransformLinkMatrix, TransformMatrix)
 - Vertex를 Mesh Global Space로 변환 + Y-Flip
 - Index Reversal (CCW → CW)
+- GlobalBindPoseMatrix와 InverseBindPoseMatrix를 Skeleton에 저장
+- Vertex → Bone 영향도 매핑 (최대 4개 Bone)
+- Weight 정규화 (합이 1.0)
 
-#### 3. Extract Bind Pose (초기 Bone Transform)
-
-```cpp
-bool FFbxImporter::ExtractBindPose(FbxScene* Scene, USkeleton* OutSkeleton)
-{
-    FbxPose* bindPose = Scene->GetPose(0);  // 첫 번째 Bind Pose
-
-    for (int32 i = 0; i < bindPose->GetCount(); i++)
-    {
-        FbxNode* node = bindPose->GetNode(i);
-        FbxMatrix bindPoseMatrix = bindPose->GetMatrix(i);
-
-        int32 boneIndex = OutSkeleton->FindBoneIndexByName(node->GetName());
-        if (boneIndex != -1)
-        {
-            // Y축 선택적 반전 (Unreal Engine 방식)
-            FMatrix mundiMatrix = ConvertFbxMatrixWithYAxisFlip(bindPoseMatrix);
-            OutSkeleton->SetGlobalBindPoseMatrix(boneIndex, mundiMatrix);
-        }
-    }
-}
-```
-
-**역할:**
-- Bind Pose (Skinning 전 초기 자세) 추출
-- 각 Bone의 Global Transform 저장
-- 런타임에 Skinning 계산 시 사용: `InverseBindPoseMatrix * CurrentBoneMatrix`
+**중요**: ExtractBindPose() 함수는 존재하지만, 실제로는 ExtractSkinWeights()에서 Cluster를 통해 Bind Pose를 직접 추출하는 방식이 더 정확하고 직접적입니다.
 
 ---
 
 ## 핵심 함수 레퍼런스
 
-### FFbxImporter::LoadScene()
+### FFbxImporter 클래스
+
+#### LoadScene()
 ```cpp
 bool LoadScene(const FString& FilePath);
 ```
 - FBX 파일을 Scene으로 로드
-- Triangulate 수행
+- Triangulate는 ImportSkeletalMesh()에서 수행
 - 반환: 성공 여부
 
-### FFbxImporter::ConvertScene()
+#### ConvertScene()
 ```cpp
 void ConvertScene();
 ```
-- FBX Scene을 Unreal-style 좌표계로 변환
-- Z-Up, -Y-Forward, Right-Handed
-- Unreal Engine의 FbxMainImport.cpp:1528-1532 방식
+- FBX Scene을 Unreal-style 좌표계로 변환 (옵션에 따라)
+- AxisConversionMatrix와 JointPostConversionMatrix 계산 및 저장
+- 단위 변환 (meter) 수행 (옵션에 따라)
+- FFbxDataConverter에 Matrix 저장
 
-### FFbxImporter::ExtractMeshData()
+#### ImportSkeletalMesh()
+```cpp
+USkeletalMesh* ImportSkeletalMesh(const FString& FilePath, const FFbxImportOptions& Options);
+```
+- Skeletal Mesh Import 메인 함수
+- 전체 파이프라인 실행 (LoadScene → ConvertScene → ExtractSkeleton → ExtractMeshData → ExtractSkinWeights)
+- Dynamic GPU Buffer 생성 (CPU Skinning용)
+- 반환: Import된 SkeletalMesh
+
+#### ExtractMeshData()
 ```cpp
 bool ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletalMesh);
 ```
 - Vertex, Index, Normal, UV, Tangent 추출
-- Static Mesh의 경우 Transform + Y-Flip + Index Reversal 수행
+- **원본 Local Space 유지** (좌표 변환 안 함!)
+- Static Mesh인 경우 TotalTransform + Y-Flip + Index Reversal 수행
 - 반환: 성공 여부
 
-### FFbxImporter::ExtractSkinWeights()
+#### ExtractSkinWeights()
 ```cpp
-bool ExtractSkinWeights(FbxMesh* fbxMesh, USkeletalMesh* OutSkeletalMesh);
+bool ExtractSkinWeights(FbxMesh* FbxMeshPtr, USkeletalMesh* OutSkeletalMesh);
 ```
-- FbxSkin → Bone Influences 매핑
-- Vertex Transform to Mesh Global Space
-- Y-Flip + Index Reversal 수행
+- FbxCluster에서 Bind Pose 직접 추출
+- Vertex Transform to Mesh Global Space + Y-Flip
+- Index Reversal (CCW → CW)
+- GlobalBindPoseMatrix와 InverseBindPoseMatrix 계산 및 저장
+- Vertex → Bone Influences 매핑
 - 반환: 성공 여부
 
-### FFbxImporter::ExtractSkeleton()
+#### ExtractSkeleton()
 ```cpp
 USkeleton* ExtractSkeleton(FbxNode* RootNode);
 ```
-- Bone Hierarchy 추출
-- Local Transform 계산
+- Bone Hierarchy 재귀적 추출
+- Local Transform 계산 및 저장
 - 반환: USkeleton 객체
-
-### FFbxImporter::ExtractBindPose()
-```cpp
-bool ExtractBindPose(FbxScene* Scene, USkeleton* OutSkeleton);
-```
-- Bind Pose Matrix 추출
-- Global Transform 저장
-- 반환: 성공 여부
 
 ### 좌표 변환 Helper 함수
 
 #### ConvertFbxPosition()
 ```cpp
-FVector ConvertFbxPosition(const FbxVector4& pos)
+FVector ConvertFbxPosition(const FbxVector4& Pos)
 {
-    return FVector(pos[0], -pos[1], pos[2]);  // Y축 반전
+    return FVector(Pos[0], -Pos[1], Pos[2]);  // Y축 반전
 }
 ```
 - **용도**: Position 변환
@@ -530,11 +718,11 @@ FVector ConvertFbxPosition(const FbxVector4& pos)
 
 #### ConvertFbxDirection()
 ```cpp
-FVector ConvertFbxDirection(const FbxVector4& dir)
+FVector ConvertFbxDirection(const FbxVector4& Dir)
 {
-    FVector result(dir[0], -dir[1], dir[2]);  // Y축 반전
-    result.Normalize();
-    return result;
+    FVector Result(Dir[0], -Dir[1], Dir[2]);  // Y축 반전
+    Result.Normalize();
+    return Result;
 }
 ```
 - **용도**: Normal, Tangent, Binormal 변환
@@ -543,9 +731,9 @@ FVector ConvertFbxDirection(const FbxVector4& dir)
 
 #### ConvertFbxQuaternion()
 ```cpp
-FQuat ConvertFbxQuaternion(const FbxQuaternion& q)
+FQuat ConvertFbxQuaternion(const FbxQuaternion& Q)
 {
-    return FQuat(q[0], -q[1], q[2], -q[3]);  // Y, W 반전
+    return FQuat(Q[0], -Q[1], Q[2], -Q[3]);  // Y, W 반전
 }
 ```
 - **용도**: Rotation (Quaternion) 변환
@@ -554,29 +742,49 @@ FQuat ConvertFbxQuaternion(const FbxQuaternion& q)
 
 #### ConvertFbxMatrixWithYAxisFlip()
 ```cpp
-FMatrix ConvertFbxMatrixWithYAxisFlip(const FbxMatrix& fbxMatrix)
+FMatrix ConvertFbxMatrixWithYAxisFlip(const FbxMatrix& FbxMatrix)
 {
-    FMatrix result;
+    FMatrix Result;
     for (int row = 0; row < 4; row++)
     {
         for (int col = 0; col < 4; col++)
         {
-            result.M[row][col] = static_cast<float>(fbxMatrix.Get(row, col));
+            Result.M[row][col] = static_cast<float>(FbxMatrix.Get(row, col));
         }
     }
 
-    // Y축 관련 요소 반전 (행렬 기반 handedness 변환)
-    result.M[1][0] = -result.M[1][0];  // Row 1, Col 0
-    result.M[1][1] = -result.M[1][1];  // Row 1, Col 1
-    result.M[1][2] = -result.M[1][2];  // Row 1, Col 2
-    result.M[1][3] = -result.M[1][3];  // Row 1, Col 3 (Translation Y)
+    // Y축 Row 반전 (Row 1 전체)
+    Result.M[1][0] = -Result.M[1][0];
+    Result.M[1][1] = -Result.M[1][1];
+    Result.M[1][2] = -Result.M[1][2];
+    Result.M[1][3] = -Result.M[1][3];  // Translation Y
 
-    return result;
+    // 다른 Row의 Y 컬럼 반전 (Col 1)
+    Result.M[0][1] = -Result.M[0][1];
+    Result.M[2][1] = -Result.M[2][1];
+    Result.M[3][1] = -Result.M[3][1];  // 이미 반전됨 (Row 1 처리 시)
+
+    return Result;
 }
 ```
 - **용도**: Transform Matrix 변환 (Bind Pose 등)
 - **변환**: Right-Handed → Left-Handed
 - **Y축 선택적 반전**: Winding Order 자동 보존
+- **Unreal Engine 방식**: Row 1 전체 + 다른 Row의 Col 1 반전
+
+#### ConvertFbxTransform()
+```cpp
+FTransform ConvertFbxTransform(const FbxAMatrix& FbxMatrix)
+{
+    FTransform Transform;
+    Transform.Translation = ConvertFbxPosition(FbxMatrix.GetT());
+    Transform.Rotation = ConvertFbxQuaternion(FbxMatrix.GetQ());
+    Transform.Scale3D = ConvertFbxScale(FbxMatrix.GetS());
+    return Transform;
+}
+```
+- **용도**: FbxAMatrix를 FTransform으로 변환
+- **사용처**: Bone Local Transform 추출
 
 #### IsOddNegativeScale()
 ```cpp
@@ -595,6 +803,222 @@ bool IsOddNegativeScale(const FbxAMatrix& TotalMatrix)
 - **용도**: Mirror Transform 감지
 - **반환**: Scale에 음수가 1개 또는 3개면 `true`
 - **Unreal Engine 방식**: Odd Negative Scale 시 추가 처리 필요 (향후 구현)
+
+---
+
+## FFbxDataConverter 유틸리티 클래스
+
+FFbxDataConverter는 좌표 변환 로직을 캡슐화한 Static 유틸리티 클래스입니다.
+
+### 클래스 구조
+
+```cpp
+class FFbxDataConverter
+{
+public:
+    // Axis Conversion Matrix 관리
+    static void SetAxisConversionMatrix(const FbxAMatrix& Matrix);
+    static const FbxAMatrix& GetAxisConversionMatrix();
+    static const FbxAMatrix& GetAxisConversionMatrixInv();
+
+    // Joint Post-Conversion Matrix 관리
+    static void SetJointPostConversionMatrix(const FbxAMatrix& Matrix);
+    static const FbxAMatrix& GetJointPostConversionMatrix();
+
+    // 좌표 변환 함수
+    static FVector ConvertPos(const FbxVector4& Vector);
+    static FVector ConvertDir(const FbxVector4& Vector);
+    static FQuat ConvertRotToQuat(const FbxQuaternion& Quaternion);
+    static FVector ConvertScale(const FbxVector4& Vector);
+    static FTransform ConvertTransform(const FbxAMatrix& Matrix);
+    static FMatrix ConvertMatrix(const FbxMatrix& Matrix);
+
+private:
+    static FbxAMatrix AxisConversionMatrix;
+    static FbxAMatrix AxisConversionMatrixInv;
+    static bool bIsInitialized;
+
+    static FbxAMatrix JointPostConversionMatrix;
+    static bool bIsJointMatrixInitialized;
+};
+```
+
+### 주요 기능
+
+#### Axis Conversion Matrix 관리
+
+ConvertScene() 후 계산된 Axis Conversion Matrix를 저장합니다:
+
+```cpp
+FFbxDataConverter::SetAxisConversionMatrix(AxisConversionMatrix);
+```
+
+이 Matrix는 추후 Animation Import 등에서 사용될 예정입니다.
+
+#### Joint Post-Conversion Matrix 관리
+
+`bForceFrontXAxis = true`일 때 Bone Hierarchy에 추가 회전을 적용합니다:
+
+```cpp
+FbxAMatrix JointPostMatrix;
+JointPostMatrix.SetR(FbxVector4(-90.0, -90.0, 0.0));
+FFbxDataConverter::SetJointPostConversionMatrix(JointPostMatrix);
+```
+
+**용도**: -Y Forward → +X Forward 변환 (Skeletal Mesh Bone 전용)
+
+#### 좌표 변환 함수들
+
+모든 변환 함수는 Y축 반전을 통해 Right-Handed → Left-Handed 변환을 수행합니다:
+
+- `ConvertPos()`: Position 변환 (Y축 반전)
+- `ConvertDir()`: Direction 변환 (Y축 반전 + 정규화)
+- `ConvertRotToQuat()`: Quaternion 변환 (Y, W 반전)
+- `ConvertScale()`: Scale 변환 (변환 없음)
+- `ConvertTransform()`: FbxAMatrix → FTransform 변환
+- `ConvertMatrix()`: FbxMatrix → FMatrix 변환 (Y축 선택적 반전)
+
+---
+
+## Import 옵션
+
+### FFbxImportOptions 구조체
+
+```cpp
+struct FFbxImportOptions
+{
+    EFbxImportType ImportType = EFbxImportType::SkeletalMesh;
+
+    // 공통 옵션
+    float ImportScale = 1.0f;
+
+    // 좌표계 변환 옵션
+    bool bConvertScene = true;
+    bool bForceFrontXAxis = true;
+    bool bConvertSceneUnit = true;
+    bool bRemoveDegenerates = true;
+
+    // SkeletalMesh 전용 옵션
+    bool bImportSkeleton = true;
+    bool bImportMorphTargets = false;
+    bool bImportLODs = false;
+
+    // StaticMesh 전용 옵션 (미구현)
+    bool bGenerateCollision = false;
+
+    // Animation 전용 옵션 (미구현)
+    bool bImportAnimations = false;
+};
+```
+
+### 주요 옵션 설명
+
+#### bConvertScene (기본: true)
+
+Scene 좌표계 변환 여부를 제어합니다.
+
+- **true**: FBX Scene을 Unreal-style 좌표계로 변환
+  - Z-Up, -Y-Forward (또는 +X-Forward), Right-Handed
+  - AxisConversionMatrix 계산 및 저장
+  - Y-Flip으로 Left-Handed 변환
+
+- **false**: FBX 원본 좌표계 유지 + Y-Flip만 적용
+  - AxisConversionMatrix = Identity
+  - 원본 좌표계가 이미 적합한 경우 사용
+
+#### bForceFrontXAxis (기본: true)
+
+Forward 축을 +X로 강제할지 여부를 제어합니다.
+
+- **true**: +X Forward (직관적)
+  - JointPostConversionMatrix 적용 (-90°, -90°, 0°)
+  - Skeletal Mesh Bone Hierarchy에만 영향
+  - Static Mesh에는 영향 없음
+
+- **false**: -Y Forward (Maya/Max 호환)
+  - JointPostConversionMatrix = Identity
+
+**사용 시나리오:**
+- Blender 등에서 Export한 모델이 회전되어 보일 때 `true` 사용
+- Maya/Max에서 Export한 모델은 `false` 유지
+
+#### bConvertSceneUnit (기본: true)
+
+Scene 단위를 Meter (m)로 변환할지 여부를 제어합니다.
+
+- **true**: FBX 단위 → Meter (m) 단위로 변환
+  - FBX가 cm 단위인 경우 1/100 크기로 축소
+  - Blender는 기본적으로 meter 단위 사용
+
+- **false**: 원본 단위 유지
+  - 추가 변환 없음
+
+**사용 시나리오:**
+- Blender에서 Export: `true` 유지 (meter → meter, 변환 없음)
+- 3ds Max에서 Export: `false` (cm 단위 유지)
+- ImportScale로 추가 스케일 조정 가능
+
+#### ImportScale (기본: 1.0f)
+
+추가 사용자 지정 스케일 배율입니다.
+
+```cpp
+if (Options.ImportScale != 1.0f)
+{
+    FbxSystemUnit CustomUnit(Options.ImportScale);
+    CustomUnit.ConvertScene(Scene);
+}
+```
+
+**사용 시나리오:**
+- 모델 크기를 수동으로 조정하고 싶을 때
+- 예: `ImportScale = 100.0f` → 모델 크기 100배 확대
+
+#### bRemoveDegenerates (기본: true)
+
+중복 버텍스와 degenerate polygon을 제거합니다.
+
+```cpp
+if (Options.bRemoveDegenerates)
+{
+    GeometryConverter.RemoveBadPolygonsFromMeshes(Scene);
+}
+```
+
+### 옵션 조합 예시
+
+#### 예시 1: Blender에서 Export한 Skeletal Mesh
+
+```cpp
+FFbxImportOptions Options;
+Options.ImportType = EFbxImportType::SkeletalMesh;
+Options.bConvertScene = true;
+Options.bForceFrontXAxis = true;      // +X Forward 적용
+Options.bConvertSceneUnit = true;     // Meter 유지 (변환 없음)
+Options.ImportScale = 1.0f;
+```
+
+#### 예시 2: Maya에서 Export한 Skeletal Mesh
+
+```cpp
+FFbxImportOptions Options;
+Options.ImportType = EFbxImportType::SkeletalMesh;
+Options.bConvertScene = true;
+Options.bForceFrontXAxis = false;     // -Y Forward 유지
+Options.bConvertSceneUnit = false;    // cm 단위 유지
+Options.ImportScale = 1.0f;
+```
+
+#### 예시 3: 커스텀 스케일 적용
+
+```cpp
+FFbxImportOptions Options;
+Options.ImportType = EFbxImportType::SkeletalMesh;
+Options.bConvertScene = true;
+Options.bForceFrontXAxis = true;
+Options.bConvertSceneUnit = true;
+Options.ImportScale = 0.01f;          // 모델 크기 1/100로 축소
+```
 
 ---
 
@@ -635,25 +1059,53 @@ const FTriangleID NewTriangleID = MeshDescription->CreateTriangle(
 // Index Reversal 없음!
 ```
 
-#### Mundi Engine (FbxImporter.cpp:660-663, 791-794)
+#### Mundi Engine (FbxImporter.cpp:716-718, 922-925)
 ```cpp
 // Index Reversal 수행
-TArray<uint32>& indicesRef = OutSkeletalMesh->GetIndicesRef();
-for (size_t i = 0; i < indicesRef.size(); i += 3)
+TArray<uint32>& IndicesRef = OutSkeletalMesh->GetIndicesRef();
+for (size_t i = 0; i < IndicesRef.Num(); i += 3)
 {
-    std::swap(indicesRef[i], indicesRef[i + 2]);  // [0,1,2] → [2,1,0] (CCW → CW)
+    std::swap(IndicesRef[i], IndicesRef[i + 2]);  // [0,1,2] → [2,1,0] (CCW → CW)
 }
 ```
 
-### 3. 좌표계 변환은 동일
+### 3. Bind Pose 추출 방식
+
+| 항목 | Unreal Engine | Mundi Engine |
+|------|---------------|--------------|
+| **Bind Pose 추출** | FbxCluster 기반 | FbxCluster 기반 (동일) |
+| **TransformLinkMatrix** | ✅ 사용 | ✅ 사용 |
+| **TransformMatrix** | ✅ 사용 | ✅ 사용 |
+| **Inverse Bind Pose** | Cluster에서 계산 | Cluster에서 계산 (동일) |
+| **GlobalBindPoseMatrix** | ❌ 저장 안 함 | ✅ 저장 (CPU Skinning용) |
+
+**Mundi의 추가 기능:**
+- GlobalBindPoseMatrix를 Skeleton에 저장 (CPU Skinning 지원)
+- InverseBindPoseMatrix와 함께 관리
+
+### 4. 좌표계 변환은 동일
 
 | 단계 | Unreal Engine | Mundi Engine | 비고 |
 |------|---------------|--------------|------|
-| ConvertScene | Z-Up, -Y-Forward, RH | Z-Up, -Y-Forward, RH | ✅ 동일 |
+| ConvertScene | Z-Up, -Y-Forward, RH | Z-Up, -Y-Forward (또는 +X-Forward), RH | ✅ 동일 |
 | Y-Flip | ConvertPos() Y 반전 | ConvertFbxPosition() Y 반전 | ✅ 동일 |
 | 최종 좌표계 | Z-Up, X-Forward, LH | Z-Up, X-Forward, LH | ✅ 동일 |
 
-**결론**: 좌표계 변환 로직은 Unreal Engine과 완전히 동일하며, 차이점은 **Winding Order 처리 방식**만 다릅니다.
+**결론**: 좌표계 변환 로직은 Unreal Engine과 완전히 동일하며, 차이점은 **Winding Order 처리 방식**과 **GlobalBindPoseMatrix 저장** 여부입니다.
+
+### 5. FFbxDataConverter 유틸리티 클래스
+
+| 항목 | Unreal Engine | Mundi Engine |
+|------|---------------|--------------|
+| **좌표 변환 유틸리티** | FFbxDataConverter (내부 클래스) | FFbxDataConverter (공개 유틸리티) |
+| **Axis Conversion Matrix** | 내부 관리 | Static 멤버로 공개 |
+| **Joint Post-Conversion** | JointOrientationMatrix | JointPostConversionMatrix (동일 개념) |
+| **재사용성** | FBX Importer 내부에서만 사용 | 외부에서도 사용 가능 (향후 Animation Import 등) |
+
+**Mundi의 개선점:**
+- FFbxDataConverter를 독립된 Static 클래스로 분리
+- AxisConversionMatrix와 JointPostConversionMatrix를 외부에서도 접근 가능
+- 향후 Animation Import 등에서 재사용 가능
 
 ---
 
@@ -670,12 +1122,42 @@ FBX Import 시 로그 출력:
 
 [FBX DEBUG] === After Conversion ===
 [FBX DEBUG] UpVector: 2 (sign: 1)        // Z-Up
-[FBX DEBUG] FrontVector: 1 (sign: -1)    // -Y-Forward
+[FBX DEBUG] FrontVector: 1 (sign: -1)    // -Y-Forward (또는 0 = +X-Forward)
 [FBX DEBUG] CoordSystem: RightHanded     // 아직 RH
 [FBX] ConvertPos() will flip Y-axis to convert Right-Handed to Left-Handed
 ```
 
-### 2. Winding Order 테스트
+### 2. Bind Pose Matrix 검증
+
+ExtractSkinWeights()에서 첫 번째 Bone의 Matrix를 출력:
+
+```
+[FBX DEBUG] === First Bone Cluster Transform Analysis ===
+[FBX DEBUG] Bone Name: Root
+[FBX DEBUG] TransformLinkMatrix (Bone Global):
+[FBX DEBUG]   Row 0: (1.000000, 0.000000, 0.000000, 0.000000)
+[FBX DEBUG]   Row 1: (0.000000, 1.000000, 0.000000, 0.000000)
+[FBX DEBUG]   Row 2: (0.000000, 0.000000, 1.000000, 0.000000)
+[FBX DEBUG]   Row 3: (0.000000, 0.000000, 0.000000, 1.000000)
+
+[FBX DEBUG] After ConvertFbxMatrixWithYAxisFlip - GlobalBindPoseMatrix:
+[FBX DEBUG]   Row 0: (1.000000, 0.000000, 0.000000, 0.000000)
+[FBX DEBUG]   Row 1: (0.000000, -1.000000, 0.000000, 0.000000)  // Y축 반전
+[FBX DEBUG]   Row 2: (0.000000, 0.000000, 1.000000, 0.000000)
+[FBX DEBUG]   Row 3: (0.000000, 0.000000, 0.000000, 1.000000)
+
+[FBX DEBUG] InverseBindPose × GlobalBindPose (should be Identity):
+[FBX DEBUG]   Row 0: (1.000000, 0.000000, 0.000000, 0.000000)
+[FBX DEBUG]   Row 1: (0.000000, 1.000000, 0.000000, 0.000000)
+[FBX DEBUG]   Row 2: (0.000000, 0.000000, 1.000000, 0.000000)
+[FBX DEBUG]   Row 3: (0.000000, 0.000000, 0.000000, 1.000000)
+```
+
+**확인 사항:**
+- GlobalBindPoseMatrix의 Y축 반전 여부
+- InverseBindPose × GlobalBindPose = Identity 검증
+
+### 3. Winding Order 테스트
 
 D3D11 Rasterizer State 변경으로 테스트 가능:
 
@@ -689,19 +1171,36 @@ rasterizerDesc.FrontCounterClockwise = TRUE;
 // 결과: Index Reversal 없이 올바르게 보여야 함 (Unreal Engine 방식)
 ```
 
-### 3. Transform Matrix 검증
+### 4. Transform Matrix 검증
 
 ```cpp
 UE_LOG("[FBX] Global Transform - T:(%.3f, %.3f, %.3f) R:(%.3f, %.3f, %.3f) S:(%.3f, %.3f, %.3f)",
-    globalTransform.GetT()[0], globalTransform.GetT()[1], globalTransform.GetT()[2],
-    globalTransform.GetR()[0], globalTransform.GetR()[1], globalTransform.GetR()[2],
-    globalTransform.GetS()[0], globalTransform.GetS()[1], globalTransform.GetS()[2]);
+    GlobalTransform.GetT()[0], GlobalTransform.GetT()[1], GlobalTransform.GetT()[2],
+    GlobalTransform.GetR()[0], GlobalTransform.GetR()[1], GlobalTransform.GetR()[2],
+    GlobalTransform.GetS()[0], GlobalTransform.GetS()[1], GlobalTransform.GetS()[2]);
 ```
 
 **확인 사항:**
 - Translation: 모델의 World 위치
 - Rotation: Euler Angles (Degrees)
-- Scale: 음수가 있으면 Mirror Transform (OddNegativeScale 확인 필요)
+- Scale: 음수가 있으면 Mirror Transform (IsOddNegativeScale 확인 필요)
+
+### 5. Vertex 변환 디버깅
+
+ExtractMeshData() 또는 ExtractSkinWeights() 내부에서 첫 번째 Vertex 출력:
+
+```cpp
+if (VertIndex == 0)
+{
+    UE_LOG("[FBX DEBUG] First Vertex Transform:");
+    UE_LOG("[FBX DEBUG] Original Position: (%.3f, %.3f, %.3f)",
+        OriginalPos[0], OriginalPos[1], OriginalPos[2]);
+    UE_LOG("[FBX DEBUG] After Transform: (%.3f, %.3f, %.3f)",
+        TransformedPos[0], TransformedPos[1], TransformedPos[2]);
+    UE_LOG("[FBX DEBUG] After Y-Flip: (%.3f, %.3f, %.3f)",
+        Vertex.Position.X, Vertex.Position.Y, Vertex.Position.Z);
+}
+```
 
 ---
 
@@ -716,13 +1215,23 @@ UE_LOG("[FBX] Global Transform - T:(%.3f, %.3f, %.3f) R:(%.3f, %.3f, %.3f) S:(%.
 ### Mundi Engine Documentation
 - `Mundi/Documentation/UnrealEngine_FBX_Import_Analysis.md` - UE5 FBX Import 상세 분석
 - `Mundi/Documentation/UnrealEngine_FBX_Import_Pipeline_Architecture.md` - UE5 Pipeline 구조 분석
+- `Mundi/Documentation/FBX_Coordinate_System_Options_Implementation_Guide.md` - 좌표계 옵션 구현 가이드
 - `Mundi/README.md` - Mundi 엔진 좌표계 설명
+
+### Mundi Engine Source Code
+- `Mundi/Source/Runtime/AssetManagement/FbxImporter.h` - FBX Importer 헤더
+- `Mundi/Source/Runtime/AssetManagement/FbxImporter.cpp` - FBX Importer 구현
+- `Mundi/Source/Runtime/AssetManagement/FbxUtilsImport.cpp` - FFbxDataConverter 구현
+- `Mundi/Source/Runtime/AssetManagement/FbxImportOptions.h` - Import 옵션 정의
+- `Mundi/Source/Runtime/AssetManagement/Skeleton.h` - Skeleton 클래스
+- `Mundi/Source/Runtime/AssetManagement/SkeletalMesh.h` - SkeletalMesh 클래스
 
 ### FBX SDK Documentation
 - [Autodesk FBX SDK Documentation](https://help.autodesk.com/view/FBX/2020/ENU/)
 - FbxAxisSystem - Coordinate System Conversion
 - FbxGeometryConverter - Triangulation
 - FbxSkin, FbxCluster - Skinning Data
+- FbxPose - Bind Pose Information
 
 ---
 
@@ -734,6 +1243,15 @@ UE_LOG("[FBX] Global Transform - T:(%.3f, %.3f, %.3f) R:(%.3f, %.3f, %.3f) S:(%.
 | | | - Static Mesh, Skeletal Mesh Import 지원 |
 | | | - Winding Order 처리 (Index Reversal) 구현 |
 | | | - Unreal Engine 방식 기반 좌표계 변환 |
+| 2.0 | 2025-11-10 | Major Update - 코드 변경사항 반영 |
+| | | - FFbxDataConverter 유틸리티 클래스 추가 |
+| | | - FFbxImportOptions 구조체 확장 (bConvertScene, bForceFrontXAxis, bConvertSceneUnit) |
+| | | - ExtractSkinWeights에서 Cluster 기반 Bind Pose 직접 추출 |
+| | | - GlobalBindPoseMatrix 추가 (CPU Skinning 지원) |
+| | | - ConvertFbxMatrixWithYAxisFlip 함수 추가 |
+| | | - ExtractMeshData에서 Static/Skeletal Mesh 처리 분리 |
+| | | - Import 옵션 섹션 추가 |
+| | | - 디버깅 팁 확장 |
 
 ---
 
