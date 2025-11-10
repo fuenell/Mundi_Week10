@@ -53,7 +53,6 @@ void USkinnedMeshComponent::CollectMeshBatches(TArray<FMeshBatchElement>& OutMes
 {
 	if (!SkeletalMesh)
 	{
-		UE_LOG("USkinnedMeshComponent::CollectMeshBatches - No SkeletalMesh");
 		return;
 	}
 
@@ -69,12 +68,9 @@ void USkinnedMeshComponent::CollectMeshBatches(TArray<FMeshBatchElement>& OutMes
 
 	// Material 결정 (현재는 기본 Material 사용)
 	UMaterialInterface* Material = GetMaterial(0);
-	UE_LOG("[SkinnedMesh] CollectMeshBatches: GetMaterial(0) = %p", Material);
 	if (Material)
 	{
 		const FMaterialInfo& Info = Material->GetMaterialInfo();
-		UE_LOG("[SkinnedMesh] Material DiffuseTexture: '%s'", Info.DiffuseTextureFileName.c_str());
-		UE_LOG("[SkinnedMesh] Material NormalTexture: '%s'", Info.NormalTextureFileName.c_str());
 	}
 	UShader* Shader = nullptr;
 
@@ -85,7 +81,6 @@ void USkinnedMeshComponent::CollectMeshBatches(TArray<FMeshBatchElement>& OutMes
 	else
 	{
 		// 기본 머티리얼 사용
-		UE_LOG("[SkinnedMesh] Using default material (GetMaterial(0) returned %p or had no shader)", Material);
 		Material = UResourceManager::GetInstance().GetDefaultMaterial();
 		if (Material)
 		{

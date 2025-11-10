@@ -519,9 +519,10 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, USkeletalMesh* OutSkeletal
 				FbxVector2 fbxUV;
 				bool unmapped;
 				fbxMesh->GetPolygonVertexUV(polyIndex, vertInPoly, uvElement->GetName(), fbxUV, unmapped);
+				// DirectX UV 좌표계: V를 반전 (OpenGL/Blender는 V가 아래→위, DirectX는 위→아래)
 				vertex.UV = FVector2D(
-					static_cast<float>(fbxUV[0]),
-					static_cast<float>(fbxUV[1])
+					static_cast<float>(fbxUV[0]),      // U (그대로)
+					1.0f - static_cast<float>(fbxUV[1]) // V (반전)
 				);
 			}
 			else
