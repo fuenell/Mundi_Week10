@@ -17,6 +17,7 @@
 #include "AmbientLightActor.h"
 #include "AmbientLightComponent.h"
 #include "Grid/GridActor.h"
+#include "ObjectFactory.h"
 #include <d3d11.h>
 
 IMPLEMENT_CLASS(USkeletalMeshViewportWidget)
@@ -28,15 +29,15 @@ USkeletalMeshViewportWidget::USkeletalMeshViewportWidget()
 USkeletalMeshViewportWidget::~USkeletalMeshViewportWidget()
 {
     ReleaseRenderTexture();
-    
-    // PreviewWorld 정리
+
+    // PreviewWorld 정리 (ObjectFactory::DeleteObject 사용)
     if (PreviewWorld)
     {
-        // PreviewWorld의 모든 액터는 World 소멸 시 자동 정리됨
-        delete PreviewWorld;
+        UE_LOG("[SkeletalMeshViewport] Destroying PreviewWorld via ObjectFactory::DeleteObject");
+        ObjectFactory::DeleteObject(PreviewWorld);
         PreviewWorld = nullptr;
     }
-    
+
     PreviewCamera = nullptr;
     PreviewActor = nullptr;
 }
