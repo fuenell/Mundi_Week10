@@ -257,6 +257,7 @@ struct FVector
 		if (S > KINDA_SMALL_NUMBER) { X /= S; Y /= S; Z /= S; }
 	}
 	FVector GetSafeNormal() const { return GetNormalized(); }
+	float Length() const { return Size(); }
 
 	// 내적/외적
 	static float   Dot(const FVector& A, const FVector& B) { return A.X * B.X + A.Y * B.Y + A.Z * B.Z; }
