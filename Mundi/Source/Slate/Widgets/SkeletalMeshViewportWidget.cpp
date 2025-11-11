@@ -54,23 +54,36 @@ void USkeletalMeshViewportWidget::Initialize()
         UE_LOG("[SkeletalMeshViewport] PreviewWorld created successfully");
         // Level만 생성 (Grid/Gizmo 없이)
         PreviewWorld->CreateLevel();
-        PreviewWorld->bPie = false; // Preview 모드
+        PreviewWorld->bPie = false; // Tick을 실행하지 않기 위해 false
+
+        // === RenderSettings에서 Billboard ShowFlag 끄고 Grid ShowFlag 켜기 ===
+        PreviewWorld->GetRenderSettings().DisableShowFlag(EEngineShowFlags::SF_Billboard);
+        PreviewWorld->GetRenderSettings().EnableShowFlag(EEngineShowFlags::SF_Grid);
 
         // === PreviewCamera 생성 ===
         PreviewCamera = PreviewWorld->SpawnActor<ACameraActor>();
         if (PreviewCamera)
         {
+
             UCameraComponent* CameraComp = PreviewCamera->GetCameraComponent();
             if (CameraComp)
             {
                 // 카메라를 SkeletalMesh가 잘 보이는 위치에 배치
-                // Y축 음수 방향에서 원점을 바라보도록 설정 (180도 회전)
-                CameraComp->SetWorldLocation(FVector(5.0f, 0.0f, -5.0f));  // 뒤쪽 위
+                CameraComp->SetWorldLocation(FVector(5.0f, 0.0f, 5.0f));  // 뒤쪽 위
 
-                // 뒤에서 아래로 보는 방향으로 카메라 회전
-                FQuat CameraRotation = FQuat::MakeFromEulerZYX(FVector(0.0f, -45.0f, 180.0f));
+                // 초기 카메라 회전 설정
+                CameraPitchDeg = -45.0f;     // Initialize에서 설정한 Pitch
+                CameraYawDeg = 0.0f;      // Initialize에서 설정한 Yaw
+
+                // Pitch/Yaw로 쿼터니언 생성 (HandleViewportInput과 동일한 방식)
+                float RadPitch = CameraPitchDeg * (3.14159f / 180.0f);
+                float RadYaw = CameraYawDeg * (3.14159f / 180.0f);
+                FQuat PitchQuat = FQuat::FromAxisAngle(FVector(0, 1, 0), RadPitch);
+                FQuat YawQuat = FQuat::FromAxisAngle(FVector(0, 0, 1), RadYaw);
+                FQuat CameraRotation = YawQuat * PitchQuat;
+                CameraRotation.Normalize();
+
                 CameraComp->SetWorldRotation(CameraRotation);
-
                 CameraComp->SetFOV(90.0f);
             }
         }
@@ -79,9 +92,7 @@ void USkeletalMeshViewportWidget::Initialize()
         PreviewActor = PreviewWorld->SpawnActor<ASkeletalMeshActor>();
         if (PreviewActor)
         {
-            // 원점에 배치
             PreviewActor->SetActorLocation(FVector::Zero());
-            PreviewActor->SetActorRotation(FQuat::Identity());
         }
 
         // === DirectionalLight 생성 (조명이 없으면 아무것도 안 보임) ===
@@ -93,7 +104,7 @@ void USkeletalMeshViewportWidget::Initialize()
             {
                 // 위에서 아래로 비추는 조명 (약간 앞쪽에서)
                 PreviewLight->SetActorRotation(FQuat::MakeFromEulerZYX(FVector(45.0f, 0.0f, 0.0f)));
-                LightComp->SetIntensity(1.0f);
+                LightComp->SetIntensity(5.0f);  // 강도 증가 (1.0 -> 5.0)
                 LightComp->SetLightColor(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f));
             }
         }
@@ -105,7 +116,7 @@ void USkeletalMeshViewportWidget::Initialize()
             UAmbientLightComponent* AmbientComp = PreviewAmbientLight->GetLightComponent();
             if (AmbientComp)
             {
-                AmbientComp->SetIntensity(0.3f);  // 약간의 앰비언트
+                AmbientComp->SetIntensity(1.0f);  // 강도 증가 (0.3 -> 1.0)
                 AmbientComp->SetLightColor(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f));
             }
         }
@@ -115,6 +126,10 @@ void USkeletalMeshViewportWidget::Initialize()
         if (PreviewGrid)
         {
             PreviewGrid->SetActorLocation(FVector(0.0f, 0.0f, 0.0f));
+            PreviewGrid->Initialize();  // 그리드 라인 생성
+
+            // 그리드 크기 설정 (작은 뷰포트에 맞게 조정)
+            PreviewGrid->CreateGridLines(20, 1.0f, FVector::Zero());  // 20x20 그리드, 1.0 간격
         }
     }
 }
@@ -343,9 +358,39 @@ bool USkeletalMeshViewportWidget::RenderPreviewWorldToRTV(int32 Width, int32 Hei
         int32 ActorCount = PreviewWorld->GetActors().Num();
         UE_LOG("[SkeletalMeshViewport] PreviewWorld has %d actors", ActorCount);
 
+        // 라이트 체크
+        if (PreviewLight)
+        {
+            UDirectionalLightComponent* LightComp = PreviewLight->GetLightComponent();
+            if (LightComp)
+            {
+                UE_LOG("[SkeletalMeshViewport] DirectionalLight - Intensity: %.2f, Registered: %d",
+                    LightComp->GetIntensity(), LightComp->IsRegistered());
+            }
+        }
+
+        if (PreviewAmbientLight)
+        {
+            UAmbientLightComponent* AmbientComp = PreviewAmbientLight->GetLightComponent();
+            if (AmbientComp)
+            {
+                UE_LOG("[SkeletalMeshViewport] AmbientLight - Intensity: %.2f, Registered: %d",
+                    AmbientComp->GetIntensity(), AmbientComp->IsRegistered());
+            }
+        }
+
         if (PreviewGrid)
+        {
             UE_LOG("[SkeletalMeshViewport] Grid location: (%.1f, %.1f, %.1f)",
                 PreviewGrid->GetActorLocation().X, PreviewGrid->GetActorLocation().Y, PreviewGrid->GetActorLocation().Z);
+
+            ULineComponent* LineComp = PreviewGrid->GetLineComponent();
+            if (LineComp)
+            {
+                UE_LOG("[SkeletalMeshViewport] Grid LineComponent - Registered: %d, LineCount: %d",
+                    LineComp->IsRegistered(), LineComp->GetLines().Num());
+            }
+        }
 
         if (PreviewActor)
         {
@@ -355,7 +400,8 @@ bool USkeletalMeshViewportWidget::RenderPreviewWorldToRTV(int32 Width, int32 Hei
             USkeletalMeshComponent* SkelComp = PreviewActor->GetSkeletalMeshComponent();
             if (SkelComp && SkelComp->GetSkeletalMesh())
             {
-                UE_LOG("[SkeletalMeshViewport] SkeletalMesh assigned: %s", SkelComp->GetSkeletalMesh()->GetName().c_str());
+                UE_LOG("[SkeletalMeshViewport] SkeletalMesh assigned: %s, Registered: %d",
+                    SkelComp->GetSkeletalMesh()->GetName().c_str(), SkelComp->IsRegistered());
             }
             else
             {
@@ -431,32 +477,73 @@ void USkeletalMeshViewportWidget::HandleViewportInput(FVector2D ViewportSize)
     if (!CameraComp) return;
 
     bool bInputChanged = false;
+    const float MouseSensitivity = 0.05f;  // CameraActor와 동일
+    const float CameraMoveSpeed = 0.05f;    // 이동 속도
 
     // === 마우스 휠: 줌 ===
     if (io.MouseWheel != 0.0f)
     {
         FVector Location = CameraComp->GetWorldLocation();
-        FVector Forward = CameraComp->GetForward();
+        // DirectX LH 기준: Forward = +X
+        FQuat Quat = CameraComp->GetWorldRotation();
+        FVector Forward = Quat.RotateVector(FVector(1, 0, 0)).GetNormalized();
+
         float ZoomDelta = io.MouseWheel * 20.0f;
         CameraComp->SetWorldLocation(Location + Forward * ZoomDelta);
         bInputChanged = true;
     }
 
-    // === 우클릭: 회전 ===
+    // === 우클릭: 회전 + WASD 이동 ===
     if (ImGui::IsMouseDown(ImGuiMouseButton_Right))
     {
+        // 마우스 회전 (CameraActor의 ProcessCameraRotation과 동일한 방식)
         ImVec2 MouseDelta = io.MouseDelta;
         if (FMath::Abs(MouseDelta.x) > 0.1f || FMath::Abs(MouseDelta.y) > 0.1f)
         {
-            float DeltaYaw = MouseDelta.x * 0.3f;
-            float DeltaPitch = -MouseDelta.y * 0.3f;
+            // Yaw/Pitch 누적 (멤버 변수 사용)
+            CameraYawDeg += MouseDelta.x * MouseSensitivity;
+            CameraPitchDeg += MouseDelta.y * MouseSensitivity;
 
-            FQuat CurrentRotation = CameraComp->GetWorldRotation();
-            FQuat YawRotation = FQuat::MakeFromEulerZYX(FVector(0.0f, 0.0f, DeltaYaw));
-            FVector RightVector = CameraComp->GetRight();
-            FQuat PitchRotation = FQuat::FromAxisAngle(RightVector, DeltaPitch * (3.14159f / 180.0f));
+            // Pitch 제한 (짐벌락 방지)
+            CameraPitchDeg = std::clamp(CameraPitchDeg, -89.0f, 89.0f);
 
-            CameraComp->SetWorldRotation(YawRotation * PitchRotation * CurrentRotation);
+            // 축별 쿼터니언 생성 (Initialize와 동일한 축 사용: UE 좌표계)
+            float RadPitch = CameraPitchDeg * (3.14159f / 180.0f);
+            float RadYaw = CameraYawDeg * (3.14159f / 180.0f);
+
+            FQuat PitchQuat = FQuat::FromAxisAngle(FVector(0, 1, 0), RadPitch);  // Y축 회전 (Pitch)
+            FQuat YawQuat = FQuat::FromAxisAngle(FVector(0, 0, 1), RadYaw);      // Z축 회전 (Yaw)
+
+            // Yaw * Pitch 순서로 합성
+            FQuat FinalRotation = YawQuat * PitchQuat;
+            FinalRotation.Normalize();
+
+            CameraComp->SetWorldRotation(FinalRotation);
+            bInputChanged = true;
+        }
+
+        // WASD 이동 (CameraActor의 ProcessCameraMovement와 동일한 방식)
+        FVector Move = FVector::Zero();
+
+        // DirectX LH 기준: Right=+Y, Up=+Z, Forward=+X
+        const FQuat Quat = CameraComp->GetWorldRotation();
+        const FVector Right = Quat.RotateVector(FVector(0, 1, 0)).GetNormalized();
+        const FVector Up = Quat.RotateVector(FVector(0, 0, 1)).GetNormalized();
+        const FVector Forward = Quat.RotateVector(FVector(1, 0, 0)).GetNormalized();
+
+        if (ImGui::IsKeyDown(ImGuiKey_W)) Move += Forward;  // 전진
+        if (ImGui::IsKeyDown(ImGuiKey_S)) Move -= Forward;  // 후진
+        if (ImGui::IsKeyDown(ImGuiKey_D)) Move += Right;    // 오른쪽
+        if (ImGui::IsKeyDown(ImGuiKey_A)) Move -= Right;    // 왼쪽
+        if (ImGui::IsKeyDown(ImGuiKey_E)) Move += Up;       // 위
+        if (ImGui::IsKeyDown(ImGuiKey_Q)) Move -= Up;       // 아래
+
+        // 이동 적용
+        if (Move.SizeSquared() > 0.0f)
+        {
+            Move = Move.GetNormalized() * CameraMoveSpeed;
+            FVector Location = CameraComp->GetWorldLocation();
+            CameraComp->SetWorldLocation(Location + Move);
             bInputChanged = true;
         }
     }
@@ -467,8 +554,10 @@ void USkeletalMeshViewportWidget::HandleViewportInput(FVector2D ViewportSize)
         ImVec2 MouseDelta = io.MouseDelta;
         if (FMath::Abs(MouseDelta.x) > 0.1f || FMath::Abs(MouseDelta.y) > 0.1f)
         {
-            FVector Right = CameraComp->GetRight();
-            FVector Up = CameraComp->GetUp();
+            const FQuat Quat = CameraComp->GetWorldRotation();
+            FVector Right = Quat.RotateVector(FVector(0, 1, 0)).GetNormalized();
+            FVector Up = Quat.RotateVector(FVector(0, 0, 1)).GetNormalized();
+
             FVector Location = CameraComp->GetWorldLocation();
             FVector PanOffset = Right * (-MouseDelta.x * 0.5f) + Up * (MouseDelta.y * 0.5f);
             CameraComp->SetWorldLocation(Location + PanOffset);

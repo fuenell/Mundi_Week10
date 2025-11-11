@@ -79,4 +79,8 @@ private:
 	// 렌더링 최적화
 	bool bNeedsRedraw = true;  // 다시 그려야 하는지 여부
 	FVector2D LastViewportSize = FVector2D::Zero();  // 이전 뷰포트 크기
+
+	// 카메라 회전 상태 (입력 처리용)
+	float CameraYawDeg = 0.0f;
+	float CameraPitchDeg = 0.0f;
 };

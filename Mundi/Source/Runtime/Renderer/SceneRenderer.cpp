@@ -112,7 +112,12 @@ void FSceneRenderer::Render()
 		RenderSceneDepthPath();
 	}
 	
-	if (!World->bPie)
+	// External RenderTarget 사용 시 그리드만 렌더링 (빌보드/기즈모 제외)
+	if (View->bUseExternalRenderTarget)
+	{
+		RenderDebugPass();	// 그리드만 렌더링
+	}
+	else if (!World->bPie)
 	{
 		//그리드와 디버그용 Primitive는 Post Processing 적용하지 않음.
 		RenderEditorPrimitivesPass();	// 빌보드, 기타 화살표 출력 (상호작용, 피킹 O)
@@ -699,6 +704,7 @@ void FSceneRenderer::GatherVisibleProxies()
 	const bool bDrawLight = World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_Lighting);
 	const bool bUseAntiAliasing = World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_FXAA);
 	const bool bUseBillboard = World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_Billboard);
+	const bool bDrawGrid = World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_Grid);
 
 	// Helper lambda to collect components from an actor
 	auto CollectComponentsFromActor = [&](AActor* Actor, bool bIsEditorActor)
@@ -727,6 +733,13 @@ void FSceneRenderer::GatherVisibleProxies()
 						Proxies.EditorLines.Add(LineComponent);
 					}
 
+					continue;
+				}
+
+				// LineComponent는 일반 Actor에서도 수집 (Grid ShowFlag 체크)
+				if (ULineComponent* LineComponent = Cast<ULineComponent>(Component); LineComponent && bDrawGrid)
+				{
+					Proxies.EditorLines.Add(LineComponent);
 					continue;
 				}
 
@@ -1236,11 +1249,11 @@ void FSceneRenderer::RenderTileCullingDebug()
 // 빌보드, 에디터 화살표 그리기 (상호 작용, 피킹 O)
 void FSceneRenderer::RenderEditorPrimitivesPass()
 {
-	// External RenderTarget 사용 시 에디터 프리미티브는 렌더링하지 않음
-	if (View->bUseExternalRenderTarget)
-		return;
-
-	RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTargetWithId);
+	// External RenderTarget 사용 시 RTV 전환을 스킵
+	if (!View->bUseExternalRenderTarget)
+	{
+		RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTargetWithId);
+	}
 	for (UPrimitiveComponent* GizmoComp : Proxies.EditorPrimitives)
 	{
 		GizmoComp->CollectMeshBatches(MeshBatchElements, View);
@@ -1251,11 +1264,19 @@ void FSceneRenderer::RenderEditorPrimitivesPass()
 // 경계, 외곽선 등 표시 (상호 작용, 피킹 X)
 void FSceneRenderer::RenderDebugPass()
 {
-	// External RenderTarget 사용 시 디버그 패스는 렌더링하지 않음
+	// [DEBUG] External RenderTarget 사용 시 디버그 정보
 	if (View->bUseExternalRenderTarget)
-		return;
+	{
+		UE_LOG("[SceneRenderer] RenderDebugPass: EditorLines count = %d, SF_Grid = %d",
+			Proxies.EditorLines.Num(),
+			World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_Grid));
+	}
 
-	RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTarget);
+	// External RenderTarget 사용 시 RTV 전환을 스킵
+	if (!View->bUseExternalRenderTarget)
+	{
+		RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTarget);
+	}
 
 	// 그리드 라인 수집
 	for (ULineComponent* LineComponent : Proxies.EditorLines)
@@ -1292,7 +1313,7 @@ void FSceneRenderer::RenderDebugPass()
 
 void FSceneRenderer::RenderOverayEditorPrimitivesPass()
 {
-	// External RenderTarget 사용 시 오버레이 패스는 렌더링하지 않음
+	// External RenderTarget 사용 시 오버레이 렌더링하지 않음 (기즈모 등)
 	if (View->bUseExternalRenderTarget)
 		return;
 
