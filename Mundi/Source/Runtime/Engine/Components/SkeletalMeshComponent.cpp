@@ -37,25 +37,37 @@ void USkeletalMeshComponent::SetSkeletalMesh(USkeletalMesh* InSkeletalMesh)
 	MaterialSlots.Empty();
 	if (SkeletalMesh)
 	{
-		// 다중 Material 지원: SkeletalMesh의 모든 Material 로드
-		const TArray<FString>& MaterialNames = SkeletalMesh->GetMaterialNames();
+		// Static Mesh Component와 동일한 패턴: GroupInfos 기반 Material 자동 설정
+		const TArray<FGroupInfo>& GroupInfos = SkeletalMesh->GetMeshGroupInfo();
 
-		if (!MaterialNames.empty())
+		if (!GroupInfos.empty())
 		{
-			// 모든 Material을 MaterialSlots에 추가
-			// Static Mesh Component와 동일한 패턴: SetMaterialByName으로 Load 수행
-			MaterialSlots.resize(MaterialNames.size());
-			for (int i = 0; i < MaterialNames.size(); ++i)
+			// GroupInfos에서 Material 로드 (StaticMeshComponent와 동일한 방식)
+			MaterialSlots.resize(GroupInfos.size());
+			for (int i = 0; i < GroupInfos.size(); ++i)
 			{
-				SetMaterialByName(i, MaterialNames[i]);
+				SetMaterialByName(i, GroupInfos[i].InitialMaterialName);
 			}
 		}
 		else
 		{
-			// 레거시 지원: MaterialNames가 비어있으면 단일 MaterialName 사용
-			const FString& MaterialName = SkeletalMesh->GetMaterialName();
-			MaterialSlots.resize(1);
-			SetMaterialByName(0, MaterialName);
+			// 레거시 지원: GroupInfos가 비어있으면 MaterialNames 배열 사용
+			const TArray<FString>& MaterialNames = SkeletalMesh->GetMaterialNames();
+			if (!MaterialNames.empty())
+			{
+				MaterialSlots.resize(MaterialNames.size());
+				for (int i = 0; i < MaterialNames.size(); ++i)
+				{
+					SetMaterialByName(i, MaterialNames[i]);
+				}
+			}
+			else
+			{
+				// 최종 레거시 지원: 단일 MaterialName 사용
+				const FString& MaterialName = SkeletalMesh->GetMaterialName();
+				MaterialSlots.resize(1);
+				SetMaterialByName(0, MaterialName);
+			}
 		}
 
 		// Bone Transform 업데이트

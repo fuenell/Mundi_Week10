@@ -466,6 +466,16 @@ bool FFbxImporter::ImportSkeletalMesh(const FString& FilePath, const FFbxImportO
 			if (MatIndex >= 0 && MatIndex < GlobalMaterialNames.size())
 			{
 				GroupInfo.InitialMaterialName = GlobalMaterialNames[MatIndex];
+				UE_LOG("[FBX] SkeletalMesh Group %d: Material '%s' (%d polygons)",
+					FinalGroupInfos.size(), GroupInfo.InitialMaterialName.c_str(), Polygons.size());
+			}
+			else
+			{
+				// Default Material 할당
+				UMaterial* DefaultMaterial = UResourceManager::GetInstance().GetDefaultMaterial();
+				GroupInfo.InitialMaterialName = DefaultMaterial->GetMaterialInfo().MaterialName;
+				UE_LOG("[FBX] SkeletalMesh Group %d: Using default material (%d polygons)",
+					FinalGroupInfos.size(), Polygons.size());
 			}
 
 			// 이 Material의 모든 Polygon Index를 새 버퍼에 추가
@@ -488,7 +498,12 @@ bool FFbxImporter::ImportSkeletalMesh(const FString& FilePath, const FFbxImportO
 		FGroupInfo GroupInfo;
 		GroupInfo.StartIndex = 0;
 		GroupInfo.IndexCount = static_cast<uint32>(FinalIndices.size());
-		GroupInfo.InitialMaterialName = "";
+
+		// Default Material 할당
+		UMaterial* DefaultMaterial = UResourceManager::GetInstance().GetDefaultMaterial();
+		GroupInfo.InitialMaterialName = DefaultMaterial->GetMaterialInfo().MaterialName;
+		UE_LOG("[FBX] SkeletalMesh: No material info, using default material");
+
 		FinalGroupInfos.push_back(GroupInfo);
 	}
 
