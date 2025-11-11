@@ -266,11 +266,12 @@ private:
 	// === StaticMesh Import 내부 로직 ===
 
 	/**
-	 * StaticMesh 데이터 추출 (Vertex, Index, Normals, UVs, Tangents)
+	 * StaticMesh 데이터 추출 (Vertex, Index, Normals, UVs, Tangents, Materials)
 	 * @param MeshNode - Mesh를 가진 FBX Node
-	 * @param OutVertices - Vertex 데이터 배열 (병합용, 출력)
-	 * @param OutIndices - Index 데이터 배열 (병합용, 출력)
-	 * @param OutGroupInfos - Material Group 정보 (병합용, 출력)
+	 * @param OutVertices - Vertex 데이터 배열 (출력)
+	 * @param OutIndices - Index 데이터 배열 (출력)
+	 * @param OutPolygonMaterialIndices - Polygon별 Material Index 배열 (출력)
+	 * @param OutMaterialNames - Material 이름 배열 (출력)
 	 * @param InOutVertexOffset - 현재 Vertex Offset (병합 시 Index 조정용, 입출력)
 	 * @return 성공 여부
 	 */
@@ -278,7 +279,8 @@ private:
 		FbxNode* MeshNode,
 		TArray<FNormalVertex>& OutVertices,
 		TArray<uint32>& OutIndices,
-		TArray<FGroupInfo>& OutGroupInfos,
+		TArray<int32>& OutPolygonMaterialIndices,
+		TArray<FString>& OutMaterialNames,
 		uint32& InOutVertexOffset);
 
 	// === SkeletalMesh Import 내부 로직 ===

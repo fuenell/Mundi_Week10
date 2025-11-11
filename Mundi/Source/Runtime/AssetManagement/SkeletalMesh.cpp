@@ -1,7 +1,12 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "SkeletalMesh.h"
 #include "FbxImporter.h"
+#include "FbxManager.h"
 #include "GlobalConsole.h"
+#include "Archive.h"
+#include "WindowsBinReader.h"
+#include "WindowsBinWriter.h"
+#include "ObjectFactory.h"
 
 IMPLEMENT_CLASS(USkeletalMesh)
 
@@ -249,59 +254,35 @@ void USkeletalMesh::Load(const FString& InFilePath, ID3D11Device* InDevice, cons
 		return;
 	}
 
-	UE_LOG("[SkeletalMesh] Loading FBX file: %s", InFilePath.c_str());
+	// ═══════════════════════════════════════════════════════════
+	// FBX Skeletal Mesh: Delegate to FFbxManager (like OBJ pattern)
+	// ═══════════════════════════════════════════════════════════
+	FSkeletalMesh* MeshData = FFbxManager::LoadFbxSkeletalMeshAsset(InFilePath);
 
-	// 1. FBX Importer 생성
-	FFbxImporter FbxImporter;
-
-	// 2. FBX Type Detection (Phase 0 추가)
-	EFbxImportType FbxType = FbxImporter.DetectFbxType(InFilePath);
-
-	if (FbxType == EFbxImportType::StaticMesh)
+	if (!MeshData || !MeshData->IsValid())
 	{
-		UE_LOG("[error] USkeletalMesh::Load failed: FBX file '%s' is a StaticMesh (has no skeleton or skinning)", InFilePath.c_str());
-		UE_LOG("[error] Use UStaticMesh::Load() instead for static meshes");
+		UE_LOG("[error] FFbxManager failed to load skeletal mesh: %s", InFilePath.c_str());
 		return;
 	}
 
-	if (FbxType == EFbxImportType::Animation)
-	{
-		UE_LOG("[error] USkeletalMesh::Load failed: FBX file '%s' is an Animation file (no mesh data)", InFilePath.c_str());
-		UE_LOG("[error] Animation-only FBX files are not supported yet");
-		return;
-	}
+	UE_LOG("[SkeletalMesh] Loaded from FFbxManager (Vertices: %zu, Indices: %zu, Bones: %zu)",
+		MeshData->Vertices.size(), MeshData->Indices.size(),
+		MeshData->Skeleton ? MeshData->Skeleton->GetBoneCount() : 0);
 
-	UE_LOG("[SkeletalMesh] FBX Type confirmed: SkeletalMesh");
-
-	// 3. FBX 데이터 Import
-	FSkeletalMesh MeshData;
-
-	if (!FbxImporter.ImportSkeletalMesh(InFilePath, InOptions, MeshData))
-	{
-		UE_LOG("[error] USkeletalMesh::Load failed: FBX Import error - %s", FbxImporter.GetLastError().c_str());
-		return;
-	}
-
-	if (!MeshData.IsValid())
-	{
-		UE_LOG("[error] USkeletalMesh::Load failed: Invalid mesh data from FBX");
-		return;
-	}
-
-	UE_LOG("[SkeletalMesh] FBX Import successful (Vertices: %zu, Indices: %zu)",
-		MeshData.Vertices.size(), MeshData.Indices.size());
-
-	// 2. Move mesh data to this object
-	Vertices = std::move(MeshData.Vertices);
-	Indices = std::move(MeshData.Indices);
-	VertexToControlPointMap = std::move(MeshData.VertexToControlPointMap);
-	GroupInfos = std::move(MeshData.GroupInfos);
-	Skeleton = MeshData.Skeleton;
+	// ═══════════════════════════════════════════════════════════
+	// Move data from FSkeletalMesh to USkeletalMesh
+	// IMPORTANT: Use std::move to transfer ownership and avoid double-free
+	// (FFbxManager owns FSkeletalMesh*, but we need to take ownership of the data)
+	// ═══════════════════════════════════════════════════════════
+	Vertices = std::move(MeshData->Vertices);
+	Indices = std::move(MeshData->Indices);
+	VertexToControlPointMap = std::move(MeshData->VertexToControlPointMap);
+	GroupInfos = std::move(MeshData->GroupInfos);
+	MaterialNames = std::move(MeshData->MaterialNames);
+	Skeleton = MeshData->Skeleton;
 
 	VertexCount = static_cast<uint32>(Vertices.size());
 	IndexCount = static_cast<uint32>(Indices.size());
-
-	UE_LOG("[SkeletalMesh] Mesh data loaded successfully (Groups: %zu)", GroupInfos.size());
 
 	if (Skeleton)
 	{
@@ -309,15 +290,9 @@ void USkeletalMesh::Load(const FString& InFilePath, ID3D11Device* InDevice, cons
 		Skeleton->LogBoneHierarchy();
 	}
 
-	// 2.5. Extract Materials from FBX (FBX Scene이 아직 열려있음)
-	// ExtractMaterials()에서 Material 생성 → ResourceManager 등록 → Material 이름 저장
-	if (!FbxImporter.ExtractMaterialsFromScene(this))
-	{
-		UE_LOG("[warning] Failed to extract materials from FBX, using default material");
-		// Material 추출 실패는 치명적이지 않으므로 계속 진행
-	}
-
-	// 3. Create Dynamic GPU resources for CPU Skinning
+	// ═══════════════════════════════════════════════════════════
+	// Create Dynamic GPU resources for CPU Skinning
+	// ═══════════════════════════════════════════════════════════
 	if (!CreateDynamicGPUResources(InDevice))
 	{
 		UE_LOG("[error] USkeletalMesh::Load failed: Failed to create GPU resources");
@@ -341,4 +316,192 @@ void USkeletalMesh::Serialize(bool bIsLoading, JSON& InOutHandle)
 		// TODO: SkeletalMesh 저장 구현 (Phase 5 - Editor 통합 시)
 		UE_LOG("[SkeletalMesh] Serialize (Save): Not implemented yet");
 	}
+}
+
+// ═══════════════════════════════════════════════════════════
+// FSkinnedVertex 바이너리 직렬화
+// ═══════════════════════════════════════════════════════════
+
+FWindowsBinWriter& operator<<(FWindowsBinWriter& Writer, const FSkinnedVertex& Vertex)
+{
+	// POD 데이터를 일괄 쓰기
+	Writer.Serialize((void*)&Vertex.Position, sizeof(FVector));
+	Writer.Serialize((void*)&Vertex.Normal, sizeof(FVector));
+	Writer.Serialize((void*)&Vertex.Tangent, sizeof(FVector4));
+	Writer.Serialize((void*)&Vertex.UV, sizeof(FVector2D));
+	Writer.Serialize((void*)Vertex.BoneIndices, sizeof(int32) * 4);
+	Writer.Serialize((void*)Vertex.BoneWeights, sizeof(float) * 4);
+
+	return Writer;
+}
+
+FWindowsBinReader& operator>>(FWindowsBinReader& Reader, FSkinnedVertex& Vertex)
+{
+	Reader.Serialize(&Vertex.Position, sizeof(FVector));
+	Reader.Serialize(&Vertex.Normal, sizeof(FVector));
+	Reader.Serialize(&Vertex.Tangent, sizeof(FVector4));
+	Reader.Serialize(&Vertex.UV, sizeof(FVector2D));
+	Reader.Serialize(Vertex.BoneIndices, sizeof(int32) * 4);
+	Reader.Serialize(Vertex.BoneWeights, sizeof(float) * 4);
+
+	return Reader;
+}
+
+// ═══════════════════════════════════════════════════════════
+// FSkeletalMesh 바이너리 직렬화
+// ═══════════════════════════════════════════════════════════
+
+FWindowsBinWriter& operator<<(FWindowsBinWriter& Writer, const FSkeletalMesh& Mesh)
+{
+	// 매직 넘버와 버전 쓰기
+	uint32 MagicNumber = 0x46425843;  // "FBXC" (hex)
+	uint32 Version = 1;
+	uint8 TypeFlag = 1;  // 0 = StaticMesh, 1 = SkeletalMesh
+	Writer << MagicNumber;
+	Writer << Version;
+	Writer << TypeFlag;
+
+	// 정점 개수와 데이터 쓰기
+	uint32 VertexCount = static_cast<uint32>(Mesh.Vertices.size());
+	Writer << VertexCount;
+	for (const FSkinnedVertex& Vertex : Mesh.Vertices)
+	{
+		Writer << Vertex;  // FSkinnedVertex의 operator<< 사용
+	}
+
+	// 인덱스 개수와 데이터 쓰기
+	uint32 IndexCount = static_cast<uint32>(Mesh.Indices.size());
+	Writer << IndexCount;
+	Writer.Serialize((void*)Mesh.Indices.data(), IndexCount * sizeof(uint32));
+
+	// 스켈레톤 데이터(본) 쓰기 - USkeleton이 있으면 추출
+	if (Mesh.Skeleton != nullptr)
+	{
+		uint32 BoneCount = static_cast<uint32>(Mesh.Skeleton->GetBoneCount());
+		Writer << BoneCount;
+		for (int32 i = 0; i < static_cast<int32>(BoneCount); ++i)
+		{
+			const FBoneInfo& Bone = Mesh.Skeleton->GetBone(i);
+			Writer << Bone;  // FBoneInfo의 operator<< 사용
+		}
+	}
+	else
+	{
+		uint32 BoneCount = 0;
+		Writer << BoneCount;
+	}
+
+	// 머티리얼 이름 쓰기
+	uint32 MaterialCount = static_cast<uint32>(Mesh.MaterialNames.size());
+	Writer << MaterialCount;
+	for (const FString& MaterialName : Mesh.MaterialNames)
+	{
+		Serialization::WriteString(Writer, MaterialName);
+	}
+
+	// 머티리얼 그룹 쓰기
+	uint32 GroupCount = static_cast<uint32>(Mesh.GroupInfos.size());
+	Writer << GroupCount;
+	for (const FGroupInfo& Group : Mesh.GroupInfos)
+	{
+		Writer << const_cast<FGroupInfo&>(Group);  // FGroupInfo의 operator<< 사용
+	}
+
+	return Writer;
+}
+
+FWindowsBinReader& operator>>(FWindowsBinReader& Reader, FSkeletalMesh& Mesh)
+{
+	// 매직 넘버 읽기 및 검증
+	uint32 MagicNumber, Version;
+	uint8 TypeFlag;
+	Reader << MagicNumber;
+	Reader << Version;
+	Reader << TypeFlag;
+
+	if (MagicNumber != 0x46425843)
+	{
+		UE_LOG("[error] Invalid FBX cache file (bad magic number)");
+		return Reader;
+	}
+
+	if (Version != 1)
+	{
+		UE_LOG("[error] Unsupported FBX cache version: %d", Version);
+		return Reader;
+	}
+
+	if (TypeFlag != 1)
+	{
+		UE_LOG("[error] Invalid FBX cache type flag (expected SkeletalMesh=1, got %d)", TypeFlag);
+		return Reader;
+	}
+
+	// 정점 읽기
+	uint32 VertexCount;
+	Reader << VertexCount;
+	Mesh.Vertices.clear();
+	Mesh.Vertices.reserve(VertexCount);
+	for (uint32 i = 0; i < VertexCount; ++i)
+	{
+		FSkinnedVertex Vertex;
+		Reader >> Vertex;
+		Mesh.Vertices.push_back(Vertex);
+	}
+
+	// 인덱스 읽기
+	uint32 IndexCount;
+	Reader << IndexCount;
+	Mesh.Indices.resize(IndexCount);
+	Reader.Serialize(Mesh.Indices.data(), IndexCount * sizeof(uint32));
+
+	// 스켈레톤 데이터(본) 읽기 - 이후 USkeleton 생성 필요
+	uint32 BoneCount;
+	Reader << BoneCount;
+
+	if (BoneCount > 0)
+	{
+		// USkeleton 생성 및 채우기
+		Mesh.Skeleton = ObjectFactory::NewObject<USkeleton>();
+
+		for (uint32 i = 0; i < BoneCount; ++i)
+		{
+			FBoneInfo Bone;
+			Reader >> Bone;
+
+			// 스켈레톤에 본 추가
+			int32 BoneIndex = Mesh.Skeleton->AddBone(Bone.Name, Bone.ParentIndex);
+
+			// 본 트랜스폼 설정
+			Mesh.Skeleton->SetBindPoseTransform(BoneIndex, Bone.BindPoseTransform);
+			Mesh.Skeleton->SetGlobalBindPoseMatrix(BoneIndex, Bone.GlobalBindPoseMatrix);
+			Mesh.Skeleton->SetInverseBindPoseMatrix(BoneIndex, Bone.InverseBindPoseMatrix);
+		}
+	}
+
+	// 머티리얼 이름 읽기
+	uint32 MaterialCount;
+	Reader << MaterialCount;
+	Mesh.MaterialNames.clear();
+	Mesh.MaterialNames.reserve(MaterialCount);
+	for (uint32 i = 0; i < MaterialCount; ++i)
+	{
+		FString MaterialName;
+		Serialization::ReadString(Reader, MaterialName);
+		Mesh.MaterialNames.push_back(MaterialName);
+	}
+
+	// 머티리얼 그룹 읽기
+	uint32 GroupCount;
+	Reader << GroupCount;
+	Mesh.GroupInfos.clear();
+	Mesh.GroupInfos.reserve(GroupCount);
+	for (uint32 i = 0; i < GroupCount; ++i)
+	{
+		FGroupInfo Group;
+		Reader << Group;  // FGroupInfo의 operator<< 사용
+		Mesh.GroupInfos.push_back(Group);
+	}
+
+	return Reader;
 }

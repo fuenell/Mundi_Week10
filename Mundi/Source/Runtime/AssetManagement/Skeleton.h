@@ -46,6 +46,12 @@ struct FBoneInfo
 		, InverseBindPoseMatrix(FMatrix::Identity())
 	{
 	}
+
+	// Binary serialization operators
+	friend class FWindowsBinWriter;
+	friend class FWindowsBinReader;
+	friend FWindowsBinWriter& operator<<(FWindowsBinWriter& Writer, const FBoneInfo& Bone);
+	friend FWindowsBinReader& operator>>(FWindowsBinReader& Reader, FBoneInfo& Bone);
 };
 
 /**

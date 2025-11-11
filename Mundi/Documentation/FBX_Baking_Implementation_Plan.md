@@ -1,6 +1,6 @@
 # FBX Baking System Implementation Plan
 
-**Document Version:** 1.0
+**Document Version:** 3.0
 **Date:** 2025-11-11
 **Purpose:** Detailed implementation plan for FBX baking system in Mundi Engine
 
@@ -30,15 +30,17 @@ Implement a FBX baking system that:
 2. **Follows existing Mundi patterns** established by OBJ and Texture caching systems
 3. **Achieves 6-15× load time improvement** (70-120ms → 7-18ms)
 4. **Integrates seamlessly** with existing ResourceManager and texture DDS conversion pipeline
-5. **Supports skeletal mesh import** with full skeleton and skinning data
+5. **Supports both Static Mesh and Skeletal Mesh import** with automatic type detection
+6. **Caches both mesh types separately** using dual-path caching strategy
 
 ### Success Criteria
 
 | Metric | Current | Target |
 |--------|---------|--------|
-| Load Time (Character.fbx) | 70-120 ms | 7-18 ms |
+| Load Time (Skeletal Mesh Character.fbx) | 70-120 ms | 7-18 ms |
+| Load Time (Static Mesh Prop.fbx) | 30-60 ms | 3-8 ms |
 | Cache Generation Time | N/A | < 150 ms (one-time) |
-| Cache File Size | 0 (no cache) | ~150 KB (for 1794 vert mesh) |
+| Cache File Size | 0 (no cache) | ~150 KB (skeletal), ~50 KB (static) |
 | Memory Overhead | 0 | < 5% |
 | Cache Hit Rate | 0% | > 95% after first load |
 
@@ -47,8 +49,10 @@ Implement a FBX baking system that:
 1. **Cache Storage Strategy:** Alongside source files (`.fbx` → `.fbx.bin`) matching OBJ system
 2. **Validation Method:** Timestamp-based comparison (simple, robust)
 3. **Serialization Format:** Binary with `FWindowsBinReader/Writer` (consistent with OBJ)
-4. **Manager Pattern:** `FFbxManager` class similar to `FObjManager`
-5. **Texture Handling:** Automatic DDS conversion using existing `FTextureConverter`
+4. **Manager Pattern:** `FFbxManager` class similar to `FObjManager` with dual caching for both mesh types
+5. **Type Detection:** Automatic FBX type detection via `FFbxImporter::DetectFbxType()` (StaticMesh vs SkeletalMesh)
+6. **Dual Caching Strategy:** Separate cache maps and load functions for Static Mesh and Skeletal Mesh
+7. **Texture Handling:** Automatic DDS conversion using existing `FTextureConverter`
 
 ---
 
@@ -57,62 +61,80 @@ Implement a FBX baking system that:
 ### System Components
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ Application Layer                                           │
-│ - Loads FBX via ResourceManager->Load<USkeletalMesh>()     │
-└───────────────────────────┬─────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────┐
-│ UResourceManager (Existing)                                 │
-│ - In-memory cache (Tier 1)                                  │
-│ - Type-safe resource loading                                │
-│ - Path normalization                                        │
-└───────────────────────────┬─────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────┐
-│ USkeletalMesh::Load() (Modified)                            │
-│ - Delegates to FFbxManager                                  │
-│ - Creates GPU buffers from loaded data                      │
-└───────────────────────────┬─────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────┐
-│ FFbxManager (NEW)                                           │
-│ - Static memory cache (like FObjManager)                    │
-│ - Cache path management                                     │
-│ - Timestamp validation                                      │
-│ - Binary cache serialization                                │
-└───────────────────────────┬─────────────────────────────────┘
-                            │
-        ┌───────────────────┴───────────────────┐
-        │                                       │
-        ▼ (Cache Valid)                        ▼ (Cache Invalid)
-┌─────────────────────────┐       ┌─────────────────────────────┐
-│ Load from .fbx.bin      │       │ Parse FBX with SDK          │
-│ - FWindowsBinReader     │       │ - FFbxImporter (Existing)   │
-│ - Deserialize mesh      │       │ - Extract mesh/skeleton     │
-│ - Deserialize skeleton  │       │ - Process textures to DDS   │
-│ - Return USkeletalMesh* │       │ - Serialize to .fbx.bin     │
-└─────────────────────────┘       └─────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│ Application Layer                                                        │
+│ - ResourceManager->Load<UStaticMesh>() for Static Mesh FBX              │
+│ - ResourceManager->Load<USkeletalMesh>() for Skeletal Mesh FBX          │
+└────────────────────────────────┬─────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│ UResourceManager (Existing)                                              │
+│ - In-memory cache (Tier 1) for both UStaticMesh and USkeletalMesh       │
+│ - Type-safe resource loading                                             │
+│ - Path normalization                                                     │
+└────────────────────────────────┬─────────────────────────────────────────┘
+                                 │
+                 ┌───────────────┴───────────────┐
+                 │                               │
+                 ▼ Static Mesh                   ▼ Skeletal Mesh
+┌────────────────────────────────┐   ┌────────────────────────────────────┐
+│ UStaticMesh::Load() (Modified) │   │ USkeletalMesh::Load() (Modified)   │
+│ - Delegates to FFbxManager     │   │ - Delegates to FFbxManager         │
+│ - Creates GPU buffers          │   │ - Creates GPU buffers              │
+└────────────────┬───────────────┘   └────────────────┬───────────────────┘
+                 │                                    │
+                 ▼                                    ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│ FFbxManager (NEW)                                                        │
+│ - Dual static caches: FbxStaticMeshCache, FbxSkeletalMeshCache          │
+│ - LoadFbxStaticMeshAsset() → FStaticMesh* (like FObjManager)            │
+│ - LoadFbxSkeletalMeshAsset() → FSkeletalMesh* (like FObjManager)        │
+│ - DetectFbxType() to route to correct load function                     │
+│ - Cache path management, timestamp validation, serialization            │
+└────────────────┬─────────────────────────────────┬───────────────────────┘
+                 │                                 │
+     ┌───────────┴────────┐           ┌────────────┴───────────┐
+     ▼ Cache Valid        ▼ Invalid   ▼ Cache Valid           ▼ Invalid
+┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐
+│ Load .fbx.bin    │  │ Parse FBX SDK    │  │ Load .fbx.bin    │  │ Parse FBX SDK    │
+│ - Deserialize    │  │ - ExtractStatic  │  │ - Deserialize    │  │ - ExtractSkeletal│
+│   FStaticMesh    │  │   MeshData       │  │   FSkeletalMesh  │  │   MeshData       │
+│ - Return         │  │ - Serialize      │  │ - Deserialize    │  │ - Extract        │
+│   FStaticMesh*   │  │   to cache       │  │   skeleton       │  │   skeleton       │
+└──────────────────┘  └──────────────────┘  │ - Return         │  │ - Serialize      │
+                                            │   FSkeletalMesh* │  │   to cache       │
+                                            └──────────────────┘  └──────────────────┘
 ```
 
 ### Three-Tier Caching Strategy
 
-Following Mundi's established pattern:
+Following Mundi's established pattern (mirroring OBJ system architecture):
 
 ```
 Tier 1: UResourceManager in-memory cache (fastest)
-  └─> TMap<FString, USkeletalMesh*> (per-type resource map)
+  ├─> TMap<FString, UStaticMesh*> (for Static Mesh FBX)
+  └─> TMap<FString, USkeletalMesh*> (for Skeletal Mesh FBX)
 
 Tier 2: FFbxManager static cache + Binary disk cache (fast)
-  └─> TMap<FString, USkeletalMesh*> FbxSkeletalMeshCache
-  └─> .fbx.bin files (binary serialized data)
+  ├─> TMap<FString, FStaticMesh*> FbxStaticMeshCache (like FObjManager)
+  ├─> TMap<FString, FSkeletalMesh*> FbxSkeletalMeshCache (like FObjManager)
+  └─> .fbx.bin files (binary serialized data for both types)
 
 Tier 3: FBX SDK parsing (slowest)
+  ├─> FFbxImporter::ImportStaticMesh() (existing - with transform fixes)
   └─> FFbxImporter::ImportSkeletalMesh() (existing)
 ```
+
+**Architectural Pattern Notes:**
+- **Static Mesh FBX:** Follows `FObjManager` pattern exactly
+  - `FFbxManager` owns `FStaticMesh*` (cached data structure)
+  - `UStaticMesh` references `FStaticMesh*` (UObject resource wrapper)
+  - `ResourceManager` manages `UStaticMesh*` lifetime
+- **Skeletal Mesh FBX:** Follows `FObjManager` pattern exactly
+  - `FFbxManager` owns `FSkeletalMesh*` (cached data structure)
+  - `USkeletalMesh` references `FSkeletalMesh*` (UObject resource wrapper)
+  - `ResourceManager` manages `USkeletalMesh*` lifetime
 
 ### Cache File Strategy
 
@@ -120,24 +142,25 @@ Tier 3: FBX SDK parsing (slowest)
 
 ```
 Data/Model/Fbx/
-├── Character.fbx          ← Source FBX file
+├── Character.fbx          ← Source FBX file (Skeletal Mesh)
 ├── Character.fbx.bin      ← Binary cache (mesh + skeleton + materials)
-├── Enemy.fbx
-├── Enemy.fbx.bin
-└── Prop.fbx
-    └── Prop.fbx.bin
+├── Enemy.fbx              ← Source FBX file (Skeletal Mesh)
+├── Enemy.fbx.bin          ← Binary cache
+├── Prop.fbx               ← Source FBX file (Static Mesh)
+└── Prop.fbx.bin           ← Binary cache (mesh + materials only, no skeleton)
 ```
 
-**Cache File Contents:**
+**Cache File Contents (Skeletal Mesh):**
 ```cpp
-Character.fbx.bin:
+Character.fbx.bin (Skeletal Mesh):
 ├── Magic Number (0x46425843 = "FBXC")
 ├── Version (uint32)
+├── Type Flag (uint8: 0 = StaticMesh, 1 = SkeletalMesh)
 ├── Mesh Data
 │   ├── Vertices (TArray<FSkinnedVertex>)
 │   ├── Indices (TArray<uint32>)
 │   └── Bounds (FVector Min/Max)
-├── Skeleton Data
+├── Skeleton Data (if SkeletalMesh)
 │   ├── Bones (TArray<FBoneInfo>)
 │   └── InverseBindPoseMatrices (TArray<FMatrix>)
 ├── Material Data
@@ -145,6 +168,28 @@ Character.fbx.bin:
 │   └── Material Groups (TArray<FStaticMeshGroup>)
 └── Texture References (TArray<FString> - paths to DDS files)
 ```
+
+**Cache File Contents (Static Mesh):**
+```cpp
+Prop.fbx.bin (Static Mesh):
+├── Magic Number (0x46425843 = "FBXC")
+├── Version (uint32)
+├── Type Flag (uint8: 0 = StaticMesh)
+├── Mesh Data
+│   ├── Vertices (TArray<FNormalVertex>)  ← Different vertex type
+│   ├── Indices (TArray<uint32>)
+│   └── Bounds (FVector Min/Max)
+├── Material Data
+│   ├── Materials (TArray<FMaterialInfo>)
+│   └── Material Groups (TArray<FStaticMeshGroup>)
+└── Texture References (TArray<FString> - paths to DDS files)
+```
+
+**Note on Cache Format:**
+- Cache files include a type flag to distinguish Static vs Skeletal Mesh
+- Static Mesh FBX cache mirrors OBJ binary format (`FStaticMesh` structure)
+- Skeletal Mesh FBX cache includes skeleton data
+- Both share material and texture reference serialization patterns
 
 ---
 
@@ -164,39 +209,74 @@ Location: `Mundi/Source/Editor/FbxManager.h`
 #pragma once
 #include "UEContainer.h"
 #include "String.h"
+#include "FbxImportOptions.h"  // For EFbxImportType
 
 // Forward declarations
 class USkeletalMesh;
+class UStaticMesh;
+struct FStaticMesh;
+struct FSkeletalMesh;
 
 /**
- * Manages FBX skeletal mesh loading and caching
+ * Manages FBX mesh loading and caching (both Static and Skeletal)
  * Similar to FObjManager for OBJ files
+ *
+ * Architecture:
+ * - Static Mesh: Caches FStaticMesh* (data structure), UStaticMesh references it
+ * - Skeletal Mesh: Caches FSkeletalMesh* (data structure), USkeletalMesh references it
  */
 class FFbxManager
 {
 private:
-    // Static memory cache (lifetime of application)
-    static TMap<FString, USkeletalMesh*> FbxSkeletalMeshCache;
+    // ═══════════════════════════════════════════════════════════
+    // Static Mesh Cache (FStaticMesh* - mirrors FObjManager)
+    // ═══════════════════════════════════════════════════════════
+    static TMap<FString, FStaticMesh*> FbxStaticMeshCache;
+
+    // ═══════════════════════════════════════════════════════════
+    // Skeletal Mesh Cache (FSkeletalMesh* - mirrors FObjManager)
+    // ═══════════════════════════════════════════════════════════
+    static TMap<FString, FSkeletalMesh*> FbxSkeletalMeshCache;
 
 public:
     /**
      * Preload all FBX files from Data/Model/Fbx/ directory
      * Called during engine initialization
+     * Automatically detects type and loads to appropriate cache
      */
     static void Preload();
 
     /**
-     * Clear all cached FBX data
+     * Clear all cached FBX data (both Static and Skeletal)
      * Called during engine shutdown
      */
     static void Clear();
 
+    // ═══════════════════════════════════════════════════════════
+    // Static Mesh Loading (follows FObjManager pattern)
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Load static mesh from FBX file with caching
+     * @param PathFileName - Path to .fbx file
+     * @return Loaded static mesh data or nullptr on failure
+     *
+     * Pattern: Identical to FObjManager::LoadObjStaticMeshAsset()
+     */
+    static FStaticMesh* LoadFbxStaticMeshAsset(const FString& PathFileName);
+
+    // ═══════════════════════════════════════════════════════════
+    // Skeletal Mesh Loading (follows FObjManager pattern)
+    // ═══════════════════════════════════════════════════════════
+
     /**
      * Load skeletal mesh from FBX file with caching
      * @param PathFileName - Path to .fbx file
-     * @return Loaded skeletal mesh or nullptr on failure
+     * @return Loaded skeletal mesh data or nullptr on failure
+     *
+     * Pattern: Identical to FObjManager::LoadObjStaticMeshAsset()
      */
-    static USkeletalMesh* LoadFbxSkeletalMesh(const FString& PathFileName);
+    static FSkeletalMesh* LoadFbxSkeletalMeshAsset(const FString& PathFileName);
 
 private:
     /**
@@ -214,21 +294,45 @@ private:
      */
     static bool ShouldRegenerateCache(const FString& FbxPath, const FString& CachePath);
 
+    // ═══════════════════════════════════════════════════════════
+    // Static Mesh Cache I/O
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Load static mesh from binary cache
+     * @param CachePath - Path to .fbx.bin file
+     * @param OutMesh - Output static mesh data
+     * @return True if successfully loaded
+     */
+    static bool LoadStaticMeshFromCache(const FString& CachePath, FStaticMesh* OutMesh);
+
+    /**
+     * Save static mesh to binary cache
+     * @param CachePath - Path to .fbx.bin file
+     * @param Mesh - Static mesh data to save
+     * @return True if successfully saved
+     */
+    static bool SaveStaticMeshToCache(const FString& CachePath, const FStaticMesh* Mesh);
+
+    // ═══════════════════════════════════════════════════════════
+    // Skeletal Mesh Cache I/O
+    // ═══════════════════════════════════════════════════════════
+
     /**
      * Load skeletal mesh from binary cache
      * @param CachePath - Path to .fbx.bin file
-     * @param OutMesh - Output skeletal mesh
+     * @param OutMesh - Output skeletal mesh data
      * @return True if successfully loaded
      */
-    static bool LoadFromCache(const FString& CachePath, USkeletalMesh* OutMesh);
+    static bool LoadSkeletalMeshFromCache(const FString& CachePath, FSkeletalMesh* OutMesh);
 
     /**
      * Save skeletal mesh to binary cache
      * @param CachePath - Path to .fbx.bin file
-     * @param Mesh - Skeletal mesh to save
+     * @param Mesh - Skeletal mesh data to save
      * @return True if successfully saved
      */
-    static bool SaveToCache(const FString& CachePath, const USkeletalMesh* Mesh);
+    static bool SaveSkeletalMeshToCache(const FString& CachePath, const FSkeletalMesh* Mesh);
 };
 ```
 
@@ -239,16 +343,19 @@ Location: `Mundi/Source/Editor/FbxManager.cpp`
 ```cpp
 #include "pch.h"
 #include "FbxManager.h"
+#include "StaticMesh.h"
 #include "SkeletalMesh.h"
+#include "FbxImporter.h"
 #include "GlobalConsole.h"
 #include <filesystem>
 
 // Static member initialization
-TMap<FString, USkeletalMesh*> FFbxManager::FbxSkeletalMeshCache;
+TMap<FString, FStaticMesh*> FFbxManager::FbxStaticMeshCache;
+TMap<FString, FSkeletalMesh*> FFbxManager::FbxSkeletalMeshCache;
 
 FString FFbxManager::GetFbxCachePath(const FString& FbxPath)
 {
-    // Simple pattern: append ".bin" to FBX filename
+    // Simple pattern: append ".bin" to FBX filename (same as OBJ system)
     // "Data/Model/Character.fbx" → "Data/Model/Character.fbx.bin"
     return FbxPath + ".bin";
 }
@@ -287,11 +394,24 @@ bool FFbxManager::ShouldRegenerateCache(const FString& FbxPath, const FString& C
 
 void FFbxManager::Clear()
 {
-    // Clear static cache map
-    // Note: USkeletalMesh objects are managed by ObjectFactory/ResourceManager
+    // Clear Static Mesh cache
+    // Note: FStaticMesh objects are owned by FFbxManager (like FObjManager)
+    for (auto& Pair : FbxStaticMeshCache)
+    {
+        delete Pair.second;  // Delete FStaticMesh*
+    }
+    FbxStaticMeshCache.clear();
+
+    // Clear Skeletal Mesh cache
+    // Note: FSkeletalMesh objects are owned by FFbxManager (like FObjManager)
+    for (auto& Pair : FbxSkeletalMeshCache)
+    {
+        delete Pair.second;  // Delete FSkeletalMesh*
+    }
     FbxSkeletalMeshCache.clear();
 
-    UE_LOG("FFbxManager: Cleared cache (%d entries)", FbxSkeletalMeshCache.size());
+    UE_LOG("FFbxManager: Cleared caches (Static: %d, Skeletal: %d entries)",
+        FbxStaticMeshCache.size(), FbxSkeletalMeshCache.size());
 }
 
 void FFbxManager::Preload()
@@ -307,22 +427,46 @@ void FFbxManager::Preload()
         return;
     }
 
-    int32 LoadedCount = 0;
+    int32 StaticMeshCount = 0;
+    int32 SkeletalMeshCount = 0;
+
     for (const auto& Entry : fs::recursive_directory_iterator(FbxDirectory))
     {
         if (Entry.is_regular_file() && Entry.path().extension() == ".fbx")
         {
             FString FbxPath = Entry.path().string();
 
-            USkeletalMesh* Mesh = LoadFbxSkeletalMesh(FbxPath);
-            if (Mesh)
+            // Detect FBX type (Static vs Skeletal)
+            FFbxImporter Importer;
+            EFbxImportType FbxType = Importer.DetectFbxType(FbxPath);
+
+            if (FbxType == EFbxImportType::StaticMesh)
             {
-                LoadedCount++;
+                // Load as Static Mesh
+                FStaticMesh* Mesh = LoadFbxStaticMeshAsset(FbxPath);
+                if (Mesh)
+                {
+                    StaticMeshCount++;
+                }
+            }
+            else if (FbxType == EFbxImportType::SkeletalMesh)
+            {
+                // Load as Skeletal Mesh
+                FSkeletalMesh* Mesh = LoadFbxSkeletalMeshAsset(FbxPath);
+                if (Mesh)
+                {
+                    SkeletalMeshCount++;
+                }
+            }
+            else
+            {
+                UE_LOG("[warning] Unsupported FBX type: %s (Animation not yet supported)", FbxPath.c_str());
             }
         }
     }
 
-    UE_LOG("FFbxManager: Preloaded %d FBX files", LoadedCount);
+    UE_LOG("FFbxManager: Preloaded %d Static Meshes, %d Skeletal Meshes",
+        StaticMeshCount, SkeletalMeshCount);
 }
 ```
 
@@ -332,8 +476,12 @@ void FFbxManager::Preload()
 - [ ] `ShouldRegenerateCache()` returns true for missing cache
 - [ ] `ShouldRegenerateCache()` returns false for valid cache
 - [ ] `ShouldRegenerateCache()` returns true when FBX is newer
-- [ ] `Clear()` empties static cache map
+- [ ] `Clear()` empties both static cache maps (Static + Skeletal)
+- [ ] `Clear()` correctly deletes FStaticMesh* objects
 - [ ] `Preload()` finds all .fbx files in directory
+- [ ] `Preload()` correctly detects Static Mesh FBX via `DetectFbxType()`
+- [ ] `Preload()` correctly detects Skeletal Mesh FBX via `DetectFbxType()`
+- [ ] `Preload()` loads both mesh types to correct caches
 
 ---
 
@@ -341,11 +489,22 @@ void FFbxManager::Preload()
 
 **Goal:** Implement binary serialization for all FBX-related data structures
 
+**Note on Static Mesh Serialization:**
+- `FStaticMesh` serialization already exists (from OBJ system) → **No additional work needed**
+- Static Mesh FBX will reuse existing `FStaticMesh` serialization operators
+- Only Skeletal Mesh structures require new serialization implementation
+
 #### Tasks
+
+**Note on Serialization Scope:**
+- **FStaticMesh serialization:** Already exists (from OBJ system) → No work needed for Static Mesh FBX
+- **FSkeletalMesh serialization:** Needs implementation → This Phase 2 focuses on this
 
 **2.1. Add Serialization to FSkinnedVertex**
 
 Location: `Mundi/Source/Runtime/AssetManagement/SkeletalMesh.h`
+
+**Note:** This structure is used by USkeletalMesh (UObject wrapper). FSkeletalMesh uses the same vertex type.
 
 ```cpp
 struct FSkinnedVertex
@@ -396,6 +555,8 @@ FWindowsBinReader& operator>>(FWindowsBinReader& Reader, FSkinnedVertex& Vertex)
 
 Location: `Mundi/Source/Runtime/AssetManagement/Skeleton.h`
 
+**Note:** FBoneInfo is stored directly in FSkeletalMesh structure (no separate USkeleton needed for serialization).
+
 ```cpp
 struct FBoneInfo
 {
@@ -444,122 +605,37 @@ FWindowsBinReader& operator>>(FWindowsBinReader& Reader, FBoneInfo& Bone)
 }
 ```
 
-**2.3. Add Serialization to USkeleton**
+**2.3. Add Serialization to FSkeletalMesh**
 
-Location: `Mundi/Source/Runtime/AssetManagement/Skeleton.h`
+Location: `Mundi/Source/Runtime/AssetManagement/SkeletalMesh.h` (or separate `FSkeletalMesh.h`)
 
-```cpp
-class USkeleton : public UResourceBase
-{
-public:
-    DECLARE_CLASS(USkeleton, UResourceBase)
-
-    UPROPERTY()
-    TArray<FBoneInfo> Bones;
-
-    UPROPERTY()
-    TMap<FString, int32> BoneNameToIndexMap;  // For fast lookup
-
-    // NEW: Binary serialization operators
-    friend FWindowsBinWriter& operator<<(FWindowsBinWriter& Writer, const USkeleton& Skeleton);
-    friend FWindowsBinReader& operator>>(FWindowsBinReader& Reader, USkeleton& Skeleton);
-
-    // ... existing methods
-};
-```
-
-Location: `Mundi/Source/Runtime/AssetManagement/Skeleton.cpp`
+**Note:** FSkeletalMesh is the data structure (not UObject) that gets serialized to cache.
 
 ```cpp
-FWindowsBinWriter& operator<<(FWindowsBinWriter& Writer, const USkeleton& Skeleton)
+struct FSkeletalMesh
 {
-    // Write bone count
-    uint32 BoneCount = Skeleton.Bones.size();
-    Writer.Write(&BoneCount, sizeof(uint32));
-
-    // Write bone array
-    for (const FBoneInfo& Bone : Skeleton.Bones)
-    {
-        Writer << Bone;  // Uses FBoneInfo's operator<<
-    }
-
-    // Note: BoneNameToIndexMap can be rebuilt from Bones array on load
-    // No need to serialize it
-
-    return Writer;
-}
-
-FWindowsBinReader& operator>>(FWindowsBinReader& Reader, USkeleton& Skeleton)
-{
-    // Read bone count
-    uint32 BoneCount;
-    Reader.Read(&BoneCount, sizeof(uint32));
-
-    // Read bone array
-    Skeleton.Bones.clear();
-    Skeleton.Bones.reserve(BoneCount);
-
-    for (uint32 i = 0; i < BoneCount; ++i)
-    {
-        FBoneInfo Bone;
-        Reader >> Bone;
-        Skeleton.Bones.push_back(Bone);
-    }
-
-    // Rebuild bone name map
-    Skeleton.BoneNameToIndexMap.clear();
-    for (size_t i = 0; i < Skeleton.Bones.size(); ++i)
-    {
-        Skeleton.BoneNameToIndexMap[Skeleton.Bones[i].Name] = static_cast<int32>(i);
-    }
-
-    return Reader;
-}
-```
-
-**2.4. Add Serialization to USkeletalMesh**
-
-Location: `Mundi/Source/Runtime/AssetManagement/SkeletalMesh.h`
-
-```cpp
-class USkeletalMesh : public UResourceBase
-{
-public:
-    DECLARE_CLASS(USkeletalMesh, UResourceBase)
-
-    UPROPERTY()
     TArray<FSkinnedVertex> Vertices;
-
-    UPROPERTY()
     TArray<uint32> Indices;
-
-    UPROPERTY()
-    USkeleton* Skeleton = nullptr;
-
-    UPROPERTY()
+    TArray<FBoneInfo> Bones;  // Skeleton data inline
+    TMap<FString, int32> BoneNameToIndexMap;
     TArray<FMaterialInfo> Materials;
-
-    UPROPERTY()
     TArray<FStaticMeshGroup> MaterialGroups;
-
-    UPROPERTY()
     FVector BoundsMin;
-
-    UPROPERTY()
     FVector BoundsMax;
+    FString PathFileName;
+    FString CacheFilePath;
+    bool bHasMaterial = false;
 
-    // NEW: Binary serialization operators
-    friend FWindowsBinWriter& operator<<(FWindowsBinWriter& Writer, const USkeletalMesh& Mesh);
-    friend FWindowsBinReader& operator>>(FWindowsBinReader& Reader, USkeletalMesh& Mesh);
-
-    // ... existing methods
+    // Binary serialization operators
+    friend FWindowsBinWriter& operator<<(FWindowsBinWriter& Writer, const FSkeletalMesh& Mesh);
+    friend FWindowsBinReader& operator>>(FWindowsBinReader& Reader, FSkeletalMesh& Mesh);
 };
 ```
 
-Location: `Mundi/Source/Runtime/AssetManagement/SkeletalMesh.cpp`
+Location: `Mundi/Source/Runtime/AssetManagement/SkeletalMesh.cpp` (or separate `FSkeletalMesh.cpp`)
 
 ```cpp
-FWindowsBinWriter& operator<<(FWindowsBinWriter& Writer, const USkeletalMesh& Mesh)
+FWindowsBinWriter& operator<<(FWindowsBinWriter& Writer, const FSkeletalMesh& Mesh)
 {
     // Write magic number and version
     uint32 MagicNumber = 0x46425843;  // "FBXC" in hex
@@ -580,13 +656,14 @@ FWindowsBinWriter& operator<<(FWindowsBinWriter& Writer, const USkeletalMesh& Me
     Writer.Write(&IndexCount, sizeof(uint32));
     Writer.Write(Mesh.Indices.data(), IndexCount * sizeof(uint32));
 
-    // Write skeleton (if exists)
-    bool bHasSkeleton = (Mesh.Skeleton != nullptr);
-    Writer.Write(&bHasSkeleton, sizeof(bool));
-    if (bHasSkeleton)
+    // Write skeleton data (bones)
+    uint32 BoneCount = Mesh.Bones.size();
+    Writer.Write(&BoneCount, sizeof(uint32));
+    for (const FBoneInfo& Bone : Mesh.Bones)
     {
-        Writer << *Mesh.Skeleton;
+        Writer << Bone;  // Uses FBoneInfo's operator<<
     }
+    // Note: BoneNameToIndexMap is NOT serialized (can be rebuilt on load)
 
     // Write materials
     uint32 MaterialCount = Mesh.Materials.size();
@@ -645,13 +722,23 @@ FWindowsBinReader& operator>>(FWindowsBinReader& Reader, USkeletalMesh& Mesh)
     Mesh.Indices.resize(IndexCount);
     Reader.Read(Mesh.Indices.data(), IndexCount * sizeof(uint32));
 
-    // Read skeleton
-    bool bHasSkeleton;
-    Reader.Read(&bHasSkeleton, sizeof(bool));
-    if (bHasSkeleton)
+    // Read skeleton data (bones)
+    uint32 BoneCount;
+    Reader.Read(&BoneCount, sizeof(uint32));
+    Mesh.Bones.clear();
+    Mesh.Bones.reserve(BoneCount);
+    for (uint32 i = 0; i < BoneCount; ++i)
     {
-        Mesh.Skeleton = ObjectFactory::NewObject<USkeleton>();
-        Reader >> *Mesh.Skeleton;
+        FBoneInfo Bone;
+        Reader >> Bone;
+        Mesh.Bones.push_back(Bone);
+    }
+
+    // Rebuild bone name map
+    Mesh.BoneNameToIndexMap.clear();
+    for (size_t i = 0; i < Mesh.Bones.size(); ++i)
+    {
+        Mesh.BoneNameToIndexMap[Mesh.Bones[i].Name] = static_cast<int32>(i);
     }
 
     // Read materials
@@ -680,30 +767,88 @@ FWindowsBinReader& operator>>(FWindowsBinReader& Reader, USkeletalMesh& Mesh)
 }
 ```
 
-**2.5. Testing Checklist**
+**2.4. Testing Checklist**
 
 - [ ] Serialize and deserialize FSkinnedVertex (verify data integrity)
 - [ ] Serialize and deserialize FBoneInfo (verify strings and matrices)
-- [ ] Serialize and deserialize USkeleton (verify bone hierarchy)
-- [ ] Serialize and deserialize USkeletalMesh (verify all components)
-- [ ] Test with empty skeleton (bHasSkeleton = false)
+- [ ] Serialize and deserialize FSkeletalMesh (verify all components: vertices, bones, materials)
+- [ ] Test with empty bone array (BoneCount = 0)
 - [ ] Test with missing materials
 - [ ] Verify magic number validation rejects invalid files
+- [ ] Verify BoneNameToIndexMap is correctly rebuilt on deserialization
+- [ ] Test round-trip: serialize → deserialize → compare data integrity
 
 ---
 
 ### Phase 3: Cache Loading/Saving (Week 2)
 
-**Goal:** Implement complete cache load/save pipeline
+**Goal:** Implement complete cache load/save pipeline for both Static and Skeletal meshes
 
 #### Tasks
 
-**3.1. Implement LoadFromCache()**
+**3.1. Implement Static Mesh Cache I/O (reuses OBJ system)**
 
 Location: `Mundi/Source/Editor/FbxManager.cpp`
 
 ```cpp
-bool FFbxManager::LoadFromCache(const FString& CachePath, USkeletalMesh* OutMesh)
+bool FFbxManager::LoadStaticMeshFromCache(const FString& CachePath, FStaticMesh* OutMesh)
+{
+    namespace fs = std::filesystem;
+
+    if (!fs::exists(CachePath))
+    {
+        return false;
+    }
+
+    try
+    {
+        // Use existing FStaticMesh serialization operators (from OBJ system)
+        FWindowsBinReader Reader(CachePath);
+        Reader >> *OutMesh;  // Deserialize using existing operator>>
+
+        UE_LOG("Loaded Static Mesh FBX from cache: %s (%d vertices, %d indices)",
+            CachePath.c_str(),
+            OutMesh->Vertices.size(),
+            OutMesh->Indices.size());
+
+        return true;
+    }
+    catch (const std::exception& e)
+    {
+        UE_LOG("[error] Failed to load Static Mesh FBX cache: %s - %s", CachePath.c_str(), e.what());
+        return false;
+    }
+}
+
+bool FFbxManager::SaveStaticMeshToCache(const FString& CachePath, const FStaticMesh* Mesh)
+{
+    try
+    {
+        // Use existing FStaticMesh serialization operators (from OBJ system)
+        FWindowsBinWriter Writer(CachePath);
+        Writer << *Mesh;  // Serialize using existing operator<<
+
+        UE_LOG("Saved Static Mesh FBX cache: %s (%d vertices, %d indices)",
+            CachePath.c_str(),
+            Mesh->Vertices.size(),
+            Mesh->Indices.size());
+
+        return true;
+    }
+    catch (const std::exception& e)
+    {
+        UE_LOG("[error] Failed to save Static Mesh FBX cache: %s - %s", CachePath.c_str(), e.what());
+        return false;
+    }
+}
+```
+
+**3.2. Implement Skeletal Mesh Cache I/O**
+
+Location: `Mundi/Source/Editor/FbxManager.cpp`
+
+```cpp
+bool FFbxManager::LoadSkeletalMeshFromCache(const FString& CachePath, FSkeletalMesh* OutMesh)
 {
     namespace fs = std::filesystem;
 
@@ -734,12 +879,7 @@ bool FFbxManager::LoadFromCache(const FString& CachePath, USkeletalMesh* OutMesh
 }
 ```
 
-**3.2. Implement SaveToCache()**
-
-Location: `Mundi/Source/Editor/FbxManager.cpp`
-
-```cpp
-bool FFbxManager::SaveToCache(const FString& CachePath, const USkeletalMesh* Mesh)
+bool FFbxManager::SaveSkeletalMeshToCache(const FString& CachePath, const FSkeletalMesh* Mesh)
 {
     try
     {
@@ -763,20 +903,20 @@ bool FFbxManager::SaveToCache(const FString& CachePath, const USkeletalMesh* Mes
 }
 ```
 
-**3.3. Implement LoadFbxSkeletalMesh() Main Logic**
+**3.3. Implement LoadFbxStaticMeshAsset() Main Logic**
 
 Location: `Mundi/Source/Editor/FbxManager.cpp`
 
 ```cpp
-USkeletalMesh* FFbxManager::LoadFbxSkeletalMesh(const FString& PathFileName)
+FStaticMesh* FFbxManager::LoadFbxStaticMeshAsset(const FString& PathFileName)
 {
     // ──────────────────────────────────────────────────────
     // 1. Check static memory cache
     // ──────────────────────────────────────────────────────
-    auto Iter = FbxSkeletalMeshCache.find(PathFileName);
-    if (Iter != FbxSkeletalMeshCache.end())
+    auto Iter = FbxStaticMeshCache.find(PathFileName);
+    if (Iter != FbxStaticMeshCache.end())
     {
-        UE_LOG("FBX already in memory cache: %s", PathFileName.c_str());
+        UE_LOG("FBX Static Mesh already in memory cache: %s", PathFileName.c_str());
         return Iter->second;
     }
 
@@ -786,23 +926,23 @@ USkeletalMesh* FFbxManager::LoadFbxSkeletalMesh(const FString& PathFileName)
     FString CachePath = GetFbxCachePath(PathFileName);
     bool bShouldRegenerate = ShouldRegenerateCache(PathFileName, CachePath);
 
-    USkeletalMesh* NewMesh = ObjectFactory::NewObject<USkeletalMesh>();
+    FStaticMesh* NewMesh = new FStaticMesh();  // FFbxManager owns this (like FObjManager)
 
     if (!bShouldRegenerate)
     {
         // ──────────────────────────────────────────────────────
         // 3. Load from binary cache (FAST PATH)
         // ──────────────────────────────────────────────────────
-        if (LoadFromCache(CachePath, NewMesh))
+        if (LoadStaticMeshFromCache(CachePath, NewMesh))
         {
             // Cache loaded successfully
-            FbxSkeletalMeshCache[PathFileName] = NewMesh;
+            FbxStaticMeshCache[PathFileName] = NewMesh;
             return NewMesh;
         }
         else
         {
             // Cache load failed, fall through to regenerate
-            UE_LOG("[warning] Cache load failed, regenerating: %s", CachePath.c_str());
+            UE_LOG("[warning] Static Mesh cache load failed, regenerating: %s", CachePath.c_str());
             bShouldRegenerate = true;
         }
     }
@@ -813,25 +953,117 @@ USkeletalMesh* FFbxManager::LoadFbxSkeletalMesh(const FString& PathFileName)
         // 4. Parse FBX with SDK (SLOW PATH)
         // ──────────────────────────────────────────────────────
         FFbxImporter Importer;
+        FFbxImportOptions Options;
+        Options.bConvertScene = true;
+        Options.bConvertSceneUnit = true;
+        Options.bRemoveDegenerates = true;
+        Options.ImportScale = 1.0f;
 
-        if (!Importer.ImportSkeletalMesh(PathFileName, NewMesh))
+        if (!Importer.ImportStaticMesh(PathFileName, Options, *NewMesh))
         {
-            UE_LOG("[error] Failed to import FBX: %s", PathFileName.c_str());
-            ObjectFactory::Destroy(NewMesh);
+            UE_LOG("[error] Failed to import Static Mesh FBX: %s", PathFileName.c_str());
+            delete NewMesh;
             return nullptr;
         }
 
-        UE_LOG("Imported FBX: %s (%d vertices, %d bones)",
+        UE_LOG("Imported Static Mesh FBX: %s (%d vertices, %d indices)",
             PathFileName.c_str(),
             NewMesh->Vertices.size(),
-            NewMesh->Skeleton ? NewMesh->Skeleton->Bones.size() : 0);
+            NewMesh->Indices.size());
 
         // ──────────────────────────────────────────────────────
         // 5. Serialize to binary cache
         // ──────────────────────────────────────────────────────
-        if (!SaveToCache(CachePath, NewMesh))
+        if (!SaveStaticMeshToCache(CachePath, NewMesh))
         {
-            UE_LOG("[warning] Failed to save FBX cache (will still use loaded data): %s", CachePath.c_str());
+            UE_LOG("[warning] Failed to save Static Mesh FBX cache (will still use loaded data): %s", CachePath.c_str());
+        }
+    }
+
+    // ──────────────────────────────────────────────────────
+    // 6. Store in static memory cache
+    // ──────────────────────────────────────────────────────
+    FbxStaticMeshCache[PathFileName] = NewMesh;
+
+    return NewMesh;
+}
+```
+
+**3.4. Implement LoadFbxSkeletalMeshAsset() Main Logic**
+
+Location: `Mundi/Source/Editor/FbxManager.cpp`
+
+```cpp
+FSkeletalMesh* FFbxManager::LoadFbxSkeletalMeshAsset(const FString& PathFileName)
+{
+    // ──────────────────────────────────────────────────────
+    // 1. Check static memory cache
+    // ──────────────────────────────────────────────────────
+    auto Iter = FbxSkeletalMeshCache.find(PathFileName);
+    if (Iter != FbxSkeletalMeshCache.end())
+    {
+        UE_LOG("FBX Skeletal Mesh already in memory cache: %s", PathFileName.c_str());
+        return Iter->second;
+    }
+
+    // ──────────────────────────────────────────────────────
+    // 2. Get cache path and validate
+    // ──────────────────────────────────────────────────────
+    FString CachePath = GetFbxCachePath(PathFileName);
+    bool bShouldRegenerate = ShouldRegenerateCache(PathFileName, CachePath);
+
+    FSkeletalMesh* NewMesh = new FSkeletalMesh();  // FFbxManager owns this (like FObjManager)
+
+    if (!bShouldRegenerate)
+    {
+        // ──────────────────────────────────────────────────────
+        // 3. Load from binary cache (FAST PATH)
+        // ──────────────────────────────────────────────────────
+        if (LoadSkeletalMeshFromCache(CachePath, NewMesh))
+        {
+            // Cache loaded successfully
+            FbxSkeletalMeshCache[PathFileName] = NewMesh;
+            return NewMesh;
+        }
+        else
+        {
+            // Cache load failed, fall through to regenerate
+            UE_LOG("[warning] Skeletal Mesh cache load failed, regenerating: %s", CachePath.c_str());
+            bShouldRegenerate = true;
+        }
+    }
+
+    if (bShouldRegenerate)
+    {
+        // ──────────────────────────────────────────────────────
+        // 4. Parse FBX with SDK (SLOW PATH)
+        // ──────────────────────────────────────────────────────
+        FFbxImporter Importer;
+        FFbxImportOptions Options;
+        Options.bConvertScene = true;
+        Options.bConvertSceneUnit = true;
+        Options.bRemoveDegenerates = true;
+        Options.bImportSkeleton = true;
+        Options.ImportScale = 1.0f;
+
+        if (!Importer.ImportSkeletalMesh(PathFileName, Options, *NewMesh))
+        {
+            UE_LOG("[error] Failed to import Skeletal Mesh FBX: %s", PathFileName.c_str());
+            delete NewMesh;
+            return nullptr;
+        }
+
+        UE_LOG("Imported Skeletal Mesh FBX: %s (%d vertices, %d bones)",
+            PathFileName.c_str(),
+            NewMesh->Vertices.size(),
+            NewMesh->Bones.size());
+
+        // ──────────────────────────────────────────────────────
+        // 5. Serialize to binary cache
+        // ──────────────────────────────────────────────────────
+        if (!SaveSkeletalMeshToCache(CachePath, NewMesh))
+        {
+            UE_LOG("[warning] Failed to save Skeletal Mesh FBX cache (will still use loaded data): %s", CachePath.c_str());
         }
     }
 
@@ -844,84 +1076,181 @@ USkeletalMesh* FFbxManager::LoadFbxSkeletalMesh(const FString& PathFileName)
 }
 ```
 
-**3.4. Testing Checklist**
+**3.5. Testing Checklist**
 
+**Static Mesh FBX:**
 - [ ] First load triggers FBX import and creates cache
 - [ ] Second load uses cache (verify performance improvement)
-- [ ] Cache regenerates when FBX is modified
+- [ ] Cache regenerates when Static Mesh FBX is modified
 - [ ] Graceful fallback if cache is corrupted
 - [ ] Memory cache prevents redundant disk reads
-- [ ] Multiple meshes can be loaded simultaneously
+- [ ] Multiple Static Mesh FBX files can be loaded simultaneously
+- [ ] Static Mesh FBX cache format matches OBJ binary format
+
+**Skeletal Mesh FBX:**
+- [ ] First load triggers FBX import and creates cache (FSkeletalMesh*)
+- [ ] Second load uses cache (verify performance improvement)
+- [ ] Cache regenerates when Skeletal Mesh FBX is modified
+- [ ] Graceful fallback if cache is corrupted
+- [ ] Memory cache prevents redundant disk reads
+- [ ] Multiple Skeletal Mesh FBX files can be loaded simultaneously
+- [ ] Skeleton data (bones) is correctly serialized and deserialized
+- [ ] BoneNameToIndexMap is correctly rebuilt on cache load
+- [ ] FFbxManager correctly owns FSkeletalMesh* (deleted on Clear())
+
+**Integration:**
+- [ ] Both mesh types can coexist in caches
+- [ ] Type detection correctly routes to appropriate cache
 
 ---
 
 ### Phase 4: ResourceManager Integration (Week 2-3)
 
-**Goal:** Integrate FFbxManager with existing ResourceManager pipeline
+**Goal:** Integrate FFbxManager with existing ResourceManager pipeline for both mesh types
 
 #### Tasks
 
-**4.1. Modify USkeletalMesh::Load()**
+**4.1. Modify UStaticMesh::Load() for FBX Static Mesh**
+
+Location: `Mundi/Source/Runtime/AssetManagement/StaticMesh.cpp`
+
+```cpp
+void UStaticMesh::Load(const FString& InFilePath, ID3D11Device* InDevice, EVertexLayoutType InVertexType)
+{
+    assert(InDevice);
+
+    SetVertexType(InVertexType);
+
+    // Check file extension
+    std::filesystem::path FilePath(InFilePath);
+    FString Extension = FilePath.extension().string();
+    std::transform(Extension.begin(), Extension.end(), Extension.begin(), ::tolower);
+
+    if (Extension == ".fbx")
+    {
+        // ═══════════════════════════════════════════════════════════
+        // FBX Static Mesh: Delegate to FFbxManager (like OBJ pattern)
+        // ═══════════════════════════════════════════════════════════
+        StaticMeshAsset = FFbxManager::LoadFbxStaticMeshAsset(InFilePath);
+        bOwnsStaticMeshAsset = false;  // FFbxManager owns it (no longer temporary flag!)
+
+        // TODO Comment can be removed after FbxManager is implemented
+        // Ownership: FFbxManager owns FStaticMesh* (same as FObjManager)
+    }
+    else if (Extension == ".obj")
+    {
+        // ═══════════════════════════════════════════════════════════
+        // OBJ Static Mesh: Existing pattern
+        // ═══════════════════════════════════════════════════════════
+        StaticMeshAsset = FObjManager::LoadObjStaticMeshAsset(InFilePath);
+        bOwnsStaticMeshAsset = false;  // FObjManager owns it
+    }
+    else
+    {
+        UE_LOG("[StaticMesh ERROR] Unsupported file format: %s", Extension.c_str());
+        return;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // Create GPU buffers from loaded asset
+    // ═══════════════════════════════════════════════════════════
+    if (StaticMeshAsset && 0 < StaticMeshAsset->Vertices.size() && 0 < StaticMeshAsset->Indices.size())
+    {
+        CacheFilePath = StaticMeshAsset->CacheFilePath;
+        CreateVertexBuffer(StaticMeshAsset, InDevice, InVertexType);
+        CreateIndexBuffer(StaticMeshAsset, InDevice);
+        CreateLocalBound(StaticMeshAsset);
+        VertexCount = static_cast<uint32>(StaticMeshAsset->Vertices.size());
+        IndexCount = static_cast<uint32>(StaticMeshAsset->Indices.size());
+    }
+}
+```
+
+**NOTE:** With this implementation, the temporary `bOwnsStaticMeshAsset` flag and TODOs in StaticMesh.cpp can be removed. FFbxManager now manages FStaticMesh* ownership like FObjManager.
+
+**4.2. Modify USkeletalMesh::Load() for FBX Skeletal Mesh**
+
+Location: `Mundi/Source/Runtime/AssetManagement/SkeletalMesh.h`
+
+First, add a reference pointer to FSkeletalMesh in USkeletalMesh:
+
+```cpp
+class USkeletalMesh : public UResourceBase
+{
+public:
+    DECLARE_CLASS(USkeletalMesh, UResourceBase)
+
+    // ... existing GPU buffer members ...
+
+    // ═══════════════════════════════════════════════════════════
+    // NEW: Reference to parsed data (owned by FFbxManager)
+    // ═══════════════════════════════════════════════════════════
+    FSkeletalMesh* SkeletalMeshAsset = nullptr;  // Does NOT own (FFbxManager owns this)
+
+    // NOTE: Ownership flag not needed (unlike temporary StaticMesh implementation)
+    // FFbxManager always owns FSkeletalMesh*, USkeletalMesh never owns it
+
+    // ... rest of class ...
+};
+```
 
 Location: `Mundi/Source/Runtime/AssetManagement/SkeletalMesh.cpp`
 
 ```cpp
 void USkeletalMesh::Load(const FString& InFilePath, ID3D11Device* InDevice, EVertexLayoutType InVertexType)
 {
-    // ──────────────────────────────────────────────────────
-    // Delegate to FFbxManager for loading/caching
-    // ──────────────────────────────────────────────────────
-    USkeletalMesh* CachedMesh = FFbxManager::LoadFbxSkeletalMesh(InFilePath);
+    assert(InDevice);
 
-    if (!CachedMesh)
+    SetVertexType(InVertexType);
+
+    // ═══════════════════════════════════════════════════════════
+    // FBX Skeletal Mesh: Delegate to FFbxManager (like OBJ pattern)
+    // ═══════════════════════════════════════════════════════════
+    SkeletalMeshAsset = FFbxManager::LoadFbxSkeletalMeshAsset(InFilePath);
+
+    if (!SkeletalMeshAsset)
     {
         UE_LOG("[error] Failed to load skeletal mesh: %s", InFilePath.c_str());
         return;
     }
 
-    // ──────────────────────────────────────────────────────
-    // Copy data from cached mesh
-    // ──────────────────────────────────────────────────────
-    this->Vertices = CachedMesh->Vertices;
-    this->Indices = CachedMesh->Indices;
-    this->Skeleton = CachedMesh->Skeleton;
-    this->Materials = CachedMesh->Materials;
-    this->MaterialGroups = CachedMesh->MaterialGroups;
-    this->BoundsMin = CachedMesh->BoundsMin;
-    this->BoundsMax = CachedMesh->BoundsMax;
-
-    // ──────────────────────────────────────────────────────
-    // Create GPU buffers
-    // ──────────────────────────────────────────────────────
-    if (Vertices.size() > 0 && Indices.size() > 0)
+    // ═══════════════════════════════════════════════════════════
+    // Create GPU buffers from loaded asset
+    // ═══════════════════════════════════════════════════════════
+    if (SkeletalMeshAsset &&
+        SkeletalMeshAsset->Vertices.size() > 0 &&
+        SkeletalMeshAsset->Indices.size() > 0)
     {
-        CreateVertexBuffer(InDevice, InVertexType);
-        CreateIndexBuffer(InDevice);
+        // Create vertex and index buffers
+        CreateVertexBuffer(SkeletalMeshAsset, InDevice, InVertexType);
+        CreateIndexBuffer(SkeletalMeshAsset, InDevice);
+        CreateLocalBound(SkeletalMeshAsset);
 
-        UE_LOG("Created GPU buffers for skeletal mesh: %s", InFilePath.c_str());
+        VertexCount = static_cast<uint32>(SkeletalMeshAsset->Vertices.size());
+        IndexCount = static_cast<uint32>(SkeletalMeshAsset->Indices.size());
+
+        UE_LOG("Loaded skeletal mesh: %s (%d vertices, %d bones)",
+            InFilePath.c_str(),
+            VertexCount,
+            SkeletalMeshAsset->Bones.size());
     }
-
-    // ──────────────────────────────────────────────────────
-    // Store file path
-    // ──────────────────────────────────────────────────────
-    this->SetFilePath(InFilePath);
 }
 ```
 
-**4.2. Ensure ResourceManager Type Registration**
+**4.3. Ensure ResourceManager Type Registration**
 
 Location: `Mundi/Source/Runtime/AssetManagement/ResourceManager.h`
 
-Verify that `USkeletalMesh` is registered in `GetResourceType<T>()`:
+Verify that both `UStaticMesh` and `USkeletalMesh` are registered in `GetResourceType<T>()`:
 
 ```cpp
 template<typename T>
 ResourceType UResourceManager::GetResourceType()
 {
     if (T::StaticClass() == UStaticMesh::StaticClass())
-        return ResourceType::StaticMesh;
+        return ResourceType::StaticMesh;  // Used for both OBJ and FBX Static Mesh
     if (T::StaticClass() == USkeletalMesh::StaticClass())  // Ensure this exists
-        return ResourceType::SkeletalMesh;
+        return ResourceType::SkeletalMesh;  // Used for FBX Skeletal Mesh
     if (T::StaticClass() == UTexture::StaticClass())
         return ResourceType::Texture;
     // ... other types
@@ -930,7 +1259,7 @@ ResourceType UResourceManager::GetResourceType()
 }
 ```
 
-**4.3. Add ResourceType Enum Value (If Missing)**
+**4.4. Add ResourceType Enum Value (If Missing)**
 
 Location: `Mundi/Source/Runtime/AssetManagement/ResourceBase.h`
 
@@ -950,13 +1279,29 @@ enum class ResourceType : uint8
 };
 ```
 
-**4.4. Testing Checklist**
+**4.5. Testing Checklist**
 
-- [ ] `ResourceManager->Load<USkeletalMesh>("path.fbx")` works correctly
+**Static Mesh FBX:**
+- [ ] `ResourceManager->Load<UStaticMesh>("path.fbx")` works correctly for Static Mesh FBX
+- [ ] Static Mesh FBX no longer requires `bOwnsStaticMeshAsset` flag (cleaned up)
+- [ ] Static Mesh FBX follows same pattern as OBJ (FFbxManager owns FStaticMesh*)
 - [ ] ResourceManager in-memory cache prevents redundant loads
-- [ ] Multiple different skeletal meshes can coexist
+- [ ] Multiple Static Mesh FBX files can coexist with OBJ files
 - [ ] GPU buffers are created correctly
-- [ ] Material references are preserved
+
+**Skeletal Mesh FBX:**
+- [ ] `ResourceManager->Load<USkeletalMesh>("path.fbx")` works correctly
+- [ ] USkeletalMesh correctly references FSkeletalMesh* (does not own it)
+- [ ] ResourceManager in-memory cache prevents redundant loads
+- [ ] Multiple Skeletal Mesh FBX files can coexist
+- [ ] GPU buffers are created correctly from FSkeletalMesh data
+- [ ] Bone data is accessible via USkeletalMesh->SkeletalMeshAsset->Bones
+- [ ] No ownership flags needed (FFbxManager always owns FSkeletalMesh*)
+
+**Integration:**
+- [ ] Both mesh types work through ResourceManager
+- [ ] Material references are preserved for both types
+- [ ] Cache system doesn't interfere with runtime behavior
 
 ---
 
@@ -1222,6 +1567,120 @@ Mundi/Source/Runtime/Engine/
 ---
 
 ## Data Structures
+
+### FSkeletalMesh Data Structure
+
+The `FSkeletalMesh` structure is a pure data container for parsed skeletal mesh information, following the same pattern as `FStaticMesh` for OBJ files.
+
+**Location:** `Mundi/Source/Runtime/AssetManagement/SkeletalMesh.h` (or separate `FSkeletalMesh.h`)
+
+```cpp
+/**
+ * Skeletal Mesh data structure (pure data, no UObject overhead)
+ * Owned by FFbxManager, referenced by USkeletalMesh
+ * Similar to FStaticMesh for OBJ files
+ */
+struct FSkeletalMesh
+{
+    // ═══════════════════════════════════════════════════════════
+    // Rendering Data
+    // ═══════════════════════════════════════════════════════════
+
+    /** Skinned vertices with bone weights */
+    TArray<FSkinnedVertex> Vertices;
+
+    /** Triangle indices */
+    TArray<uint32> Indices;
+
+    // ═══════════════════════════════════════════════════════════
+    // Skeleton Data
+    // ═══════════════════════════════════════════════════════════
+
+    /** Bone hierarchy information */
+    TArray<FBoneInfo> Bones;
+
+    /** Bone name to index lookup map (can be rebuilt on load) */
+    TMap<FString, int32> BoneNameToIndexMap;
+
+    // ═══════════════════════════════════════════════════════════
+    // Material Data
+    // ═══════════════════════════════════════════════════════════
+
+    /** Material definitions */
+    TArray<FMaterialInfo> Materials;
+
+    /** Material group assignments (which triangles use which material) */
+    TArray<FStaticMeshGroup> MaterialGroups;
+
+    // ═══════════════════════════════════════════════════════════
+    // Bounds
+    // ═══════════════════════════════════════════════════════════
+
+    /** Bounding box minimum */
+    FVector BoundsMin;
+
+    /** Bounding box maximum */
+    FVector BoundsMax;
+
+    // ═══════════════════════════════════════════════════════════
+    // Metadata
+    // ═══════════════════════════════════════════════════════════
+
+    /** Source FBX file path */
+    FString PathFileName;
+
+    /** Binary cache file path */
+    FString CacheFilePath;
+
+    /** Material flags */
+    bool bHasMaterial = false;
+
+    // ═══════════════════════════════════════════════════════════
+    // Serialization
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Binary serialization operators (for cache I/O)
+     */
+    friend FWindowsBinWriter& operator<<(FWindowsBinWriter& Writer, const FSkeletalMesh& Mesh);
+    friend FWindowsBinReader& operator>>(FWindowsBinReader& Reader, FSkeletalMesh& Mesh);
+};
+```
+
+**Design Notes:**
+
+1. **No UObject Inheritance:** `FSkeletalMesh` is a plain struct (POD-style), not a UObject
+   - Faster construction/destruction
+   - No reflection overhead
+   - Simpler memory management (owned by FFbxManager)
+
+2. **Mirrors FStaticMesh Pattern:** Same architecture as OBJ system
+   - `FStaticMesh` for OBJ files → parsed mesh data
+   - `FSkeletalMesh` for FBX skeletal meshes → parsed mesh + skeleton data
+   - Both owned by their respective managers (FObjManager, FFbxManager)
+
+3. **Skeleton Data Storage:**
+   - `Bones` array stores full bone hierarchy
+   - `BoneNameToIndexMap` can be rebuilt on deserialization (no need to serialize it)
+   - Bone transforms stored in `FBoneInfo` structure
+
+4. **Relationship with USkeletalMesh:**
+   - `FSkeletalMesh` = parsed data (CPU-side, owned by FFbxManager)
+   - `USkeletalMesh` = resource wrapper (UObject, creates GPU buffers, owned by ResourceManager)
+   - `USkeletalMesh` references `FSkeletalMesh*` via pointer (does NOT own it)
+
+**Memory Ownership:**
+```
+FFbxManager
+  └─> TMap<FString, FSkeletalMesh*> (OWNS the parsed data)
+         ↑
+         │ references (does NOT own)
+         │
+USkeletalMesh (UObject wrapper)
+  └─> FSkeletalMesh* SkeletalMeshAsset (pointer to FFbxManager's data)
+  └─> ID3D11Buffer* VertexBuffer (owns GPU buffer)
+  └─> ID3D11Buffer* IndexBuffer (owns GPU buffer)
+```
 
 ### FBX Cache File Format
 
@@ -1496,34 +1955,89 @@ void Test_ShouldRegenerateCache()
 }
 ```
 
-**Test 3: Serialization Round-Trip**
+**Test 3: Static Mesh Serialization Round-Trip**
 ```cpp
-void Test_SerializationRoundTrip()
+void Test_StaticMeshSerializationRoundTrip()
 {
-    // Create test mesh
-    USkeletalMesh* OriginalMesh = CreateTestSkeletalMesh();
+    // Create test Static Mesh
+    FStaticMesh* OriginalMesh = CreateTestStaticMesh();
 
-    // Serialize
-    FWindowsBinWriter Writer("test.bin");
+    // Serialize (uses existing OBJ system operators)
+    FWindowsBinWriter Writer("test_static.bin");
     Writer << *OriginalMesh;
 
     // Deserialize
-    USkeletalMesh* LoadedMesh = NewObject<USkeletalMesh>();
-    FWindowsBinReader Reader("test.bin");
+    FStaticMesh* LoadedMesh = new FStaticMesh();
+    FWindowsBinReader Reader("test_static.bin");
     Reader >> *LoadedMesh;
 
     // Verify
     AssertEqual(OriginalMesh->Vertices.size(), LoadedMesh->Vertices.size());
     AssertEqual(OriginalMesh->Indices.size(), LoadedMesh->Indices.size());
-    AssertEqual(OriginalMesh->Skeleton->Bones.size(), LoadedMesh->Skeleton->Bones.size());
+    AssertEqual(OriginalMesh->Groups.size(), LoadedMesh->Groups.size());
+
+    delete OriginalMesh;
+    delete LoadedMesh;
+}
+```
+
+**Test 4: Skeletal Mesh Serialization Round-Trip**
+```cpp
+void Test_SkeletalMeshSerializationRoundTrip()
+{
+    // Create test Skeletal Mesh (FSkeletalMesh, not USkeletalMesh)
+    FSkeletalMesh* OriginalMesh = CreateTestFSkeletalMesh();
+
+    // Serialize
+    FWindowsBinWriter Writer("test_skeletal.bin");
+    Writer << *OriginalMesh;
+
+    // Deserialize
+    FSkeletalMesh* LoadedMesh = new FSkeletalMesh();
+    FWindowsBinReader Reader("test_skeletal.bin");
+    Reader >> *LoadedMesh;
+
+    // Verify
+    AssertEqual(OriginalMesh->Vertices.size(), LoadedMesh->Vertices.size());
+    AssertEqual(OriginalMesh->Indices.size(), LoadedMesh->Indices.size());
+    AssertEqual(OriginalMesh->Bones.size(), LoadedMesh->Bones.size());  // Bones directly in FSkeletalMesh
+    AssertEqual(OriginalMesh->Materials.size(), LoadedMesh->Materials.size());
+
+    // Verify BoneNameToIndexMap was rebuilt
+    Assert(LoadedMesh->BoneNameToIndexMap.size() == LoadedMesh->Bones.size());
+
+    delete OriginalMesh;
+    delete LoadedMesh;
 }
 ```
 
 ### Integration Tests
 
-**Test 4: End-to-End Import**
+**Test 5: End-to-End Static Mesh FBX Import**
 ```cpp
-void Test_EndToEndImport()
+void Test_EndToEndStaticMeshImport()
+{
+    // First load (cold cache)
+    auto Start1 = GetTime();
+    UStaticMesh* Mesh1 = ResourceManager->Load<UStaticMesh>("Data/Model/Prop.fbx");
+    auto Time1 = GetTime() - Start1;
+
+    Assert(Mesh1 != nullptr);
+    Assert(FileExists("Data/Model/Prop.fbx.bin"));
+
+    // Second load (warm cache)
+    auto Start2 = GetTime();
+    UStaticMesh* Mesh2 = ResourceManager->Load<UStaticMesh>("Data/Model/Prop.fbx");
+    auto Time2 = GetTime() - Start2;
+
+    Assert(Mesh2 == Mesh1);  // Same pointer (memory cache)
+    Assert(Time2 < Time1 / 5);  // At least 5× faster
+}
+```
+
+**Test 6: End-to-End Skeletal Mesh FBX Import**
+```cpp
+void Test_EndToEndSkeletalMeshImport()
 {
     // First load (cold cache)
     auto Start1 = GetTime();
@@ -1543,37 +2057,39 @@ void Test_EndToEndImport()
 }
 ```
 
-**Test 5: Cache Invalidation**
+**Test 7: Cache Invalidation**
 ```cpp
 void Test_CacheInvalidation()
 {
-    // Load and cache
+    // Load and cache (creates FSkeletalMesh* in FFbxManager, USkeletalMesh* in ResourceManager)
     USkeletalMesh* Mesh1 = ResourceManager->Load<USkeletalMesh>("test.fbx");
 
     // Modify source FBX
     Touch("test.fbx");
 
     // Clear memory cache to force disk cache check
-    FFbxManager::Clear();
+    FFbxManager::Clear();        // Clears FSkeletalMesh* cache (deletes FSkeletalMesh objects)
+    ResourceManager->Clear();    // Clears USkeletalMesh* cache
 
     // Reload - should regenerate cache
     USkeletalMesh* Mesh2 = ResourceManager->Load<USkeletalMesh>("test.fbx");
 
     Assert(Mesh2 != nullptr);
     // Verify cache file timestamp is newer than before
+    // Verify new FSkeletalMesh* was created in FFbxManager
 }
 ```
 
-**Test 6: Texture Integration**
+**Test 8: Texture Integration**
 ```cpp
 void Test_TextureConversion()
 {
-    // FBX with PNG texture reference
-    USkeletalMesh* Mesh = ResourceManager->Load<USkeletalMesh>("CharacterWithTexture.fbx");
+    // FBX with PNG texture reference (both Static and Skeletal work the same way)
+    USkeletalMesh* SkeletalMesh = ResourceManager->Load<USkeletalMesh>("CharacterWithTexture.fbx");
 
-    Assert(Mesh->Materials.size() > 0);
+    Assert(SkeletalMesh->Materials.size() > 0);
 
-    FString DiffusePath = Mesh->Materials[0].DiffuseMap;
+    FString DiffusePath = SkeletalMesh->Materials[0].DiffuseMap;
 
     // Should be DDS file
     Assert(DiffusePath.ends_with(".dds"));
@@ -1585,7 +2101,30 @@ void Test_TextureConversion()
 
 ### Performance Tests
 
-**Test 7: Load Time Benchmark**
+**Test 9: Load Time Benchmark (Static Mesh)**
+```cpp
+void Benchmark_StaticMeshLoadTime()
+{
+    // Measure cold load (no cache)
+    DeleteCache("Prop.fbx.bin");
+    auto ColdTime = MeasureLoadTime("Prop.fbx");
+
+    // Measure warm load (with cache)
+    auto WarmTime = MeasureLoadTime("Prop.fbx");
+
+    // Report
+    printf("Static Mesh Cold load: %.2f ms\n", ColdTime);
+    printf("Static Mesh Warm load: %.2f ms\n", WarmTime);
+    printf("Speedup: %.1fx\n", ColdTime / WarmTime);
+
+    // Assert targets
+    Assert(ColdTime < 80.0f);   // Max 80ms for first load (Static Mesh)
+    Assert(WarmTime < 10.0f);   // Max 10ms for cached load
+    Assert(ColdTime / WarmTime > 6.0f);  // At least 6× speedup
+}
+```
+
+**Test 10: Load Time Benchmark (Skeletal Mesh)**
 ```cpp
 void Benchmark_LoadTime()
 {
@@ -1610,35 +2149,60 @@ void Benchmark_LoadTime()
 
 ### Stress Tests
 
-**Test 8: Multiple Meshes**
+**Test 11: Multiple Meshes (Mixed Types)**
 ```cpp
-void Test_MultipleMeshes()
+void Test_MultipleMixedMeshes()
 {
-    TArray<FString> FbxFiles = {
-        "Character1.fbx",
-        "Character2.fbx",
-        "Enemy1.fbx",
+    TArray<FString> StaticMeshFiles = {
         "Prop1.fbx",
-        "Prop2.fbx"
+        "Prop2.fbx",
+        "Environment.fbx"
     };
 
-    // Load all meshes
-    TArray<USkeletalMesh*> Meshes;
-    for (const FString& Path : FbxFiles)
+    TArray<FString> SkeletalMeshFiles = {
+        "Character1.fbx",
+        "Character2.fbx",
+        "Enemy1.fbx"
+    };
+
+    // Load all Static Meshes
+    TArray<UStaticMesh*> StaticMeshes;
+    for (const FString& Path : StaticMeshFiles)
+    {
+        UStaticMesh* Mesh = ResourceManager->Load<UStaticMesh>(Path);
+        Assert(Mesh != nullptr);
+        StaticMeshes.push_back(Mesh);
+    }
+
+    // Load all Skeletal Meshes
+    TArray<USkeletalMesh*> SkeletalMeshes;
+    for (const FString& Path : SkeletalMeshFiles)
     {
         USkeletalMesh* Mesh = ResourceManager->Load<USkeletalMesh>(Path);
         Assert(Mesh != nullptr);
-        Meshes.push_back(Mesh);
+        SkeletalMeshes.push_back(Mesh);
     }
 
-    // Verify all caches exist
-    for (const FString& Path : FbxFiles)
+    // Verify all Static Mesh caches exist
+    for (const FString& Path : StaticMeshFiles)
     {
         Assert(FileExists(Path + ".bin"));
     }
 
-    // Verify memory cache contains all
-    for (const FString& Path : FbxFiles)
+    // Verify all Skeletal Mesh caches exist
+    for (const FString& Path : SkeletalMeshFiles)
+    {
+        Assert(FileExists(Path + ".bin"));
+    }
+
+    // Verify memory caches contain all
+    for (const FString& Path : StaticMeshFiles)
+    {
+        UStaticMesh* Cached = ResourceManager->Load<UStaticMesh>(Path);
+        Assert(Cached != nullptr);
+    }
+
+    for (const FString& Path : SkeletalMeshFiles)
     {
         USkeletalMesh* Cached = ResourceManager->Load<USkeletalMesh>(Path);
         Assert(Cached != nullptr);
@@ -1910,7 +2474,57 @@ UTexture* LoadTexture(const FString& Path)
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0 | 2025-11-11 | Initial implementation plan |
+| 1.0 | 2025-11-11 | Initial implementation plan (Skeletal Mesh only) |
+| 2.0 | 2025-11-11 | **Major Update:** Added Static Mesh support<br>- Updated to reflect dual mesh type support (Static + Skeletal)<br>- Added FBX type detection via `DetectFbxType()`<br>- Split FFbxManager into dual caching system<br>- Added LoadFbxStaticMeshAsset() following FObjManager pattern<br>- Updated all phases to cover both mesh types<br>- Added comprehensive testing for both types<br>- Clarified ownership model (Static: FFbxManager owns FStaticMesh*, Skeletal: FFbxManager owns USkeletalMesh*)<br>- Noted that FStaticMesh serialization already exists from OBJ system |
+| 3.0 | 2025-11-11 | **Critical Architectural Fix:** Corrected Skeletal Mesh caching pattern<br>- **BREAKING CHANGE:** Changed from `TMap<FString, USkeletalMesh*>` to `TMap<FString, FSkeletalMesh*>`<br>- Added `FSkeletalMesh` data structure (pure data container, no UObject overhead)<br>- FFbxManager now owns `FSkeletalMesh*` (parsed data), not `USkeletalMesh*`<br>- USkeletalMesh references `FSkeletalMesh*` via pointer (does not own it)<br>- **Now follows FObjManager pattern exactly for both Static and Skeletal meshes**<br>- Updated serialization to serialize `FSkeletalMesh` (not `USkeletalMesh`)<br>- Updated all cache I/O functions to use `FSkeletalMesh*`<br>- Updated all code examples throughout document<br>- Fixed ownership model: both mesh types now consistent<br>- Added comprehensive FSkeletalMesh structure definition<br>- Updated all testing sections to reflect new architecture |
+
+---
+
+## Summary of Architectural Changes (v3.0)
+
+This document has been updated to fix a critical architectural error in v2.0:
+
+### Critical Fix: Skeletal Mesh Caching Pattern
+
+**Problem in v2.0:** FFbxManager cached `USkeletalMesh*` directly, violating the FObjManager pattern
+
+**Solution in v3.0:** Introduced `FSkeletalMesh` data structure, matching the FObjManager architecture
+
+### Key Changes:
+
+1. **New FSkeletalMesh Data Structure**
+   - Pure data container (no UObject overhead)
+   - Stores vertices, indices, bones, materials, bounds
+   - Serializable to binary cache format
+   - Owned by FFbxManager (deleted on Clear())
+
+2. **Updated FFbxManager Caching**
+   - **Static Mesh:** `TMap<FString, FStaticMesh*> FbxStaticMeshCache` (unchanged)
+   - **Skeletal Mesh:** `TMap<FString, FSkeletalMesh*> FbxSkeletalMeshCache` (**changed from USkeletalMesh**)
+   - Both follow identical FObjManager pattern now
+
+3. **Consistent Ownership Model (Both Mesh Types)**
+   - **Static Mesh FBX:**
+     - FFbxManager owns `FStaticMesh*` (parsed data)
+     - UStaticMesh references `FStaticMesh*` (UObject wrapper, creates GPU buffers)
+     - ResourceManager manages `UStaticMesh*` lifetime
+   - **Skeletal Mesh FBX:**
+     - FFbxManager owns `FSkeletalMesh*` (parsed data)
+     - USkeletalMesh references `FSkeletalMesh*` (UObject wrapper, creates GPU buffers)
+     - ResourceManager manages `USkeletalMesh*` lifetime
+
+4. **Updated Serialization**
+   - `FSkeletalMesh` is serialized to cache (not `USkeletalMesh`)
+   - Bones stored directly in `FSkeletalMesh` structure
+   - `BoneNameToIndexMap` rebuilt on deserialization
+
+5. **Updated Integration**
+   - `USkeletalMesh::Load()` delegates to `FFbxManager::LoadFbxSkeletalMeshAsset()`
+   - Returns `FSkeletalMesh*` (not `USkeletalMesh*`)
+   - USkeletalMesh creates GPU buffers from `FSkeletalMesh` data
+   - No ownership flags needed (clean architecture)
+
+**Architecture Reference:** Both Static and Skeletal Mesh FBX now follow the FObjManager pattern exactly.
 
 ---
 

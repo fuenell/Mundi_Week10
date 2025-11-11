@@ -22,6 +22,12 @@ FFbxImporter::FFbxImporter()
 
 	// IO Settings 생성
 	FbxIOSettings* IOSettings = FbxIOSettings::Create(SdkManager, IOSROOT);
+
+	// 임베디드 텍스처 자동 추출 활성화
+	// Material 시스템에서 텍스처 파일을 로드하려면 .fbm 폴더에 추출 필요
+	// DDS 캐시 검증은 .fbm 텍스처가 아닌 FBX 파일 타임스탬프 기준으로 수행
+	IOSettings->SetBoolProp(IMP_FBX_EXTRACT_EMBEDDED_DATA, true);
+
 	SdkManager->SetIOSettings(IOSettings);
 
 	OutputDebugStringA("[FBX] FFbxImporter initialized successfully\n");
@@ -637,11 +643,12 @@ bool FFbxImporter::ImportStaticMesh(const FString& FilePath, const FFbxImportOpt
 		return false;
 	}
 
-	// 6. 모든 Mesh 데이터 추출 및 병합
+	// 6. 모든 Mesh 데이터 추출 및 병합 (Material 정보 포함)
 	TArray<FNormalVertex> MergedVertices;
 	TArray<uint32> MergedIndices;
-	TArray<FGroupInfo> MergedGroupInfos;
-
+	TArray<int32> MergedPolygonMaterialIndices;  // Polygon별 Material Index
+	TMap<FString, int32> MaterialNameToGlobalIndex;  // Material 이름 → Global Material Index
+	TArray<FString> GlobalMaterialNames;
 	uint32 CurrentVertexOffset = 0;
 
 	for (size_t MeshIdx = 0; MeshIdx < MeshNodes.size(); MeshIdx++)
@@ -652,12 +659,56 @@ bool FFbxImporter::ImportStaticMesh(const FString& FilePath, const FFbxImportOpt
 		if (!Mesh)
 			continue;
 
-		// Mesh 데이터 추출 (StaticMesh용)
-		if (!ExtractStaticMeshData(MeshNode, MergedVertices, MergedIndices, MergedGroupInfos, CurrentVertexOffset))
+		// 임시 데이터 구조
+		TArray<FNormalVertex> TempVertices;
+		TArray<uint32> TempIndices;
+		TArray<int32> TempPolygonMaterialIndices;
+		TArray<FString> TempMaterialNames;
+
+		// Mesh 데이터 추출 (Material 정보 포함)
+		if (!ExtractStaticMeshData(MeshNode, TempVertices, TempIndices, TempPolygonMaterialIndices, TempMaterialNames, CurrentVertexOffset))
 		{
 			UE_LOG("[FBX] Failed to extract static mesh data from node '%s'", MeshNode->GetName());
 			continue;
 		}
+
+		// Vertex 병합
+		MergedVertices.insert(MergedVertices.end(), TempVertices.begin(), TempVertices.end());
+
+		// Index 병합 (Vertex Offset 적용)
+		for (uint32 Idx : TempIndices)
+		{
+			MergedIndices.push_back(Idx + CurrentVertexOffset);
+		}
+
+		// Material 이름을 Global Material Index로 변환
+		for (const FString& LocalMatName : TempMaterialNames)
+		{
+			if (MaterialNameToGlobalIndex.find(LocalMatName) == MaterialNameToGlobalIndex.end())
+			{
+				int32 NewGlobalIndex = static_cast<int32>(GlobalMaterialNames.size());
+				MaterialNameToGlobalIndex[LocalMatName] = NewGlobalIndex;
+				GlobalMaterialNames.push_back(LocalMatName);
+			}
+		}
+
+		// Polygon Material Index 병합 (Local Index → Global Index 변환)
+		for (int32 LocalMatIndex : TempPolygonMaterialIndices)
+		{
+			// Local Material Index를 Material 이름으로 변환
+			if (LocalMatIndex >= 0 && LocalMatIndex < TempMaterialNames.size())
+			{
+				const FString& MatName = TempMaterialNames[LocalMatIndex];
+				int32 GlobalMatIndex = MaterialNameToGlobalIndex[MatName];
+				MergedPolygonMaterialIndices.push_back(GlobalMatIndex);
+			}
+			else
+			{
+				MergedPolygonMaterialIndices.push_back(0); // Default
+			}
+		}
+
+		CurrentVertexOffset += static_cast<uint32>(TempVertices.size());
 	}
 
 	if (MergedVertices.empty() || MergedIndices.empty())
@@ -666,14 +717,89 @@ bool FFbxImporter::ImportStaticMesh(const FString& FilePath, const FFbxImportOpt
 		return false;
 	}
 
-	// 7. 출력 데이터 설정
+	// 7. Material별로 Index Buffer 재배치 및 GroupInfo 생성 (Skeletal Mesh와 동일한 패턴)
+	TArray<FGroupInfo> FinalGroupInfos;
+	TArray<uint32> FinalIndices;
+
+	if (!MergedPolygonMaterialIndices.empty())
+	{
+		// Material별로 Polygon 그룹화
+		TMap<int32, TArray<int32>> MaterialToPolygons;
+		int32 PolygonCount = static_cast<int32>(MergedPolygonMaterialIndices.size());
+
+		for (int32 PolyIndex = 0; PolyIndex < PolygonCount; PolyIndex++)
+		{
+			int32 MatIndex = MergedPolygonMaterialIndices[PolyIndex];
+			MaterialToPolygons[MatIndex].push_back(PolyIndex);
+		}
+
+		// Material별로 Index 재배치
+		uint32 CurrentStartIndex = 0;
+
+		for (auto& Pair : MaterialToPolygons)
+		{
+			int32 MatIndex = Pair.first;
+			const TArray<int32>& Polygons = Pair.second;
+
+			if (Polygons.empty())
+				continue;
+
+			FGroupInfo GroupInfo;
+			GroupInfo.StartIndex = CurrentStartIndex;
+			GroupInfo.IndexCount = static_cast<uint32>(Polygons.size() * 3);
+
+			// Global Material 이름 설정
+			if (MatIndex >= 0 && MatIndex < GlobalMaterialNames.size())
+			{
+				GroupInfo.InitialMaterialName = GlobalMaterialNames[MatIndex];
+				UE_LOG("[FBX] StaticMesh Group %d: Material '%s' (%d polygons)",
+					FinalGroupInfos.size(), GroupInfo.InitialMaterialName.c_str(), Polygons.size());
+			}
+			else
+			{
+				// Default Material 할당
+				UMaterial* DefaultMaterial = UResourceManager::GetInstance().GetDefaultMaterial();
+				GroupInfo.InitialMaterialName = DefaultMaterial->GetMaterialInfo().MaterialName;
+				UE_LOG("[FBX] StaticMesh Group %d: Using default material (%d polygons)",
+					FinalGroupInfos.size(), Polygons.size());
+			}
+
+			// 이 Material의 모든 Polygon Index를 새 버퍼에 추가
+			for (int32 PolyIndex : Polygons)
+			{
+				uint32 PolyStartIdx = PolyIndex * 3;
+				FinalIndices.push_back(MergedIndices[PolyStartIdx + 0]);
+				FinalIndices.push_back(MergedIndices[PolyStartIdx + 1]);
+				FinalIndices.push_back(MergedIndices[PolyStartIdx + 2]);
+			}
+
+			CurrentStartIndex += GroupInfo.IndexCount;
+			FinalGroupInfos.push_back(GroupInfo);
+		}
+	}
+	else
+	{
+		// Material 정보가 없으면 전체를 하나의 그룹으로 (Default Material)
+		FinalIndices = MergedIndices;
+		FGroupInfo GroupInfo;
+		GroupInfo.StartIndex = 0;
+		GroupInfo.IndexCount = static_cast<uint32>(FinalIndices.size());
+
+		UMaterial* DefaultMaterial = UResourceManager::GetInstance().GetDefaultMaterial();
+		GroupInfo.InitialMaterialName = DefaultMaterial->GetMaterialInfo().MaterialName;
+
+		FinalGroupInfos.push_back(GroupInfo);
+		UE_LOG("[FBX] StaticMesh: No material info, using default material for all geometry");
+	}
+
+	// 8. 출력 데이터 설정
 	OutMeshData.PathFileName = FilePath;
 	OutMeshData.Vertices = std::move(MergedVertices);
-	OutMeshData.Indices = std::move(MergedIndices);
-	OutMeshData.GroupInfos = std::move(MergedGroupInfos);
+	OutMeshData.Indices = std::move(FinalIndices);
+	OutMeshData.GroupInfos = std::move(FinalGroupInfos);
 	OutMeshData.bHasMaterial = !OutMeshData.GroupInfos.empty();
 
-	UE_LOG("[FBX] StaticMesh Import Success: %d vertices, %d indices, %d groups",
+	UE_LOG("[FBX] StaticMesh Import Success: %d vertices, %d indices, %d material groups",
 		OutMeshData.Vertices.size(),
 		OutMeshData.Indices.size(),
 		OutMeshData.GroupInfos.size());
@@ -685,7 +811,8 @@ bool FFbxImporter::ExtractStaticMeshData(
 	FbxNode* MeshNode,
 	TArray<FNormalVertex>& OutVertices,
 	TArray<uint32>& OutIndices,
-	TArray<FGroupInfo>& OutGroupInfos,
+	TArray<int32>& OutPolygonMaterialIndices,
+	TArray<FString>& OutMaterialNames,
 	uint32& InOutVertexOffset)
 {
 	if (!MeshNode)
@@ -736,9 +863,23 @@ bool FFbxImporter::ExtractStaticMeshData(
 	// Material Element 가져오기
 	FbxGeometryElementMaterial* MaterialElement = Mesh->GetElementMaterial();
 
+	// Material 이름 추출 (FBX Node의 Material 정보)
+	int32 MaterialCount = MeshNode->GetMaterialCount();
+	OutMaterialNames.clear();
+	for (int32 MatIdx = 0; MatIdx < MaterialCount; MatIdx++)
+	{
+		FbxSurfaceMaterial* Material = MeshNode->GetMaterial(MatIdx);
+		if (Material)
+		{
+			FString MaterialName = Material->GetName();
+			OutMaterialNames.push_back(MaterialName);
+			UE_LOG("[FBX] Material [%d]: %s", MatIdx, MaterialName.c_str());
+		}
+	}
+
 	// Polygon별 Material 인덱스 저장
-	TArray<int32> PolygonMaterialIndices;
-	PolygonMaterialIndices.resize(PolygonCount, 0);
+	OutPolygonMaterialIndices.clear();
+	OutPolygonMaterialIndices.resize(PolygonCount, 0);
 
 	if (MaterialElement)
 	{
@@ -749,7 +890,7 @@ bool FFbxImporter::ExtractStaticMeshData(
 				for (int32 PolyIdx = 0; PolyIdx < PolygonCount; PolyIdx++)
 				{
 					int32 MatIdx = MaterialElement->GetIndexArray().GetAt(PolyIdx);
-					PolygonMaterialIndices[PolyIdx] = MatIdx;
+					OutPolygonMaterialIndices[PolyIdx] = MatIdx;
 				}
 			}
 		}
@@ -758,7 +899,7 @@ bool FFbxImporter::ExtractStaticMeshData(
 			int32 MatIdx = MaterialElement->GetIndexArray().GetAt(0);
 			for (int32 PolyIdx = 0; PolyIdx < PolygonCount; PolyIdx++)
 			{
-				PolygonMaterialIndices[PolyIdx] = MatIdx;
+				OutPolygonMaterialIndices[PolyIdx] = MatIdx;
 			}
 		}
 	}
@@ -859,35 +1000,12 @@ bool FFbxImporter::ExtractStaticMeshData(
 		std::swap(TempIndices[i], TempIndices[i + 2]);  // [0,1,2] → [2,1,0]
 	}
 
-	UE_LOG("[FBX] Extracted %d vertices, %d indices from mesh '%s'",
-		TempVertices.size(), TempIndices.size(), MeshNode->GetName());
+	UE_LOG("[FBX] Extracted %d vertices, %d indices, %d materials from mesh '%s'",
+		TempVertices.size(), TempIndices.size(), OutMaterialNames.size(), MeshNode->GetName());
 
-	// Material별 GroupInfo 생성
-	// TODO: 현재는 단일 Material Group만 지원, 향후 다중 Material 지원 필요
-	if (!TempIndices.empty())
-	{
-		FGroupInfo GroupInfo;
-		GroupInfo.IndexCount = static_cast<uint32>(TempIndices.size());
-		GroupInfo.StartIndex = static_cast<uint32>(OutIndices.size());
-
-		// Assign default Material (following OBJ import pattern)
-		UMaterial* DefaultMaterial = UResourceManager::GetInstance().GetDefaultMaterial();
-		GroupInfo.InitialMaterialName = DefaultMaterial->GetMaterialInfo().MaterialName;
-
-		OutGroupInfos.Add(GroupInfo);
-	}
-
-	// Vertex Offset 조정하여 Index 병합
-	for (uint32 idx : TempIndices)
-	{
-		OutIndices.push_back(idx + InOutVertexOffset);
-	}
-
-	// Vertex 병합
-	OutVertices.insert(OutVertices.end(), TempVertices.begin(), TempVertices.end());
-
-	// Vertex Offset 갱신
-	InOutVertexOffset += static_cast<uint32>(TempVertices.size());
+	// 출력 데이터 설정 (호출자가 병합 처리)
+	OutVertices = std::move(TempVertices);
+	OutIndices = std::move(TempIndices);
 
 	return true;
 }

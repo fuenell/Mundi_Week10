@@ -154,26 +154,91 @@ bool FTextureConverter::ShouldRegenerateDDS(
 {
 	namespace fs = std::filesystem;
 
-	// DDS 캐시 존재 여부 확인
+	// 상대 경로를 절대 경로로 변환 (현재 작업 디렉토리 기준)
+	fs::path CurrentDir = fs::current_path();
 	fs::path SourceFile(UTF8ToWide(SourcePath));
 	fs::path DDSFile(UTF8ToWide(DDSPath));
 
-	if (!fs::exists(DDSFile))
+	// 상대 경로인 경우 절대 경로로 변환
+	if (SourceFile.is_relative())
 	{
+		SourceFile = (CurrentDir / SourceFile).lexically_normal();
+	}
+	if (DDSFile.is_relative())
+	{
+		DDSFile = (CurrentDir / DDSFile).lexically_normal();
+	}
+
+	// .fbm 폴더 텍스처인 경우 FBX 파일 타임스탬프 사용
+	// (FBX SDK가 매번 .fbm 텍스처를 재생성하여 타임스탬프가 갱신되는 문제 방지)
+	fs::path ValidationFile = SourceFile;
+	if (SourceFile.parent_path().extension() == L".fbm")
+	{
+		// "path/to/model.fbm/texture.png" → "path/to/model.fbx"
+		fs::path FbxFile = SourceFile.parent_path();
+		FbxFile.replace_extension(".fbx");
+
+		if (fs::exists(FbxFile))
+		{
+			ValidationFile = FbxFile;
+			UE_LOG("[TextureConverter] .fbm texture detected, using FBX file timestamp: %s",
+			       WideToUTF8(FbxFile.wstring()).c_str());
+		}
+		else
+		{
+			UE_LOG("[TextureConverter] Warning: .fbm texture found but corresponding FBX file does not exist: %s",
+			       WideToUTF8(FbxFile.wstring()).c_str());
+		}
+	}
+
+	UE_LOG("[TextureConverter] Checking DDS cache:");
+	UE_LOG("[TextureConverter]   Source (abs): %s", WideToUTF8(SourceFile.wstring()).c_str());
+	UE_LOG("[TextureConverter]   Validation (abs): %s", WideToUTF8(ValidationFile.wstring()).c_str());
+	UE_LOG("[TextureConverter]   DDS (abs): %s", WideToUTF8(DDSFile.wstring()).c_str());
+
+	// DDS 캐시 존재 여부 확인
+	bool bDDSExists = fs::exists(DDSFile);
+	bool bSourceExists = fs::exists(SourceFile);
+	bool bValidationExists = fs::exists(ValidationFile);
+
+	UE_LOG("[TextureConverter]   DDS exists: %s", bDDSExists ? "YES" : "NO");
+	UE_LOG("[TextureConverter]   Source exists: %s", bSourceExists ? "YES" : "NO");
+	UE_LOG("[TextureConverter]   Validation exists: %s", bValidationExists ? "YES" : "NO");
+
+	if (!bDDSExists)
+	{
+		UE_LOG("[TextureConverter] DDS cache not found, regenerating");
 		return true; // 캐시가 없으면 재생성
 	}
 
-	if (!fs::exists(SourceFile))
+	if (!bSourceExists)
 	{
+		UE_LOG("[TextureConverter] Source texture not found (using existing cache)");
 		return false; // 원본이 없으면 기존 캐시 사용
 	}
 
-	// 타임스탬프 비교
-	auto SourceTime = fs::last_write_time(SourceFile);
+	if (!bValidationExists)
+	{
+		UE_LOG("[TextureConverter] Validation file not found (using existing cache)");
+		return false;
+	}
+
+	// 타임스탬프 비교 (ValidationFile 기준)
+	auto SourceTime = fs::last_write_time(ValidationFile);
 	auto DDSTime = fs::last_write_time(DDSFile);
 
 	// 원본이 캐시보다 최신이면 재생성
-	return SourceTime > DDSTime;
+	bool bNeedsRegeneration = SourceTime > DDSTime;
+	if (bNeedsRegeneration)
+	{
+		UE_LOG("[TextureConverter] Source texture modified, regenerating DDS");
+	}
+	else
+	{
+		UE_LOG("[TextureConverter] Using valid DDS cache");
+	}
+
+	return bNeedsRegeneration;
 }
 
 FString FTextureConverter::GetDDSCachePath(const FString& SourcePath)

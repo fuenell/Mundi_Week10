@@ -4,7 +4,8 @@
 #include "SelectionManager.h"
 #include "FViewport.h"
 #include "PlayerCameraManager.h"
-#include <ObjManager.h>
+#include "ObjManager.h"
+#include "FbxManager.h"
 #include "FAudioDevice.h"
 #include <sol/sol.hpp>
 
@@ -195,6 +196,7 @@ bool UGameEngine::Startup(HINSTANCE hInstance)
     INPUT.Initialize(HWnd);
 
     FObjManager::Preload();
+    FFbxManager::Preload();  // NEW: Preload FBX meshes
 
     RESOURCE.PreloadSkeletalMeshes();
 
@@ -342,6 +344,7 @@ void UGameEngine::Shutdown()
     // because ObjStaticMeshMap is a static member variable that may be destroyed
     // before the global GEngine variable's destructor runs
     FObjManager::Clear();
+    FFbxManager::Clear();  // NEW: Clear FBX cache
 
     // IMPORTANT: Explicitly release Renderer before RHIDevice destructor runs
     // Renderer may hold references to D3D resources

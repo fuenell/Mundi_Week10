@@ -2,6 +2,7 @@
 #include "StaticMesh.h"
 #include "StaticMeshComponent.h"
 #include "ObjManager.h"
+#include "FbxManager.h"
 #include "FbxImporter.h"
 #include "FbxImportOptions.h"
 #include "ResourceManager.h"
@@ -28,51 +29,17 @@ void UStaticMesh::Load(const FString& InFilePath, ID3D11Device* InDevice, EVerte
 
     if (Extension == ".fbx")
     {
-        // TODO: [FBX Baking System] 임시 FBX 로드 방식 - FbxManager 구현 시 변경 필요
-        // 현재: UStaticMesh::Load()에서 직접 FBX Import 후 new FStaticMesh() 소유
-        // 변경 후: FbxManager::LoadFbxStaticMeshAsset(FilePath) 호출하여 캐싱된 FStaticMesh* 참조
-        //         (ObjManager::LoadObjStaticMeshAsset 패턴과 동일하게)
+        // ═══════════════════════════════════════════════════════════
+        // FBX Static Mesh: Delegate to FFbxManager (like OBJ pattern)
+        // ═══════════════════════════════════════════════════════════
+        StaticMeshAsset = FFbxManager::LoadFbxStaticMeshAsset(InFilePath);
+        bOwnsStaticMeshAsset = false;  // FFbxManager owns it (same as FObjManager pattern)
 
-        // FBX 파일 Import
-        UE_LOG("[StaticMesh] Loading FBX file: %s", InFilePath.c_str());
-
-        // FBX Importer 생성
-        FFbxImporter Importer;
-
-        // FBX Type Detection
-        EFbxImportType FbxType = Importer.DetectFbxType(InFilePath);
-
-        if (FbxType != EFbxImportType::StaticMesh)
+        if (!StaticMeshAsset)
         {
-            UE_LOG("[StaticMesh ERROR] FBX file '%s' is not a StaticMesh (detected as SkeletalMesh or Animation)", InFilePath.c_str());
-            UE_LOG("[StaticMesh ERROR] Use USkeletalMesh::Load() instead for skeletal meshes");
+            UE_LOG("[StaticMesh ERROR] FFbxManager failed to load FBX: %s", InFilePath.c_str());
             return;
         }
-
-        // Import Options 설정
-        FFbxImportOptions Options;
-        Options.bConvertScene = true;
-        Options.bConvertSceneUnit = true;
-        Options.bRemoveDegenerates = true;
-        Options.ImportScale = 1.0f;
-
-        // StaticMesh 데이터 구조체 생성
-        StaticMeshAsset = new FStaticMesh();
-        bOwnsStaticMeshAsset = true;  // FBX: UStaticMesh owns the asset
-
-        // FBX Import 수행
-        if (!Importer.ImportStaticMesh(InFilePath, Options, *StaticMeshAsset))
-        {
-            UE_LOG("[StaticMesh ERROR] Failed to import FBX file: %s", Importer.GetLastError().c_str());
-            delete StaticMeshAsset;
-            StaticMeshAsset = nullptr;
-            bOwnsStaticMeshAsset = false;
-            return;
-        }
-
-        UE_LOG("[StaticMesh] FBX Import Success: %d vertices, %d indices",
-            StaticMeshAsset->Vertices.size(),
-            StaticMeshAsset->Indices.size());
     }
     else if (Extension == ".obj")
     {

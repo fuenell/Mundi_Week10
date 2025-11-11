@@ -43,42 +43,19 @@ void USkeletalMeshComponent::SetSkeletalMesh(USkeletalMesh* InSkeletalMesh)
 		if (!MaterialNames.empty())
 		{
 			// 모든 Material을 MaterialSlots에 추가
-			for (const FString& MaterialName : MaterialNames)
+			// Static Mesh Component와 동일한 패턴: SetMaterialByName으로 Load 수행
+			MaterialSlots.resize(MaterialNames.size());
+			for (int i = 0; i < MaterialNames.size(); ++i)
 			{
-				UMaterialInterface* Mat = nullptr;
-
-				if (!MaterialName.empty())
-				{
-					// Material 이름으로 ResourceManager에서 찾기
-					Mat = UResourceManager::GetInstance().Get<UMaterial>(MaterialName);
-				}
-
-				if (!Mat)
-				{
-					// Material을 찾지 못하면 기본 Material 사용
-					Mat = UResourceManager::GetInstance().GetDefaultMaterial();
-				}
-
-				MaterialSlots.push_back(Mat);
+				SetMaterialByName(i, MaterialNames[i]);
 			}
 		}
 		else
 		{
 			// 레거시 지원: MaterialNames가 비어있으면 단일 MaterialName 사용
-			UMaterialInterface* Mat = nullptr;
 			const FString& MaterialName = SkeletalMesh->GetMaterialName();
-
-			if (!MaterialName.empty())
-			{
-				Mat = UResourceManager::GetInstance().Get<UMaterial>(MaterialName);
-			}
-
-			if (!Mat)
-			{
-				Mat = UResourceManager::GetInstance().GetDefaultMaterial();
-			}
-
-			MaterialSlots.push_back(Mat);
+			MaterialSlots.resize(1);
+			SetMaterialByName(0, MaterialName);
 		}
 
 		// Bone Transform 업데이트
