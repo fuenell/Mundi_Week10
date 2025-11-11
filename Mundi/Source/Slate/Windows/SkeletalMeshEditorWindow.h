@@ -5,6 +5,7 @@ class USkeletalMesh;
 class USkeletalMeshViewportWidget;
 class UBoneHierarchyWidget;
 class UBoneDetailWidget;
+class USkeletalMeshEditorLayoutWidget;
 
 /**
  * @brief SkeletalMesh 에디터 윈도우
@@ -74,6 +75,9 @@ private:
 	USkeletalMesh* CurrentSkeletalMesh = nullptr;
 
 	// === Widget들 ===
+
+	// 레이아웃 Widget (3패널 관리)
+	USkeletalMeshEditorLayoutWidget* LayoutWidget = nullptr;
 
 	// 3D Viewport Widget
 	USkeletalMeshViewportWidget* ViewportWidget = nullptr;

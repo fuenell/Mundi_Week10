@@ -1,6 +1,8 @@
 #pragma once
 #include "SkinnedMeshComponent.h"
 
+class UBoneDebugComponent;
+
 /**
  * USkeletalMeshComponent
  * Animation 재생이 가능한 Skeletal Mesh 컴포넌트
@@ -96,6 +98,26 @@ public:
 	 */
 	bool IsCPUSkinningEnabled() const { return bEnableCPUSkinning; }
 
+	// === Bone Debug Visualization ===
+
+	/**
+	 * Bone 디버그 시각화 활성화/비활성화
+	 * @param bShow - true인 경우 Bone을 시각화
+	 */
+	void SetShowBoneDebug(bool bShow);
+
+	/**
+	 * Bone 디버그 시각화 활성화 여부 확인
+	 * @return Bone 디버그 시각화 활성화 여부
+	 */
+	bool IsShowBoneDebug() const;
+
+	/**
+	 * BoneDebugComponent 가져오기
+	 * @return BoneDebugComponent (nullptr 가능)
+	 */
+	UBoneDebugComponent* GetBoneDebugComponent() const { return BoneDebugComponent; }
+
 	void CollectMeshBatches(TArray<FMeshBatchElement>& OutMeshBatchElements, const FSceneView* View) override;
 
 	FAABB GetWorldAABB() const override;
@@ -126,6 +148,11 @@ private:
 
 	// CPU Skinning 활성화 여부
 	bool bEnableCPUSkinning = true;
+
+	// === Bone Debug Visualization ===
+
+	// Bone 디버그 시각화 컴포넌트
+	UBoneDebugComponent* BoneDebugComponent = nullptr;
 
 	// TODO: Animation 관련 멤버 변수들 (Phase 6+)
 	// UAnimSequence* CurrentAnimation = nullptr;

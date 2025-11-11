@@ -120,6 +120,9 @@
     <ClCompile Include="Source\Runtime\Engine\Components\SpotLightComponent.cpp">
       <Filter>Source\Runtime\Engine\Components</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Runtime\Engine\Components\BoneDebugComponent.cpp">
+      <Filter>Source\Runtime\Engine\Components</Filter>
+    </ClCompile>
     <ClCompile Include="Source\Runtime\Engine\Components\BoxComponent.cpp">
       <Filter>Source\Runtime\Engine\Components</Filter>
     </ClCompile>
@@ -536,6 +539,9 @@
     <ClCompile Include="Source\Slate\Widgets\SkeletalMeshViewportWidget.cpp">
       <Filter>Source\Slate\Widgets</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Slate\Widgets\SkeletalMeshEditorLayoutWidget.cpp">
+      <Filter>Source\Slate\Widgets</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
@@ -579,6 +585,9 @@
       <Filter>Source\Runtime\Engine\Components</Filter>
     </ClInclude>
     <ClInclude Include="Source\Runtime\Engine\Components\RotatingMovementComponent.h">
+      <Filter>Source\Runtime\Engine\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Runtime\Engine\Components\BoneDebugComponent.h">
       <Filter>Source\Runtime\Engine\Components</Filter>
     </ClInclude>
     <ClInclude Include="Source\Runtime\Engine\Components\BoxComponent.h">
@@ -1161,6 +1170,9 @@
       <Filter>Source\Slate\Widgets</Filter>
     </ClInclude>
     <ClInclude Include="Source\Slate\Widgets\SkeletalMeshViewportWidget.h">
+      <Filter>Source\Slate\Widgets</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Slate\Widgets\SkeletalMeshEditorLayoutWidget.h">
       <Filter>Source\Slate\Widgets</Filter>
     </ClInclude>
   </ItemGroup>

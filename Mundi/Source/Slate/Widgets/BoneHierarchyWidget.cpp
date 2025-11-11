@@ -121,8 +121,8 @@ void UBoneHierarchyWidget::RenderBoneTree(int32 BoneIndex, USkeleton* Skeleton)
 	// Bone 정보 가져오기
 	const FBoneInfo& BoneInfo = Skeleton->GetBone(BoneIndex);
 
-	// TreeNode 플래그 설정
-	ImGuiTreeNodeFlags Flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick;
+	// TreeNode 플래그 설정 - DefaultOpen 추가로 기본적으로 열린 상태
+	ImGuiTreeNodeFlags Flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick | ImGuiTreeNodeFlags_DefaultOpen;
 
 	// 선택된 Bone이면 Selected 플래그 추가
 	if (SelectedBoneIndex == BoneIndex)

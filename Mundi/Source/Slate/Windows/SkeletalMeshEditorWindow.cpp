@@ -3,6 +3,7 @@
 #include "Widgets/SkeletalMeshViewportWidget.h"
 #include "Widgets/BoneHierarchyWidget.h"
 #include "Widgets/BoneDetailWidget.h"
+#include "Widgets/SkeletalMeshEditorLayoutWidget.h"
 #include "SkeletalMesh.h"
 #include "ImGui/imgui.h"
 
@@ -11,6 +12,7 @@ IMPLEMENT_CLASS(USkeletalMeshEditorWindow)
 USkeletalMeshEditorWindow::USkeletalMeshEditorWindow()
 	: UUIWindow()
 	, CurrentSkeletalMesh(nullptr)
+	, LayoutWidget(nullptr)
 	, ViewportWidget(nullptr)
 	, HierarchyWidget(nullptr)
 	, DetailWidget(nullptr)
@@ -39,7 +41,6 @@ void USkeletalMeshEditorWindow::Initialize()
 	if (ViewportWidget != nullptr)
 	{
 		ViewportWidget->Initialize();
-		AddWidget(ViewportWidget); // UIWindow의 렌더링 시스템 사용
 	}
 
 	// Bone Hierarchy Widget 생성 (우측 상단 - Bone Tree)
@@ -47,7 +48,6 @@ void USkeletalMeshEditorWindow::Initialize()
 	if (HierarchyWidget != nullptr)
 	{
 		HierarchyWidget->Initialize();
-		AddWidget(HierarchyWidget); // UIWindow의 렌더링 시스템 사용
 
 		// Bone 선택 델리게이트 연결
 		HierarchyWidget->OnBoneSelected.AddDynamic(this, &USkeletalMeshEditorWindow::OnBoneSelected);
@@ -58,7 +58,18 @@ void USkeletalMeshEditorWindow::Initialize()
 	if (DetailWidget != nullptr)
 	{
 		DetailWidget->Initialize();
-		AddWidget(DetailWidget); // UIWindow의 렌더링 시스템 사용
+	}
+
+	// Layout Widget 생성 및 설정
+	LayoutWidget = NewObject<USkeletalMeshEditorLayoutWidget>();
+	if (LayoutWidget != nullptr)
+	{
+		LayoutWidget->SetViewportWidget(ViewportWidget);
+		LayoutWidget->SetHierarchyWidget(HierarchyWidget);
+		LayoutWidget->SetDetailWidget(DetailWidget);
+
+		// Layout Widget을 UIWindow에 추가
+		AddWidget(LayoutWidget);
 	}
 }
 
