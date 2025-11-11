@@ -4,6 +4,7 @@
 #include "DDSTextureLoader.h"
 #include "WICTextureLoader.h"
 #include "ObjManager.h"
+#include "FbxManager.h"
 #include "Quad.h"
 #include "MeshBVH.h"
 #include "Enums.h"
@@ -162,71 +163,72 @@ void UResourceManager::SetAudioFiles()
     Sounds = GetAll<USound>();
 }
 
-void UResourceManager::PreloadSkeletalMeshes()
+void UResourceManager::PreloadFbxMeshes()
 {
-	// Data/Model/Fbx 폴더 경로 구성
-	const std::filesystem::path FbxDir = std::filesystem::path(GDataDir) / "Model" / "Fbx";
+	// FFbxManager::Preload()가 이미 호출되어 타입 감지 완료된 상태
+	// FFbxManager의 캐시를 기반으로 타입별로 ResourceManager에 등록
 
-	if (!std::filesystem::exists(FbxDir) || !std::filesystem::is_directory(FbxDir))
+	size_t StaticLoadedCount = 0;
+	size_t SkeletalLoadedCount = 0;
+
+	// ═══════════════════════════════════════════════════════════
+	// 1. Static Mesh FBX 등록
+	// ═══════════════════════════════════════════════════════════
+	TArray<FString> StaticFbxPaths = FFbxManager::GetAllStaticMeshPaths();
+
+	UE_LOG("[ResourceManager] Preloading %zu Static Mesh FBX files...", StaticFbxPaths.size());
+
+	for (const FString& PathStr : StaticFbxPaths)
 	{
-		UE_LOG("[ResourceManager] PreloadSkeletalMeshes: Fbx directory not found: %s", FbxDir.string().c_str());
-		return;
+		// UStaticMesh로 등록 (Resources[ResourceType::StaticMesh])
+		UStaticMesh* Mesh = Load<UStaticMesh>(PathStr);
+
+		if (Mesh)
+		{
+			++StaticLoadedCount;
+			UE_LOG("[ResourceManager] Preload: Loaded Static FBX %s", PathStr.c_str());
+		}
+		else
+		{
+			UE_LOG("[error] Preload: Failed to load Static FBX %s", PathStr.c_str());
+		}
 	}
 
-	size_t LoadedCount = 0;
-	std::unordered_set<FString> ProcessedFiles; // 중복 로딩 방지
+	// ═══════════════════════════════════════════════════════════
+	// 2. Skeletal Mesh FBX 등록
+	// ═══════════════════════════════════════════════════════════
+	TArray<FString> SkeletalFbxPaths = FFbxManager::GetAllSkeletalMeshPaths();
 
-	// FBX Import 옵션 설정 (기본값)
+	UE_LOG("[ResourceManager] Preloading %zu Skeletal Mesh FBX files...", SkeletalFbxPaths.size());
+
+	// FBX Import 옵션 설정 (Skeletal Mesh 전용)
 	FFbxImportOptions DefaultOptions;
 	DefaultOptions.ImportType = EFbxImportType::SkeletalMesh;
 	DefaultOptions.bImportSkeleton = true;
 	DefaultOptions.bConvertScene = true;
 	DefaultOptions.ImportScale = 1.0f;
 
-	// 재귀적으로 .fbx 파일 탐색
-	for (const auto& Entry : std::filesystem::recursive_directory_iterator(FbxDir))
+	for (const FString& PathStr : SkeletalFbxPaths)
 	{
-		if (!Entry.is_regular_file())
-			continue;
+		// USkeletalMesh로 등록 (Resources[ResourceType::SkeletalMesh])
+		USkeletalMesh* Mesh = Load<USkeletalMesh>(PathStr, DefaultOptions);
 
-		const std::filesystem::path& Path = Entry.path();
-		FString Extension = Path.extension().string();
-		std::transform(Extension.begin(), Extension.end(), Extension.begin(),
-			[](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-
-		if (Extension == ".fbx")
+		if (Mesh)
 		{
-			FString PathStr = Path.string();
-
-			// 경로 정규화 (백슬래시 → 슬래시)
-			std::replace(PathStr.begin(), PathStr.end(), '\\', '/');
-
-			// 이미 처리된 파일인지 확인
-			if (ProcessedFiles.find(PathStr) == ProcessedFiles.end())
-			{
-				ProcessedFiles.insert(PathStr);
-
-				// ResourceManager::Load를 통해 로드 (캐싱 자동 처리)
-				USkeletalMesh* Mesh = Load<USkeletalMesh>(PathStr, DefaultOptions);
-
-				if (Mesh)
-				{
-					++LoadedCount;
-					UE_LOG("[ResourceManager] PreloadSkeletalMeshes: Loaded %s", Path.filename().string().c_str());
-				}
-				else
-				{
-					UE_LOG("[error] PreloadSkeletalMeshes: Failed to load %s", PathStr.c_str());
-				}
-			}
+			++SkeletalLoadedCount;
+			UE_LOG("[ResourceManager] Preload: Loaded Skeletal FBX %s", PathStr.c_str());
+		}
+		else
+		{
+			UE_LOG("[error] Preload: Failed to load Skeletal FBX %s", PathStr.c_str());
 		}
 	}
 
 	// SkeletalMeshes 배열 업데이트
 	SetSkeletalMeshes();
 
-	UE_LOG("[ResourceManager] PreloadSkeletalMeshes: Loaded %zu .fbx files from %s",
-		LoadedCount, FbxDir.string().c_str());
+	UE_LOG("[ResourceManager] PreloadFbxMeshes: Loaded %zu Static + %zu Skeletal = %zu total FBX files",
+		StaticLoadedCount, SkeletalLoadedCount, StaticLoadedCount + SkeletalLoadedCount);
 }
 
 

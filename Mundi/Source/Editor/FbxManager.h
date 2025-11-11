@@ -44,6 +44,18 @@ public:
 	 */
 	static void Clear();
 
+	/**
+	 * 캐시된 모든 Static Mesh FBX 경로 반환
+	 * @return Static Mesh FBX 파일 경로 목록
+	 */
+	static TArray<FString> GetAllStaticMeshPaths();
+
+	/**
+	 * 캐시된 모든 Skeletal Mesh FBX 경로 반환
+	 * @return Skeletal Mesh FBX 파일 경로 목록
+	 */
+	static TArray<FString> GetAllSkeletalMeshPaths();
+
 	// ═══════════════════════════════════════════════════════════
 	// Static Mesh 로딩 (FObjManager 패턴 준수)
 	// ═══════════════════════════════════════════════════════════

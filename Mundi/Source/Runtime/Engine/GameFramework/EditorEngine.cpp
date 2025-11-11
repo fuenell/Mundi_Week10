@@ -194,7 +194,7 @@ bool UEditorEngine::Startup(HINSTANCE hInstance)
     FObjManager::Preload();
     FFbxManager::Preload();  // NEW: Preload FBX meshes
 
-    RESOURCE.PreloadSkeletalMeshes();
+    RESOURCE.PreloadFbxMeshes();
 
     FAudioDevice::Preload();
 

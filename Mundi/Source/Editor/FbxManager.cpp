@@ -80,6 +80,32 @@ void FFbxManager::Clear()
 		static_cast<int32>(FbxStaticMeshCache.size()), static_cast<int32>(FbxSkeletalMeshCache.size()));
 }
 
+TArray<FString> FFbxManager::GetAllStaticMeshPaths()
+{
+	TArray<FString> Paths;
+	Paths.reserve(FbxStaticMeshCache.size());
+
+	for (const auto& Pair : FbxStaticMeshCache)
+	{
+		Paths.push_back(Pair.first);
+	}
+
+	return Paths;
+}
+
+TArray<FString> FFbxManager::GetAllSkeletalMeshPaths()
+{
+	TArray<FString> Paths;
+	Paths.reserve(FbxSkeletalMeshCache.size());
+
+	for (const auto& Pair : FbxSkeletalMeshCache)
+	{
+		Paths.push_back(Pair.first);
+	}
+
+	return Paths;
+}
+
 void FFbxManager::Preload()
 {
 	namespace fs = std::filesystem;
