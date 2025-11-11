@@ -48,18 +48,36 @@ void USkeletalMeshViewportWidget::Initialize()
 
     UE_LOG("[SkeletalMeshViewport] Initialize() called");
 
+    // 이미 초기화되었으면 리턴
+    if (PreviewWorld)
+    {
+        UE_LOG("[SkeletalMeshViewport] WARNING: Already initialized! Skipping...");
+        return;
+    }
+
     // === 완전히 새로운 PreviewWorld 생성 (PIE처럼) ===
     PreviewWorld = NewObject<UWorld>();
     if (PreviewWorld)
     {
-        UE_LOG("[SkeletalMeshViewport] PreviewWorld created successfully");
-        // Level만 생성 (Grid/Gizmo 없이)
-        PreviewWorld->CreateLevel();
+        UE_LOG("[SkeletalMeshViewport] PreviewWorld created: World=%p, LightManager=%p",
+            PreviewWorld, PreviewWorld->GetLightManager());
+        UE_LOG("[SkeletalMeshViewport] BEFORE spawning lights - DirLights: %d, AmbientLights: %d",
+            PreviewWorld->GetLightManager()->GetDirectionalLightList().Num(),
+            PreviewWorld->GetLightManager()->GetAmbientLightList().Num());
+
+        // 빈 레벨 생성 (기본 라이트 없이)
+        PreviewWorld->SetLevel(ULevelService::CreateDefaultLevel());
         PreviewWorld->bPie = false; // Tick을 실행하지 않기 위해 false
+
+        // PreviewWorld의 LightManager를 초기화 (다른 World의 라이트가 섞이지 않도록)
+        PreviewWorld->GetLightManager()->ClearAllLightList();
 
         // === RenderSettings에서 Billboard ShowFlag 끄고 Grid ShowFlag 켜기 ===
         PreviewWorld->GetRenderSettings().DisableShowFlag(EEngineShowFlags::SF_Billboard);
         PreviewWorld->GetRenderSettings().EnableShowFlag(EEngineShowFlags::SF_Grid);
+
+        // 디버그: Unlit 모드로 시작 (라이팅 없이 텍스처만 표시)
+        // PreviewWorld->GetRenderSettings().SetViewMode(EViewMode::VMI_Unlit);
 
         // === PreviewCamera 생성 ===
         PreviewCamera = PreviewWorld->SpawnActor<ACameraActor>();
@@ -104,8 +122,8 @@ void USkeletalMeshViewportWidget::Initialize()
             if (LightComp)
             {
                 // 위에서 아래로 비추는 조명 (약간 앞쪽에서)
-                PreviewLight->SetActorRotation(FQuat::MakeFromEulerZYX(FVector(45.0f, 0.0f, 0.0f)));
-                LightComp->SetIntensity(5.0f);  // 강도 증가 (1.0 -> 5.0)
+                PreviewLight->SetActorRotation(FQuat::MakeFromEulerZYX(FVector(0.0f, 90.0f, 0.0f)));
+                LightComp->SetIntensity(1.0f);  // 강도 증가 (1.0)
                 LightComp->SetLightColor(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f));
             }
         }
@@ -117,7 +135,7 @@ void USkeletalMeshViewportWidget::Initialize()
             UAmbientLightComponent* AmbientComp = PreviewAmbientLight->GetLightComponent();
             if (AmbientComp)
             {
-                AmbientComp->SetIntensity(1.0f);  // 강도 증가 (0.3 -> 1.0)
+                AmbientComp->SetIntensity(0.3f);  // 강도 증가 (0.3)
                 AmbientComp->SetLightColor(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f));
             }
         }
@@ -131,6 +149,21 @@ void USkeletalMeshViewportWidget::Initialize()
 
             // 그리드 크기 설정 (작은 뷰포트에 맞게 조정)
             PreviewGrid->CreateGridLines(20, 1.0f, FVector::Zero());  // 20x20 그리드, 1.0 간격
+        }
+
+        // === 초기화 완료 후 라이트 카운트 확인 ===
+        UE_LOG("[SkeletalMeshViewport] PreviewWorld=%p, LightManager=%p",
+            PreviewWorld, PreviewWorld->GetLightManager());
+        UE_LOG("[SkeletalMeshViewport] AFTER spawning all actors - DirLights: %d, AmbientLights: %d",
+            PreviewWorld->GetLightManager()->GetDirectionalLightList().Num(),
+            PreviewWorld->GetLightManager()->GetAmbientLightList().Num());
+
+        // 등록된 라이트의 정보 출력
+        if (PreviewWorld->GetLightManager()->GetAmbientLightList().Num() > 0)
+        {
+            UAmbientLightComponent* Light = PreviewWorld->GetLightManager()->GetAmbientLightList()[0];
+            UE_LOG("[SkeletalMeshViewport] AmbientLight[0] - Component=%p, GetWorld()=%p, Intensity=%.2f",
+                Light, Light->GetWorld(), Light->GetIntensity());
         }
     }
 }
@@ -440,6 +473,9 @@ bool USkeletalMeshViewportWidget::RenderPreviewWorldToRTV(int32 Width, int32 Hei
         SceneView.bUseExternalRenderTarget = true;
 
         // **핵심**: PreviewWorld만 렌더링 (메인 World가 아님!)
+        // 렌더링 직전에 PreviewWorld의 LightManager를 강제로 업데이트 (메인 World가 덮어쓴 LightBuffer 복구)
+        PreviewWorld->GetLightManager()->SetDirtyFlag();
+
         Renderer->RenderSceneForView(PreviewWorld, &SceneView, nullptr);
     }
 

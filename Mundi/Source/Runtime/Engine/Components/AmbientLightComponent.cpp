@@ -29,7 +29,10 @@ void UAmbientLightComponent::UpdateLightData()
 {
 	Super::UpdateLightData();
 	// 환경광 특화 업데이트 로직
-	GWorld->GetLightManager()->UpdateLight(this);
+	if (UWorld* World = GetWorld())
+	{
+		World->GetLightManager()->UpdateLight(this);
+	}
 }
 
 void UAmbientLightComponent::OnTransformUpdated()

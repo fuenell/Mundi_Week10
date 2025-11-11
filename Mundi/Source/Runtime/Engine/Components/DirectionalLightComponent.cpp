@@ -203,6 +203,8 @@ void UDirectionalLightComponent::OnRegister(UWorld* InWorld)
 		UpdateDirectionGizmo();
 	}
 
+	UE_LOG("[DirectionalLightComponent] OnRegister: Registering to World=%p, LightManager=%p",
+		InWorld, InWorld->GetLightManager());
 	InWorld->GetLightManager()->RegisterLight(this);
 }
 
@@ -219,7 +221,10 @@ void UDirectionalLightComponent::UpdateLightData()
 {
 	Super::UpdateLightData();
 	// 방향성 라이트 특화 업데이트 로직
-	GWorld->GetLightManager()->UpdateLight(this);
+	if (UWorld* World = GetWorld())
+	{
+		World->GetLightManager()->UpdateLight(this);
+	}
 	// Update direction gizmo to reflect any changes
 	UpdateDirectionGizmo();
 }
@@ -227,7 +232,10 @@ void UDirectionalLightComponent::UpdateLightData()
 void UDirectionalLightComponent::OnTransformUpdated()
 {
 	Super::OnTransformUpdated();
-	GWorld->GetLightManager()->UpdateLight(this);
+	if (UWorld* World = GetWorld())
+	{
+		World->GetLightManager()->UpdateLight(this);
+	}
 }
 
 void UDirectionalLightComponent::Serialize(const bool bInIsLoading, JSON& InOutHandle)

@@ -89,6 +89,15 @@ void FSceneRenderer::Render()
 		View->RenderSettings->GetViewMode() == EViewMode::VMI_Lit_Gouraud ||
 		View->RenderSettings->GetViewMode() == EViewMode::VMI_Lit_Lambert)
 	{
+		if (View->bUseExternalRenderTarget)
+		{
+			UE_LOG("[SceneRenderer] Rendering Lit Path for External RenderTarget (ViewMode=%d)", (int)View->RenderSettings->GetViewMode());
+			UE_LOG("[SceneRenderer] World=%p, LightManager=%p", World, World->GetLightManager());
+			UE_LOG("[SceneRenderer] LightManager - DirLights: %d, AmbientLights: %d, PointLights: %d",
+				World->GetLightManager()->GetDirectionalLightList().Num(),
+				World->GetLightManager()->GetAmbientLightList().Num(),
+				World->GetLightManager()->GetPointLightList().Num());
+		}
 		World->GetLightManager()->UpdateLightBuffer(RHIDevice);	//라이트 구조체 버퍼 업데이트, 바인딩
 		PerformTileLightCulling();	// 타일 기반 라이트 컬링 수행
 		RenderLitPath();

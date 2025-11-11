@@ -83,13 +83,19 @@ void UPointLightComponent::UpdateLightData()
 {
 	Super::UpdateLightData();
 	// 점광원 특화 업데이트 로직
-	GWorld->GetLightManager()->UpdateLight(this);
+	if (UWorld* World = GetWorld())
+	{
+		World->GetLightManager()->UpdateLight(this);
+	}
 }
 
 void UPointLightComponent::OnTransformUpdated()
 {
 	Super::OnTransformUpdated();
-	GWorld->GetLightManager()->UpdateLight(this);
+	if (UWorld* World = GetWorld())
+	{
+		World->GetLightManager()->UpdateLight(this);
+	}
 }
 
 

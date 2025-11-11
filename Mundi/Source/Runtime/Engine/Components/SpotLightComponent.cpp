@@ -135,7 +135,10 @@ void USpotLightComponent::UpdateLightData()
 	// Cone 각도 유효성 검사 (UI에서 변경된 경우를 대비)
 	ValidateConeAngles();
 
-	GWorld->GetLightManager()->UpdateLight(this);
+	if (UWorld* World = GetWorld())
+	{
+		World->GetLightManager()->UpdateLight(this);
+	}
 
 	// Update direction gizmo to reflect any changes
 	UpdateDirectionGizmo();
@@ -144,7 +147,10 @@ void USpotLightComponent::UpdateLightData()
 void USpotLightComponent::OnTransformUpdated()
 {
 	Super::OnTransformUpdated();
-	GWorld->GetLightManager()->UpdateLight(this);
+	if (UWorld* World = GetWorld())
+	{
+		World->GetLightManager()->UpdateLight(this);
+	}
 }
 
 void USpotLightComponent::OnRegister(UWorld* InWorld)
