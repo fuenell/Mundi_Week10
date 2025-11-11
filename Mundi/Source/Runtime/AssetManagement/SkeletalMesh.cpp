@@ -251,8 +251,29 @@ void USkeletalMesh::Load(const FString& InFilePath, ID3D11Device* InDevice, cons
 
 	UE_LOG("[SkeletalMesh] Loading FBX file: %s", InFilePath.c_str());
 
-	// 1. FBX Importer 생성 및 데이터 Import
+	// 1. FBX Importer 생성
 	FFbxImporter FbxImporter;
+
+	// 2. FBX Type Detection (Phase 0 추가)
+	EFbxImportType FbxType = FbxImporter.DetectFbxType(InFilePath);
+
+	if (FbxType == EFbxImportType::StaticMesh)
+	{
+		UE_LOG("[error] USkeletalMesh::Load failed: FBX file '%s' is a StaticMesh (has no skeleton or skinning)", InFilePath.c_str());
+		UE_LOG("[error] Use UStaticMesh::Load() instead for static meshes");
+		return;
+	}
+
+	if (FbxType == EFbxImportType::Animation)
+	{
+		UE_LOG("[error] USkeletalMesh::Load failed: FBX file '%s' is an Animation file (no mesh data)", InFilePath.c_str());
+		UE_LOG("[error] Animation-only FBX files are not supported yet");
+		return;
+	}
+
+	UE_LOG("[SkeletalMesh] FBX Type confirmed: SkeletalMesh");
+
+	// 3. FBX 데이터 Import
 	FSkeletalMesh MeshData;
 
 	if (!FbxImporter.ImportSkeletalMesh(InFilePath, InOptions, MeshData))

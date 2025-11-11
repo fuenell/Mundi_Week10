@@ -11,6 +11,9 @@
 #include "SkeletalMesh.h"
 #include "Skeleton.h"
 #include "SkeletalMeshActor.h"
+#include "StaticMesh.h"
+#include "StaticMeshActor.h"
+#include "StaticMeshComponent.h"
 #include <commdlg.h>
 #include <random>
 
@@ -566,71 +569,145 @@ void UMainToolbarWidget::OnImportFBX()
 
     try
     {
-        // Import 옵션 설정
-        FFbxImportOptions Options;
-        Options.ImportType = EFbxImportType::SkeletalMesh;
-        Options.bImportSkeleton = true;
-        Options.bConvertScene = true;
-        Options.ImportScale = 1.0f;
-
         // 파일 경로
         FString PathStr = SelectedPath.string();
 
-        // 캐시 확인 (PreLoad된 경우 여기서 nullptr이 아님)
-        USkeletalMesh* CachedMesh = UResourceManager::GetInstance().Get<USkeletalMesh>(PathStr);
-        bool bWasCached = (CachedMesh != nullptr);
+        // ──────────────────────────────────────────────────────
+        // 1. FBX 타입 자동 감지 (Phase 0)
+        // ──────────────────────────────────────────────────────
+        FFbxImporter TypeDetector;
+        EFbxImportType FbxType = TypeDetector.DetectFbxType(PathStr);
 
-        // ResourceManager를 통해 SkeletalMesh 로드
-        // - 이미 PreLoad된 경우: 캐시에서 즉시 반환 (FBX Import 스킵)
-        // - 새 파일인 경우: FBX Import 후 캐시에 저장
-        USkeletalMesh* ImportedMesh = UResourceManager::GetInstance().Load<USkeletalMesh>(PathStr, Options);
-
-        if (!ImportedMesh)
+        if (FbxType == EFbxImportType::Animation)
         {
-            UE_LOG("[error] MainToolbar: Failed to load SkeletalMesh from FBX");
+            UE_LOG("[error] MainToolbar: Animation-only FBX files are not supported yet");
             return;
         }
 
-        // 로그 출력
-        if (bWasCached)
-        {
-            UE_LOG("MainToolbar: Using cached SkeletalMesh (PreLoaded): %s", SelectedPath.filename().generic_u8string().c_str());
-        }
-        else
-        {
-            UE_LOG("MainToolbar: Imported new SkeletalMesh: %s", SelectedPath.filename().generic_u8string().c_str());
-        }
+        // Import 옵션 설정
+        FFbxImportOptions Options;
+        Options.bConvertScene = true;
+        Options.bConvertSceneUnit = true;
+        Options.bRemoveDegenerates = true;
+        Options.ImportScale = 1.0f;
 
-        // Scene에 SkeletalMeshActor 생성
-        if (GWorld)
+        // ──────────────────────────────────────────────────────
+        // 2. 타입에 따라 분기 처리
+        // ──────────────────────────────────────────────────────
+
+        if (FbxType == EFbxImportType::StaticMesh)
         {
-            ASkeletalMeshActor* NewActor = GWorld->SpawnActor<ASkeletalMeshActor>();
-            if (NewActor)
+            // ═══════════════════════════════════════════════════
+            // StaticMesh 경로
+            // ═══════════════════════════════════════════════════
+
+            UE_LOG("MainToolbar: Detected StaticMesh FBX, importing as UStaticMesh...");
+
+            // ResourceManager를 통해 StaticMesh 로드 (Device는 ResourceManager가 자동으로 전달)
+            UStaticMesh* ImportedMesh = UResourceManager::GetInstance().Load<UStaticMesh>(PathStr);
+
+            if (!ImportedMesh)
             {
-                // Import된 Mesh 설정
-                NewActor->SetSkeletalMesh(ImportedMesh);
+                UE_LOG("[error] MainToolbar: Failed to load StaticMesh from FBX");
+                return;
+            }
 
-                // 고유 이름 생성 (파일명 사용)
-                FString MeshName = SelectedPath.stem().string();
-                FString ActorName = GWorld->GenerateUniqueActorName(MeshName);
-                NewActor->ObjectName = FName(ActorName);
+            UE_LOG("MainToolbar: Imported StaticMesh: %s", SelectedPath.filename().generic_u8string().c_str());
 
-                // 카메라 앞쪽에 배치
-                ACameraActor* Camera = GWorld->GetEditorCameraActor();
-                if (Camera)
+            // Scene에 StaticMeshActor 생성
+            if (GWorld)
+            {
+                AStaticMeshActor* NewActor = GWorld->SpawnActor<AStaticMeshActor>();
+                if (NewActor)
                 {
-                    FVector cameraPos = Camera->GetActorLocation();
-                    FVector cameraForward = Camera->GetForward();
+                    // Import된 Mesh 설정 (Component를 통해)
+                    if (UStaticMeshComponent* MeshComp = NewActor->GetStaticMeshComponent())
+                    {
+                        MeshComp->SetStaticMesh(PathStr);
+                    }
 
-                    // 카메라 앞쪽 10 유닛 위치에 스폰
-                    FVector spawnPos = cameraPos + cameraForward * 10.0f;
-                    NewActor->SetActorLocation(spawnPos);
+                    // 고유 이름 생성 (파일명 사용)
+                    FString MeshName = SelectedPath.stem().string();
+                    FString ActorName = GWorld->GenerateUniqueActorName(MeshName);
+                    NewActor->ObjectName = FName(ActorName);
+
+                    // 카메라 앞쪽에 배치
+                    ACameraActor* Camera = GWorld->GetEditorCameraActor();
+                    if (Camera)
+                    {
+                        FVector cameraPos = Camera->GetActorLocation();
+                        FVector cameraForward = Camera->GetForward();
+                        FVector spawnPos = cameraPos + cameraForward * 10.0f;
+                        NewActor->SetActorLocation(spawnPos);
+                    }
+
+                    // 생성된 액터를 선택 상태로 만들기
+                    HandleActorSelection(NewActor);
+
+                    UE_LOG("MainToolbar: Created StaticMeshActor '%s' with imported FBX mesh", ActorName.c_str());
                 }
+            }
+        }
+        else if (FbxType == EFbxImportType::SkeletalMesh)
+        {
+            // ═══════════════════════════════════════════════════
+            // SkeletalMesh 경로 (기존 코드)
+            // ═══════════════════════════════════════════════════
 
-                // 생성된 액터를 선택 상태로 만들기
-                HandleActorSelection(NewActor);
+            UE_LOG("MainToolbar: Detected SkeletalMesh FBX, importing as USkeletalMesh...");
 
-                UE_LOG("MainToolbar: Created SkeletalMeshActor '%s' with imported FBX mesh", ActorName.c_str());
+            // 캐시 확인
+            USkeletalMesh* CachedMesh = UResourceManager::GetInstance().Get<USkeletalMesh>(PathStr);
+            bool bWasCached = (CachedMesh != nullptr);
+
+            // ResourceManager를 통해 SkeletalMesh 로드
+            USkeletalMesh* ImportedMesh = UResourceManager::GetInstance().Load<USkeletalMesh>(PathStr, Options);
+
+            if (!ImportedMesh)
+            {
+                UE_LOG("[error] MainToolbar: Failed to load SkeletalMesh from FBX");
+                return;
+            }
+
+            // 로그 출력
+            if (bWasCached)
+            {
+                UE_LOG("MainToolbar: Using cached SkeletalMesh (PreLoaded): %s", SelectedPath.filename().generic_u8string().c_str());
+            }
+            else
+            {
+                UE_LOG("MainToolbar: Imported new SkeletalMesh: %s", SelectedPath.filename().generic_u8string().c_str());
+            }
+
+            // Scene에 SkeletalMeshActor 생성
+            if (GWorld)
+            {
+                ASkeletalMeshActor* NewActor = GWorld->SpawnActor<ASkeletalMeshActor>();
+                if (NewActor)
+                {
+                    // Import된 Mesh 설정
+                    NewActor->SetSkeletalMesh(ImportedMesh);
+
+                    // 고유 이름 생성 (파일명 사용)
+                    FString MeshName = SelectedPath.stem().string();
+                    FString ActorName = GWorld->GenerateUniqueActorName(MeshName);
+                    NewActor->ObjectName = FName(ActorName);
+
+                    // 카메라 앞쪽에 배치
+                    ACameraActor* Camera = GWorld->GetEditorCameraActor();
+                    if (Camera)
+                    {
+                        FVector cameraPos = Camera->GetActorLocation();
+                        FVector cameraForward = Camera->GetForward();
+                        FVector spawnPos = cameraPos + cameraForward * 10.0f;
+                        NewActor->SetActorLocation(spawnPos);
+                    }
+
+                    // 생성된 액터를 선택 상태로 만들기
+                    HandleActorSelection(NewActor);
+
+                    UE_LOG("MainToolbar: Created SkeletalMeshActor '%s' with imported FBX mesh", ActorName.c_str());
+                }
             }
         }
     }
