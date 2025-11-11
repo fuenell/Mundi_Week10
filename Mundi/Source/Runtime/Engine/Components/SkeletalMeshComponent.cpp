@@ -109,11 +109,105 @@ void USkeletalMeshComponent::TickComponent(float DeltaTime)
 		return;
 	}
 
-	// Bone Transform 업데이트 (필요시)
-	if (bNeedsBoneTransformUpdate)
+	// === TEST: Root 본 회전 애니메이션 ===
+	// 최상위 본을 Y축 기준으로 한 바퀴 계속 회전
+	static float TestAnimationTime = 0.0f;
+	TestAnimationTime += DeltaTime;
+
+	USkeleton* Skeleton = GetSkeleton();
+	if (Skeleton && Skeleton->GetBoneCount() > 0)
 	{
-		UpdateBoneTransforms();
+		// Root 본 (인덱스 0)을 회전
+		int32 TestBoneIndex = 0;
+
+		// 한 바퀴 계속 회전 (360도)
+		float RotationRad = TestAnimationTime * 2.0f;  // 초당 2 라디안 회전 (약 114도/초)
+
+		// Z축 회전 행렬 생성 (Z-up 좌표계에서 수직축 기준 회전)
+		FMatrix RotationMatrix = FMatrix::Identity();
+		float cosA = cosf(RotationRad);
+		float sinA = sinf(RotationRad);
+
+		// Z축 회전 (Right-handed, Z-up)
+		// XY 평면에서 회전, Z축은 변하지 않음
+		RotationMatrix.M[0][0] = cosA;   // X' = X*cos - Y*sin
+		RotationMatrix.M[0][1] = -sinA;  // (회전된 X의 Y 성분)
+		RotationMatrix.M[1][0] = sinA;   // Y' = X*sin + Y*cos
+		RotationMatrix.M[1][1] = cosA;   // (회전된 Y의 Y 성분)
+		// M[2][2] = 1.0 (Identity에서 이미 설정됨)
+
+		// 모든 본을 재귀적으로 업데이트 (Root부터)
+		std::function<void(int32, const FMatrix&)> UpdateBoneRecursive;
+		UpdateBoneRecursive = [&](int32 BoneIndex, const FMatrix& ParentAnimatedTransform)
+		{
+			if (BoneIndex < 0 || BoneIndex >= Skeleton->GetBoneCount())
+				return;
+
+			const FBoneInfo& CurrentBoneInfo = Skeleton->GetBone(BoneIndex);
+			FMatrix CurrentAnimatedTransform;
+
+			// 부모가 있으면 LocalTransform 계산
+			int32 ParentIdx = CurrentBoneInfo.ParentIndex;
+			if (ParentIdx >= 0 && ParentIdx < Skeleton->GetBoneCount())
+			{
+				const FBoneInfo& ParentBoneInfo = Skeleton->GetBone(ParentIdx);
+
+				// LocalTransform = InverseParentGlobal × ChildGlobal
+				//FMatrix LocalTransform = ParentBoneInfo.GlobalBindPoseMatrix.Inverse() * CurrentBoneInfo.GlobalBindPoseMatrix;
+
+				FMatrix LocalTransform =  CurrentBoneInfo.GlobalBindPoseMatrix;
+				// 테스트 본인 경우: LocalTransform에 회전 추가 적용
+				if (BoneIndex == TestBoneIndex)
+				{
+					LocalTransform = RotationMatrix * LocalTransform;
+				}
+
+				// CurrentAnimated = ParentAnimated × Local
+				CurrentAnimatedTransform = ParentAnimatedTransform * LocalTransform;
+			}
+			else
+			{
+				// Root 본
+				if (BoneIndex == TestBoneIndex)
+				{
+					// Root가 테스트 본이면 회전 적용
+					CurrentAnimatedTransform = RotationMatrix * CurrentBoneInfo.GlobalBindPoseMatrix;
+				}
+				else
+				{
+					// 일반 Root: GlobalBindPose 사용
+					CurrentAnimatedTransform = CurrentBoneInfo.GlobalBindPoseMatrix;
+				}
+			}
+
+			// BoneMatrix 업데이트
+			if (BoneIndex < BoneMatrices.size())
+			{
+				BoneMatrices[BoneIndex] = CurrentBoneInfo.InverseBindPoseMatrix * CurrentAnimatedTransform;
+			}
+
+			// 모든 자식 본 재귀 업데이트
+			TArray<int32> ChildBones = Skeleton->GetChildBones(BoneIndex);
+			for (int32 ChildIndex : ChildBones)
+			{
+				UpdateBoneRecursive(ChildIndex, CurrentAnimatedTransform);
+			}
+		};
+
+		// Root 본부터 시작하여 전체 계층구조 업데이트
+		int32 RootBoneIndex = Skeleton->GetRootBoneIndex();
+		if (RootBoneIndex >= 0)
+		{
+			UpdateBoneRecursive(RootBoneIndex, FMatrix::Identity());
+		}
 	}
+	// === END TEST ===
+
+	// Bone Transform 업데이트는 위에서 수동으로 했으므로 스킵
+	// if (bNeedsBoneTransformUpdate)
+	// {
+	// 	UpdateBoneTransforms();
+	// }
 
 	// CPU Skinning 수행
 	PerformCPUSkinning();
