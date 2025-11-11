@@ -216,15 +216,16 @@ public:
 	 */
 	const FString& GetLastError() const { return LastErrorMessage; }
 
-private:
-	// === FBX SDK 관리 ===
-
 	/**
 	 * FBX Scene을 파일에서 로드
+	 * FFbxManager에서 Material 재등록을 위해 public으로 노출
 	 * @param FilePath - FBX 파일 경로
 	 * @return 성공 여부
 	 */
 	bool LoadScene(const FString& FilePath);
+
+private:
+	// === FBX SDK 관리 ===
 
 	/**
 	 * FBX Scene을 Mundi 좌표계로 변환

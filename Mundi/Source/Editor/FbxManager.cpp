@@ -189,6 +189,36 @@ FStaticMesh* FFbxManager::LoadFbxStaticMeshAsset(const FString& PathFileName)
 	if (bCacheValid && LoadStaticMeshFromCache(CachePath, Mesh))
 	{
 		UE_LOG("FFbxManager: Loaded Static Mesh FBX from cache: %s", PathFileName.c_str());
+
+		// ═══════════════════════════════════════════════════════════
+		// CRITICAL FIX: 캐시 로드 후 Material 재등록
+		// ═══════════════════════════════════════════════════════════
+		// 캐시에서 Mesh 지오메트리는 로드했지만, Material은 ResourceManager에 등록되지 않음
+		// FBX Scene을 다시 열어서 Material만 추출 및 등록 (Mesh 파싱은 스킵)
+		FFbxImporter Importer;
+		if (Importer.LoadScene(PathFileName))
+		{
+			USkeletalMesh* TempUSkeletalMesh = ObjectFactory::NewObject<USkeletalMesh>();
+			if (Importer.ExtractMaterialsFromScene(TempUSkeletalMesh))
+			{
+				const TArray<FString>& ExtractedMaterialNames = TempUSkeletalMesh->GetMaterialNames();
+				UE_LOG("FFbxManager: Re-registered %d materials from cached Static Mesh FBX",
+					ExtractedMaterialNames.size());
+
+				// Material 이름을 GroupInfos에 복사 (첫 Baking 때와 동일)
+				for (size_t i = 0; i < Mesh->GroupInfos.size() && i < ExtractedMaterialNames.size(); ++i)
+				{
+					Mesh->GroupInfos[i].InitialMaterialName = ExtractedMaterialNames[i];
+				}
+			}
+			ObjectFactory::DeleteObject(TempUSkeletalMesh);
+		}
+		else
+		{
+			UE_LOG("[warning] FFbxManager: Failed to re-open FBX Scene for Material registration: %s",
+				PathFileName.c_str());
+		}
+
 		FbxStaticMeshCache[PathFileName] = Mesh;
 		return Mesh;
 	}
@@ -275,6 +305,31 @@ FSkeletalMesh* FFbxManager::LoadFbxSkeletalMeshAsset(const FString& PathFileName
 	if (bCacheValid && LoadSkeletalMeshFromCache(CachePath, Mesh))
 	{
 		UE_LOG("FFbxManager: Loaded Skeletal Mesh FBX from cache: %s", PathFileName.c_str());
+
+		// ═══════════════════════════════════════════════════════════
+		// CRITICAL FIX: 캐시 로드 후 Material 재등록
+		// ═══════════════════════════════════════════════════════════
+		// 캐시에서 Mesh 지오메트리는 로드했지만, Material은 ResourceManager에 등록되지 않음
+		// FBX Scene을 다시 열어서 Material만 추출 및 등록 (Mesh 파싱은 스킵)
+		FFbxImporter Importer;
+		if (Importer.LoadScene(PathFileName))
+		{
+			USkeletalMesh* TempUSkeletalMesh = ObjectFactory::NewObject<USkeletalMesh>();
+			if (Importer.ExtractMaterialsFromScene(TempUSkeletalMesh))
+			{
+				// Material 이름을 FSkeletalMesh에 복사 (첫 Baking 때와 동일)
+				Mesh->MaterialNames = TempUSkeletalMesh->GetMaterialNames();
+				UE_LOG("FFbxManager: Re-registered %d materials from cached Skeletal Mesh FBX",
+					Mesh->MaterialNames.size());
+			}
+			ObjectFactory::DeleteObject(TempUSkeletalMesh);
+		}
+		else
+		{
+			UE_LOG("[warning] FFbxManager: Failed to re-open FBX Scene for Material registration: %s",
+				PathFileName.c_str());
+		}
+
 		FbxSkeletalMeshCache[PathFileName] = Mesh;
 		return Mesh;
 	}
