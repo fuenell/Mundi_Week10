@@ -48,48 +48,37 @@ void USkeletalMeshComponent::SetSkeletalMesh(USkeletalMesh* InSkeletalMesh)
 	MaterialSlots.Empty();
 	if (SkeletalMesh)
 	{
-		// 다중 Material 지원: SkeletalMesh의 모든 Material 로드
-		const TArray<FString>& MaterialNames = SkeletalMesh->GetMaterialNames();
+		// Static Mesh Component와 동일한 패턴: GroupInfos 기반 Material 자동 설정
+		const TArray<FGroupInfo>& GroupInfos = SkeletalMesh->GetMeshGroupInfo();
 
-		if (!MaterialNames.empty())
+		if (!GroupInfos.empty())
 		{
-			// 모든 Material을 MaterialSlots에 추가
-			for (const FString& MaterialName : MaterialNames)
+			// GroupInfos에서 Material 로드 (StaticMeshComponent와 동일한 방식)
+			MaterialSlots.resize(GroupInfos.size());
+			for (int i = 0; i < GroupInfos.size(); ++i)
 			{
-				UMaterialInterface* Mat = nullptr;
-
-				if (!MaterialName.empty())
-				{
-					// Material 이름으로 ResourceManager에서 찾기
-					Mat = UResourceManager::GetInstance().Get<UMaterial>(MaterialName);
-				}
-
-				if (!Mat)
-				{
-					// Material을 찾지 못하면 기본 Material 사용
-					Mat = UResourceManager::GetInstance().GetDefaultMaterial();
-				}
-
-				MaterialSlots.push_back(Mat);
+				SetMaterialByName(i, GroupInfos[i].InitialMaterialName);
 			}
 		}
 		else
 		{
-			// 레거시 지원: MaterialNames가 비어있으면 단일 MaterialName 사용
-			UMaterialInterface* Mat = nullptr;
-			const FString& MaterialName = SkeletalMesh->GetMaterialName();
-
-			if (!MaterialName.empty())
+			// 레거시 지원: GroupInfos가 비어있으면 MaterialNames 배열 사용
+			const TArray<FString>& MaterialNames = SkeletalMesh->GetMaterialNames();
+			if (!MaterialNames.empty())
 			{
-				Mat = UResourceManager::GetInstance().Get<UMaterial>(MaterialName);
+				MaterialSlots.resize(MaterialNames.size());
+				for (int i = 0; i < MaterialNames.size(); ++i)
+				{
+					SetMaterialByName(i, MaterialNames[i]);
+				}
 			}
-
-			if (!Mat)
+			else
 			{
-				Mat = UResourceManager::GetInstance().GetDefaultMaterial();
+				// 최종 레거시 지원: 단일 MaterialName 사용
+				const FString& MaterialName = SkeletalMesh->GetMaterialName();
+				MaterialSlots.resize(1);
+				SetMaterialByName(0, MaterialName);
 			}
-
-			MaterialSlots.push_back(Mat);
 		}
 
 		// Bone Transform 업데이트

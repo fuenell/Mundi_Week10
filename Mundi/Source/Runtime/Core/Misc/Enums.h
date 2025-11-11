@@ -287,6 +287,7 @@ enum class ResourceType : uint8
     None,
 
     StaticMesh,
+    SkeletalMesh,  // For FBX skeletal meshes
     Quad,
     DynamicMesh,
     Shader,

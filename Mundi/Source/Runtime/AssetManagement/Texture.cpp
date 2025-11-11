@@ -38,6 +38,8 @@ void UTexture::Load(const FString& InFilePath, ID3D11Device* InDevice, bool bSRG
 		if (Extension != ".dds")
 		{
 			FString DDSCachePath = FTextureConverter::GetDDSCachePath(InFilePath);
+			UE_LOG("[UTexture] Source texture path: %s", InFilePath.c_str());
+			UE_LOG("[UTexture] DDS cache path: %s", DDSCachePath.c_str());
 
 			// 캐시 유효성 검사
 			if (FTextureConverter::ShouldRegenerateDDS(InFilePath, DDSCachePath))
