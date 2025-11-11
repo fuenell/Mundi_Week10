@@ -818,12 +818,18 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, FSkeletalMesh& OutMeshData
 	OutMeshData.PolygonMaterialIndices = std::move(polygonMaterialIndices);
 	OutMeshData.MaterialNames = std::move(materialNames);
 
-	// STATIC MESH 처리: Skeleton이 없는 경우 Unreal Engine 방식 적용
+	// STATIC MESH 처리: 이 메쉬가 Skin Deformer를 가지고 있지 않은 경우 Transform 적용
 	// Skeletal Mesh는 ExtractSkinWeights()에서 변환되므로 여기서는 건너뜀
 	// Skeleton 변수는 함수 시작 부분에서 이미 선언됨
-	if (!Skeleton || Skeleton->GetBoneCount() == 0)
+
+	// 이 메쉬가 Skin Deformer를 가지고 있는지 확인
+	int32 DeformerCount = FbxMesh->GetDeformerCount(FbxDeformer::eSkin);
+	bool bHasSkinDeformer = (DeformerCount > 0);
+
+	// Skin Deformer가 없으면 Static Mesh로 처리 (Transform 직접 적용)
+	if (!bHasSkinDeformer)
 	{
-		UE_LOG("[FBX] No skeleton detected - applying Static Mesh transform (Unreal Engine style)");
+		UE_LOG("[FBX] Mesh '%s' has no skin deformer - applying Static Mesh transform", MeshNodePtr->GetName());
 
 		// UNREAL ENGINE 방식: ComputeTotalMatrix() 구현
 		// bTransformVertexToAbsolute = true (Static Mesh 기본값)
@@ -939,10 +945,68 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* Mesh, FSkeletalMesh& OutMeshData)
 	FbxVector4 GeoScaling = MeshNode->GetGeometricScaling(FbxNode::eSourcePivot);
 	FbxAMatrix GeometryTransform(GeoTranslation, GeoRotation, GeoScaling);
 
+	UE_LOG("[FBX] Mesh: %s", MeshNode->GetName());
 	UE_LOG("[FBX] Geometry Transform - T:(%.3f, %.3f, %.3f) R:(%.3f, %.3f, %.3f) S:(%.3f, %.3f, %.3f)",
 		GeoTranslation[0], GeoTranslation[1], GeoTranslation[2],
 		GeoRotation[0], GeoRotation[1], GeoRotation[2],
 		GeoScaling[0], GeoScaling[1], GeoScaling[2]);
+
+	// CRITICAL FIX: 각 메쉬의 Global Transform을 직접 계산
+	// Cluster의 TransformMatrix를 사용하지 않고, 메쉬 노드에서 직접 가져옴
+	// 이렇게 해야 여러 메쉬(body, sphere, sphere001)가 각자의 올바른 위치에 렌더링됨
+	FbxAMatrix MeshGlobalTransform = Scene->GetAnimationEvaluator()->GetNodeGlobalTransform(MeshNode);
+	FbxAMatrix TotalTransform = MeshGlobalTransform * GeometryTransform;
+
+	UE_LOG("[FBX] Mesh Global Transform - T:(%.3f, %.3f, %.3f) R:(%.3f, %.3f, %.3f) S:(%.3f, %.3f, %.3f)",
+		MeshGlobalTransform.GetT()[0], MeshGlobalTransform.GetT()[1], MeshGlobalTransform.GetT()[2],
+		MeshGlobalTransform.GetR()[0], MeshGlobalTransform.GetR()[1], MeshGlobalTransform.GetR()[2],
+		MeshGlobalTransform.GetS()[0], MeshGlobalTransform.GetS()[1], MeshGlobalTransform.GetS()[2]);
+
+	// Normal/Tangent용 Transform (Inverse Transpose)
+	FbxAMatrix NormalTransform = TotalTransform;
+	NormalTransform.SetT(FbxVector4(0, 0, 0, 0));
+
+	// 이 메쉬의 모든 Vertex를 Mesh Global Space로 변환
+	UE_LOG("[FBX] Transforming vertices to Mesh Global Space");
+	TArray<FSkinnedVertex>& Vertices = OutMeshData.Vertices;
+
+	for (auto& Vertex : Vertices)
+	{
+		// Position 변환 (FBX Transform 적용 후 ConvertFbxPosition으로 Y축 반전)
+		FbxVector4 FbxPos;
+		FbxPos.Set(Vertex.Position.X, Vertex.Position.Y, Vertex.Position.Z, 1.0);
+		FbxVector4 TransformedPos = TotalTransform.MultT(FbxPos);
+		Vertex.Position = ConvertFbxPosition(TransformedPos);
+
+		// Normal 변환 (FBX Transform 적용 후 ConvertFbxDirection으로 Y축 반전)
+		FbxVector4 FbxNormal;
+		FbxNormal.Set(Vertex.Normal.X, Vertex.Normal.Y, Vertex.Normal.Z, 0.0);
+		FbxVector4 TransformedNormal = NormalTransform.MultT(FbxNormal);
+		Vertex.Normal = ConvertFbxDirection(TransformedNormal);
+
+		// Tangent 변환 (FBX Transform 적용 후 ConvertFbxDirection으로 Y축 반전)
+		FbxVector4 FbxTangent;
+		FbxTangent.Set(Vertex.Tangent.X, Vertex.Tangent.Y, Vertex.Tangent.Z, 0.0);
+		FbxVector4 TransformedTangent = NormalTransform.MultT(FbxTangent);
+		FVector Tangent3D = ConvertFbxDirection(TransformedTangent);
+		Vertex.Tangent = FVector4(Tangent3D.X, Tangent3D.Y, Tangent3D.Z, Vertex.Tangent.W);
+	}
+
+	UE_LOG("[FBX] Vertex transformation complete. Vertex count: %d", Vertices.Num());
+
+	// CRITICAL DIFFERENCE: Mundi vs Unreal Engine Winding Order
+	// - Unreal Engine: CCW = Front Face (FrontCounterClockwise = TRUE)
+	// - Mundi Engine: CW = Front Face (FrontCounterClockwise = FALSE, D3D11 기본)
+	//
+	// Y-flip은 Handedness만 변경 (RH→LH), Winding Order는 변경 안 함 (CCW 유지)
+	// 따라서 Mundi는 CCW→CW 변환을 위해 Index Reversal 필요!
+	TArray<uint32>& IndicesRef = OutMeshData.Indices;
+	for (size_t i = 0; i < IndicesRef.Num(); i += 3)
+	{
+		std::swap(IndicesRef[i], IndicesRef[i + 2]);  // [0,1,2] → [2,1,0] (CCW → CW)
+	}
+
+	UE_LOG("[FBX] Triangle indices reversed (CCW → CW) for Mundi winding order");
 
 	// Control Point → Bone Influences 매핑
 	// FBX는 Control Point 기준으로 Bone Weight를 저장
@@ -959,11 +1023,6 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* Mesh, FSkeletalMesh& OutMeshData)
 
 	TArray<FControlPointInfluence> ControlPointInfluences;
 	ControlPointInfluences.SetNum(ControlPointCount);
-
-	// CRITICAL: Mesh Transform을 사용해 Vertex를 Global Space로 변환
-	// 첫 번째 Cluster에서 Mesh Transform을 가져와서 모든 Vertex에 적용
-	FbxAMatrix MeshGlobalTransform;
-	bool bMeshTransformExtracted = false;
 
 	// 각 Cluster(Bone) 순회
 	for (int32 ClusterIndex = 0; ClusterIndex < ClusterCount; ClusterIndex++)
@@ -988,118 +1047,8 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* Mesh, FSkeletalMesh& OutMeshData)
 
 		// UNREAL ENGINE 방식: Cluster API에서 Bind Pose Transform 가져오기
 		// Cluster->GetTransformLinkMatrix()는 Bind Pose 시점의 Bone Global Transform
-		// Cluster->GetTransformMatrix()는 Bind Pose 시점의 Mesh Global Transform
-		// 이 값들은 ConvertScene() 후의 값이다 (FBX SDK가 자동 처리)
 		FbxAMatrix TransformLinkMatrix;
-		FbxAMatrix TransformMatrix;
 		Cluster->GetTransformLinkMatrix(TransformLinkMatrix);  // Bone Global at Bind Pose
-		Cluster->GetTransformMatrix(TransformMatrix);          // Mesh Global at Bind Pose
-
-		// 디버그: 첫 번째 Bone의 변환된 Transform 출력
-		if (BoneIndex == 0)
-		{
-			UE_LOG("[FBX DEBUG] === First Bone Cluster Transform Analysis ===");
-			UE_LOG("[FBX DEBUG] Bone Name: %s", BoneName.c_str());
-
-			// TransformLinkMatrix (Bone Global Transform) 출력
-			UE_LOG("[FBX DEBUG] TransformLinkMatrix (Bone Global):");
-			for (int row = 0; row < 4; row++)
-			{
-				UE_LOG("[FBX DEBUG]   Row %d: (%.6f, %.6f, %.6f, %.6f)",
-					row,
-					TransformLinkMatrix.Get(row, 0),
-					TransformLinkMatrix.Get(row, 1),
-					TransformLinkMatrix.Get(row, 2),
-					TransformLinkMatrix.Get(row, 3));
-			}
-
-			// TransformMatrix (Mesh Global Transform) 출력
-			UE_LOG("[FBX DEBUG] TransformMatrix (Mesh Global):");
-			for (int row = 0; row < 4; row++)
-			{
-				UE_LOG("[FBX DEBUG]   Row %d: (%.6f, %.6f, %.6f, %.6f)",
-					row,
-					TransformMatrix.Get(row, 0),
-					TransformMatrix.Get(row, 1),
-					TransformMatrix.Get(row, 2),
-					TransformMatrix.Get(row, 3));
-			}
-
-			// GeometryTransform 출력
-			UE_LOG("[FBX DEBUG] GeometryTransform:");
-			for (int row = 0; row < 4; row++)
-			{
-				UE_LOG("[FBX DEBUG]   Row %d: (%.6f, %.6f, %.6f, %.6f)",
-					row,
-					GeometryTransform.Get(row, 0),
-					GeometryTransform.Get(row, 1),
-					GeometryTransform.Get(row, 2),
-					GeometryTransform.Get(row, 3));
-			}
-		}
-
-		// 첫 번째 Cluster 처리 시: Vertex를 Mesh Global Space로 변환
-		if (!bMeshTransformExtracted)
-		{
-			MeshGlobalTransform = TransformMatrix;
-			bMeshTransformExtracted = true;
-
-			// UNREAL ENGINE 방식: Vertex들을 Mesh Global Space로 변환
-			// TransformMatrix는 Bind Pose에서의 Mesh Global Transform
-			// GeometryTransform은 Mesh의 Pivot/Geometry Offset
-			// Vertex는 현재 Component Space (Raw FBX)에 있으므로
-			// (TransformMatrix × GeometryTransform)을 적용해서 Global Space로 이동
-			FbxAMatrix TotalTransform = TransformMatrix * GeometryTransform;
-
-			// Odd Negative Scale 확인 (Unreal Engine 방식)
-			bool bOddNegativeScale = IsOddNegativeScale(TotalTransform);
-
-			// Normal/Tangent용 Transform (Inverse Transpose)
-			FbxAMatrix NormalTransform = TotalTransform;
-			NormalTransform.SetT(FbxVector4(0, 0, 0, 0));
-
-			UE_LOG("[FBX] Transforming vertices to Mesh Global Space (Unreal Engine style)");
-
-			TArray<FSkinnedVertex>& Vertices = OutMeshData.Vertices;
-
-			for (auto& Vertex : Vertices)
-			{
-				// Position 변환 (FBX Transform 적용 후 ConvertFbxPosition으로 Y축 반전)
-				FbxVector4 FbxPos;
-				FbxPos.Set(Vertex.Position.X, Vertex.Position.Y, Vertex.Position.Z, 1.0);
-				FbxVector4 TransformedPos = TotalTransform.MultT(FbxPos);
-				Vertex.Position = ConvertFbxPosition(TransformedPos);
-
-				// Normal 변환 (FBX Transform 적용 후 ConvertFbxDirection으로 Y축 반전)
-				FbxVector4 FbxNormal;
-				FbxNormal.Set(Vertex.Normal.X, Vertex.Normal.Y, Vertex.Normal.Z, 0.0);
-				FbxVector4 TransformedNormal = NormalTransform.MultT(FbxNormal);
-				Vertex.Normal = ConvertFbxDirection(TransformedNormal);
-
-				// Tangent 변환 (FBX Transform 적용 후 ConvertFbxDirection으로 Y축 반전)
-				FbxVector4 FbxTangent;
-				FbxTangent.Set(Vertex.Tangent.X, Vertex.Tangent.Y, Vertex.Tangent.Z, 0.0);
-				FbxVector4 TransformedTangent = NormalTransform.MultT(FbxTangent);
-				FVector Tangent3D = ConvertFbxDirection(TransformedTangent);
-				Vertex.Tangent = FVector4(Tangent3D.X, Tangent3D.Y, Tangent3D.Z, Vertex.Tangent.W);
-			}
-
-			UE_LOG("[FBX] Vertex transformation complete. Vertex count: %d", Vertices.Num());
-
-			// CRITICAL DIFFERENCE: Mundi vs Unreal Engine Winding Order
-			// - Unreal Engine: CCW = Front Face (FrontCounterClockwise = TRUE)
-			// - Mundi Engine: CW = Front Face (FrontCounterClockwise = FALSE, D3D11 기본)
-			//
-			// Y-flip은 Handedness만 변경 (RH→LH), Winding Order는 변경 안 함 (CCW 유지)
-			// 따라서 Mundi는 CCW→CW 변환을 위해 Index Reversal 필요!
-			TArray<uint32>& IndicesRef = OutMeshData.Indices;
-			for (size_t i = 0; i < IndicesRef.Num(); i += 3)
-			{
-				std::swap(IndicesRef[i], IndicesRef[i + 2]);  // [0,1,2] → [2,1,0] (CCW → CW)
-			}
-
-			UE_LOG("[FBX] Triangle indices reversed (CCW → CW) for Mundi winding order");
-		}
 
 		// UNREAL ENGINE 방식: Global Bind Pose Matrix 저장 (Y축 반전 적용)
 		// ConvertFbxMatrixWithYAxisFlip() 사용하여 Y축 선택적 반전
@@ -1191,8 +1140,7 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* Mesh, FSkeletalMesh& OutMeshData)
 	// 이제 FSkeletalMesh의 각 Vertex에 Bone Weight 적용
 	// ExtractMeshData에서 생성한 Vertex들을 가져와서 Bone Weights를 적용
 
-	// 기존 Vertices 가져오기 (수정 가능)
-	TArray<FSkinnedVertex>& Vertices = OutMeshData.Vertices;
+	// Vertices는 이미 함수 시작 부분에서 선언됨
 	const TArray<int32>& VertexToControlPointMap = OutMeshData.VertexToControlPointMap;
 
 	// 매핑 데이터 검증
