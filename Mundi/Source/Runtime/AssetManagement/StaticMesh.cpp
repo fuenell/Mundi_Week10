@@ -2,7 +2,12 @@
 #include "StaticMesh.h"
 #include "StaticMeshComponent.h"
 #include "ObjManager.h"
+#include "FbxManager.h"
+#include "FbxImporter.h"
+#include "FbxImportOptions.h"
 #include "ResourceManager.h"
+#include "GlobalConsole.h"
+#include <filesystem>
 
 IMPLEMENT_CLASS(UStaticMesh)
 
@@ -17,7 +22,35 @@ void UStaticMesh::Load(const FString& InFilePath, ID3D11Device* InDevice, EVerte
 
     SetVertexType(InVertexType);
 
-    StaticMeshAsset = FObjManager::LoadObjStaticMeshAsset(InFilePath);
+    // 파일 확장자 확인
+    std::filesystem::path FilePath(InFilePath);
+    FString Extension = FilePath.extension().string();
+    std::transform(Extension.begin(), Extension.end(), Extension.begin(), ::tolower);
+
+    if (Extension == ".fbx")
+    {
+        // ═══════════════════════════════════════════════════════════
+        // FBX Static Mesh: Delegate to FFbxManager (like OBJ pattern)
+        // ═══════════════════════════════════════════════════════════
+        StaticMeshAsset = FFbxManager::LoadFbxStaticMeshAsset(InFilePath);
+        bOwnsStaticMeshAsset = false;  // FFbxManager owns it (same as FObjManager pattern)
+
+        if (!StaticMeshAsset)
+        {
+            UE_LOG("[StaticMesh ERROR] FFbxManager failed to load FBX: %s", InFilePath.c_str());
+            return;
+        }
+    }
+    else if (Extension == ".obj")
+    {
+        // OBJ 파일 Load (기존 방식)
+        StaticMeshAsset = FObjManager::LoadObjStaticMeshAsset(InFilePath);
+    }
+    else
+    {
+        UE_LOG("[StaticMesh ERROR] Unsupported file format: %s", Extension.c_str());
+        return;
+    }
 
     // 빈 버텍스, 인덱스로 버퍼 생성 방지
     if (StaticMeshAsset && 0 < StaticMeshAsset->Vertices.size() && 0 < StaticMeshAsset->Indices.size())
@@ -144,5 +177,15 @@ void UStaticMesh::ReleaseResources()
     {
         IndexBuffer->Release();
         IndexBuffer = nullptr;
+    }
+
+    // TODO: [FBX Baking System] 임시 메모리 누수 방지 코드 - FbxManager 구현 시 삭제 필요
+    // 현재: bOwnsStaticMeshAsset 플래그로 FBX는 delete, OBJ는 delete 안함
+    // 변경 후: FbxManager가 FStaticMesh* 소유 관리 → UStaticMesh는 delete 불필요 (OBJ와 동일)
+    if (bOwnsStaticMeshAsset && StaticMeshAsset)
+    {
+        delete StaticMeshAsset;
+        StaticMeshAsset = nullptr;
+        bOwnsStaticMeshAsset = false;
     }
 }

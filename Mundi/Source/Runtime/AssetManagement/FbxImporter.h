@@ -126,6 +126,7 @@ class USkeleton;
 class UStaticMesh;
 class USkeletalMesh;
 struct FSkeletalMesh;
+struct FStaticMesh;
 
 /**
  * Autodesk FBX SDK를 사용한 FBX 파일 임포터
@@ -133,14 +134,17 @@ struct FSkeletalMesh;
  *
  * 현재 지원:
  * - SkeletalMesh Import (Skeleton, Skin Weights, Bind Pose)
+ * - StaticMesh Import (Phase 0에서 추가됨)
+ * - FBX Type Detection (자동 타입 감지 via EFbxImportType)
  *
  * 향후 지원 예정:
- * - StaticMesh Import
  * - Animation Import
  *
  * 좌표계:
  * - Mundi 엔진: Z-Up, X-Forward, Y-Right, Left-Handed
  * - FBX는 다양한 좌표계 지원 → 자동 변환
+ *
+ * Note: EFbxImportType enum은 FbxImportOptions.h에 정의되어 있습니다.
  */
 class FFbxImporter
 {
@@ -167,14 +171,17 @@ public:
 	bool ImportSkeletalMesh(const FString& FilePath, const FFbxImportOptions& Options, FSkeletalMesh& OutMeshData);
 
 	/**
-	 * FBX 파일에서 StaticMesh를 Import (미구현)
+	 * FBX 파일에서 StaticMesh를 Import
+	 * Skeleton과 Skinning이 없는 Static Geometry를 Import
+	 *
 	 * @param FilePath - FBX 파일 경로
 	 * @param Options - Import 옵션
-	 * @return Import된 StaticMesh (실패 시 nullptr)
+	 * @param OutMeshData - Import된 Mesh 데이터 (출력)
+	 * @return 성공 여부
 	 *
-	 * TODO: Phase 4에서 구현 예정
+	 * @note Phase 0에서 구현됨
 	 */
-	UStaticMesh* ImportStaticMesh(const FString& FilePath, const FFbxImportOptions& Options);
+	bool ImportStaticMesh(const FString& FilePath, const FFbxImportOptions& Options, FStaticMesh& OutMeshData);
 
 	/**
 	 * Material 추출 (Scene에서 첫 번째 Mesh Node 자동 찾기)
@@ -183,6 +190,25 @@ public:
 	 * @return 성공 여부
 	 */
 	bool ExtractMaterialsFromScene(USkeletalMesh* OutSkeletalMesh);
+
+	/**
+	 * FBX 파일 타입 감지 (StaticMesh vs SkeletalMesh)
+	 * FBX 파일을 분석하여 Skeleton, Skinning, Animation 유무를 확인
+	 *
+	 * 감지 로직:
+	 * 1. FbxSkeleton 노드가 있으면 → SkeletalMesh
+	 * 2. FbxSkin Deformer가 있으면 → SkeletalMesh
+	 * 3. FbxAnimStack이 있으면 → SkeletalMesh
+	 * 4. 모두 없으면 → StaticMesh
+	 *
+	 * @param FilePath - FBX 파일 경로
+	 * @return 감지된 FBX 타입 (StaticMesh, SkeletalMesh, Animation)
+	 *
+	 * @note 이 함수는 내부적으로 LoadScene()을 호출하므로,
+	 *       호출 후에는 Scene이 로드된 상태로 유지됩니다.
+	 *       Import 작업 없이 타입만 확인하려면 ReleaseScene()을 호출하세요.
+	 */
+	EFbxImportType DetectFbxType(const FString& FilePath);
 
 	/**
 	 * 마지막 에러 메시지 가져오기
@@ -236,6 +262,26 @@ private:
 	 * @param OutMeshNodes - 찾은 Mesh Node 배열 (출력)
 	 */
 	void FindAllMeshNodes(FbxNode* Node, TArray<FbxNode*>& OutMeshNodes);
+
+	// === StaticMesh Import 내부 로직 ===
+
+	/**
+	 * StaticMesh 데이터 추출 (Vertex, Index, Normals, UVs, Tangents, Materials)
+	 * @param MeshNode - Mesh를 가진 FBX Node
+	 * @param OutVertices - Vertex 데이터 배열 (출력)
+	 * @param OutIndices - Index 데이터 배열 (출력)
+	 * @param OutPolygonMaterialIndices - Polygon별 Material Index 배열 (출력)
+	 * @param OutMaterialNames - Material 이름 배열 (출력)
+	 * @param InOutVertexOffset - 현재 Vertex Offset (병합 시 Index 조정용, 입출력)
+	 * @return 성공 여부
+	 */
+	bool ExtractStaticMeshData(
+		FbxNode* MeshNode,
+		TArray<FNormalVertex>& OutVertices,
+		TArray<uint32>& OutIndices,
+		TArray<int32>& OutPolygonMaterialIndices,
+		TArray<FString>& OutMaterialNames,
+		uint32& InOutVertexOffset);
 
 	// === SkeletalMesh Import 내부 로직 ===
 

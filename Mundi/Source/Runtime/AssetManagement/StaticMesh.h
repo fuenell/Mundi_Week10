@@ -61,8 +61,14 @@ private:
 	// CPU 리소스
     FStaticMesh* StaticMeshAsset = nullptr;
 
+    // TODO: [FBX Baking System] 임시 소유권 플래그
+    // FbxManager 구현 시 ObjManager 패턴처럼 FStaticMesh* 캐싱 방식으로 변경 필요
+    // 현재: FBX는 UStaticMesh가 소유(true), OBJ는 ObjManager가 소유(false)
+    // 변경 후: FbxManager가 FStaticMesh* 캐싱, UStaticMesh는 참조만 (bOwnsStaticMeshAsset 삭제)
+    bool bOwnsStaticMeshAsset = false;
+
     // 메시 단위 BVH (ResourceManager에서 캐싱, 소유)
-    // 초기화되지 않는 멤버변수 (참조도 ResourceManager에서만 이루어짐) 
+    // 초기화되지 않는 멤버변수 (참조도 ResourceManager에서만 이루어짐)
     // FMeshBVH* MeshBVH = nullptr;
 
     // 로컬 AABB. (스태틱메시 액터 전체 경계 계산에 사용. StaticMeshAsset 로드할 때마다 갱신)

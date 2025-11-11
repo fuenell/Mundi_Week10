@@ -4,12 +4,12 @@
 
 /**
  * FBX Import 타입 정의
- * 현재는 SkeletalMesh만 지원, 향후 StaticMesh와 Animation 추가 예정
+ * 현재는 SkeletalMesh와 StaticMesh 지원, Animation 추가 예정
  */
 enum class EFbxImportType : uint8_t
 {
-	SkeletalMesh,	// Skeletal Mesh (본 포함)
-	StaticMesh,		// Static Mesh (미구현)
+	SkeletalMesh,	// Skeletal Mesh
+	StaticMesh,		// Static Mesh
 	Animation		// Animation (미구현)
 };
 

@@ -3,6 +3,7 @@
 #include "Object.h"
 #include "Shader.h"
 #include "StaticMesh.h"
+#include "SkeletalMesh.h"
 #include "Material.h"
 #include "Texture.h"
 #include "TextureConverter.h"
@@ -98,9 +99,10 @@ public:
 	// --- Preload ---
 	/**
 	 * Data/Model/Fbx 폴더의 모든 FBX 파일을 미리 로드
+	 * Static/Skeletal 타입 감지 후 올바른 타입으로 ResourceManager에 등록
 	 * EditorEngine, GameEngine 초기화 시 호출
 	 */
-	void PreloadSkeletalMeshes();  
+	void PreloadFbxMeshes();  
 
 	// --- Deprecated (향후 제거될 함수들) ---
 	TArray<UStaticMesh*> GetAllStaticMeshes() { return GetAll<UStaticMesh>(); }
@@ -252,6 +254,8 @@ ResourceType UResourceManager::GetResourceType()
 {
     if (T::StaticClass() == UStaticMesh::StaticClass())
         return ResourceType::StaticMesh;
+    if (T::StaticClass() == USkeletalMesh::StaticClass())
+        return ResourceType::SkeletalMesh;
 	if (T::StaticClass() == UQuad::StaticClass())
 		return ResourceType::Quad;
 	if (T::StaticClass() == UDynamicMesh::StaticClass())

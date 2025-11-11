@@ -1,6 +1,9 @@
 #include "pch.h"
 #include "Skeleton.h"
 #include "GlobalConsole.h"
+#include "Archive.h"
+#include "WindowsBinReader.h"
+#include "WindowsBinWriter.h"
 
 IMPLEMENT_CLASS(USkeleton)
 
@@ -212,4 +215,39 @@ void USkeleton::LogBoneHierarchyRecursive(int32 BoneIndex, int32 Depth) const
 	{
 		LogBoneHierarchyRecursive(ChildIndex, Depth + 1);
 	}
+}
+
+// ═══════════════════════════════════════════════════════════
+// FBoneInfo 바이너리 직렬화
+// ═══════════════════════════════════════════════════════════
+
+FWindowsBinWriter& operator<<(FWindowsBinWriter& Writer, const FBoneInfo& Bone)
+{
+	// 본 이름 쓰기
+	Serialization::WriteString(Writer, Bone.Name);
+
+	// 부모 인덱스 쓰기
+	Writer.Serialize(const_cast<int32*>(&Bone.ParentIndex), sizeof(int32));
+
+	// BindPoseTransform 쓰기 (POD 구조체)
+	Writer.Serialize((void*)&Bone.BindPoseTransform, sizeof(FTransform));
+
+	// 전역 Bind Pose 행렬 쓰기
+	Writer.Serialize((void*)&Bone.GlobalBindPoseMatrix, sizeof(FMatrix));
+
+	// 역 Bind Pose 행렬 쓰기
+	Writer.Serialize((void*)&Bone.InverseBindPoseMatrix, sizeof(FMatrix));
+
+	return Writer;
+}
+
+FWindowsBinReader& operator>>(FWindowsBinReader& Reader, FBoneInfo& Bone)
+{
+	Serialization::ReadString(Reader, Bone.Name);
+	Reader << Bone.ParentIndex;
+	Reader.Serialize(&Bone.BindPoseTransform, sizeof(FTransform));
+	Reader.Serialize(&Bone.GlobalBindPoseMatrix, sizeof(FMatrix));
+	Reader.Serialize(&Bone.InverseBindPoseMatrix, sizeof(FMatrix));
+
+	return Reader;
 }
