@@ -153,7 +153,7 @@ void UMaterial::ResolveTextures()
 	if (!MaterialInfo.NormalTextureFileName.empty())
 	{
 		UE_LOG("[Material] Loading Normal texture...");
-		UTexture* NormalTex = RM.Load<UTexture>(MaterialInfo.NormalTextureFileName, false);
+		UTexture* NormalTex = RM.Load<UTexture>(MaterialInfo.NormalTextureFileName, true);
 		UE_LOG("[Material] Normal UTexture* = %p, Width = %d, Height = %d", NormalTex, NormalTex ? NormalTex->GetWidth() : 0, NormalTex ? NormalTex->GetHeight() : 0);
 		ResolvedTextures[static_cast<int32>(EMaterialTextureSlot::Normal)] = NormalTex;
 	}

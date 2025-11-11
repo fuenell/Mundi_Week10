@@ -353,65 +353,144 @@ bool FFbxImporter::ImportSkeletalMesh(const FString& FilePath, const FFbxImportO
 	// 7. 모든 Mesh 데이터 추출 및 병합
 	TArray<FSkinnedVertex> MergedVertices;
 	TArray<uint32> MergedIndices;
-	TArray<int32> mergedVertexToControlPointMap;
-	TArray<FGroupInfo> MergedGroupInfos;
-
+	TArray<int32> MergedVertexToControlPointMap;
+	TArray<int32> MergedPolygonMaterialIndices;
+	TMap<FString, int32> MaterialNameToGlobalIndex;  // Material 이름 → Global Material Index
+	TArray<FString> GlobalMaterialNames;
 	uint32 CurrentVertexOffset = 0;
-	uint32 currentIndexOffset = 0;
 
 	for (size_t MeshIdx = 0; MeshIdx < MeshNodes.size(); MeshIdx++)
 	{
 		FbxNode* MeshNode = MeshNodes[MeshIdx];
 
 		// 임시 Mesh 데이터 구조체
-		FSkeletalMesh tempMeshData;
-		tempMeshData.Skeleton = Skeleton;
+		FSkeletalMesh TempMeshData;
+		TempMeshData.Skeleton = Skeleton;
 
 		// 이 Mesh의 데이터 추출
-		if (!ExtractMeshData(MeshNode, tempMeshData))
+		if (!ExtractMeshData(MeshNode, TempMeshData))
 		{
 			continue;
 		}
 
 		// Skin Weights 추출
-		if (!ExtractSkinWeights(MeshNode->GetMesh(), tempMeshData))
+		if (!ExtractSkinWeights(MeshNode->GetMesh(), TempMeshData))
 		{
 			continue;
 		}
 
 		// Vertex 병합
 		MergedVertices.insert(MergedVertices.end(),
-			tempMeshData.Vertices.begin(),
-			tempMeshData.Vertices.end());
+			TempMeshData.Vertices.begin(),
+			TempMeshData.Vertices.end());
 
 		// Index 병합 (Vertex Offset 적용)
-		for (uint32 idx : tempMeshData.Indices)
+		for (uint32 Idx : TempMeshData.Indices)
 		{
-			MergedIndices.push_back(idx + CurrentVertexOffset);
+			MergedIndices.push_back(Idx + CurrentVertexOffset);
 		}
 
 		// VertexToControlPointMap 병합
-		mergedVertexToControlPointMap.insert(mergedVertexToControlPointMap.end(),
-			tempMeshData.VertexToControlPointMap.begin(),
-			tempMeshData.VertexToControlPointMap.end());
+		MergedVertexToControlPointMap.insert(MergedVertexToControlPointMap.end(),
+			TempMeshData.VertexToControlPointMap.begin(),
+			TempMeshData.VertexToControlPointMap.end());
 
-		// GroupInfo 병합 (Index Offset 적용)
-		// Material 이름은 ExtractMeshData에서 이미 설정됨
-		for (FGroupInfo& groupInfo : tempMeshData.GroupInfos)
+		// Material 이름을 Global Material Index로 변환
+		for (const FString& LocalMatName : TempMeshData.MaterialNames)
 		{
-			groupInfo.StartIndex += currentIndexOffset;
-			MergedGroupInfos.push_back(groupInfo);
+			if (MaterialNameToGlobalIndex.find(LocalMatName) == MaterialNameToGlobalIndex.end())
+			{
+				int32 NewGlobalIndex = static_cast<int32>(GlobalMaterialNames.size());
+				MaterialNameToGlobalIndex[LocalMatName] = NewGlobalIndex;
+				GlobalMaterialNames.push_back(LocalMatName);
+			}
 		}
 
-		CurrentVertexOffset += static_cast<uint32>(tempMeshData.Vertices.size());
-		currentIndexOffset += static_cast<uint32>(tempMeshData.Indices.size());
+		// Polygon Material Index 병합 (Local Index → Global Index 변환)
+		for (int32 LocalMatIndex : TempMeshData.PolygonMaterialIndices)
+		{
+			// Local Material Index를 Material 이름으로 변환
+			if (LocalMatIndex >= 0 && LocalMatIndex < TempMeshData.MaterialNames.size())
+			{
+				const FString& MatName = TempMeshData.MaterialNames[LocalMatIndex];
+				int32 GlobalMatIndex = MaterialNameToGlobalIndex[MatName];
+				MergedPolygonMaterialIndices.push_back(GlobalMatIndex);
+			}
+			else
+			{
+				MergedPolygonMaterialIndices.push_back(0); // Default
+			}
+		}
+
+		CurrentVertexOffset += static_cast<uint32>(TempMeshData.Vertices.size());
+	}
+
+	// 8. 병합된 Mesh에서 Material별로 Index Buffer 재배치 및 GroupInfo 생성
+	TArray<FGroupInfo> FinalGroupInfos;
+	TArray<uint32> FinalIndices;
+
+	if (!MergedPolygonMaterialIndices.empty())
+	{
+		// Material별로 Polygon 그룹화
+		TMap<int32, TArray<int32>> MaterialToPolygons;
+		int32 PolygonCount = static_cast<int32>(MergedPolygonMaterialIndices.size());
+
+		for (int32 PolyIndex = 0; PolyIndex < PolygonCount; PolyIndex++)
+		{
+			int32 MatIndex = MergedPolygonMaterialIndices[PolyIndex];
+			MaterialToPolygons[MatIndex].push_back(PolyIndex);
+		}
+
+		// Material별로 Index 재배치
+		uint32 CurrentStartIndex = 0;
+
+		for (auto& Pair : MaterialToPolygons)
+		{
+			int32 MatIndex = Pair.first;
+			const TArray<int32>& Polygons = Pair.second;
+
+			if (Polygons.empty())
+				continue;
+
+			FGroupInfo GroupInfo;
+			GroupInfo.StartIndex = CurrentStartIndex;
+			GroupInfo.IndexCount = static_cast<uint32>(Polygons.size() * 3);
+
+			// Global Material 이름 설정
+			if (MatIndex >= 0 && MatIndex < GlobalMaterialNames.size())
+			{
+				GroupInfo.InitialMaterialName = GlobalMaterialNames[MatIndex];
+			}
+
+			// 이 Material의 모든 Polygon Index를 새 버퍼에 추가
+			for (int32 PolyIndex : Polygons)
+			{
+				uint32 PolyStartIdx = PolyIndex * 3;
+				FinalIndices.push_back(MergedIndices[PolyStartIdx + 0]);
+				FinalIndices.push_back(MergedIndices[PolyStartIdx + 1]);
+				FinalIndices.push_back(MergedIndices[PolyStartIdx + 2]);
+			}
+
+			CurrentStartIndex += GroupInfo.IndexCount;
+			FinalGroupInfos.push_back(GroupInfo);
+		}
+	}
+	else
+	{
+		// Material 정보가 없으면 전체를 하나의 그룹으로
+		FinalIndices = MergedIndices;
+		FGroupInfo GroupInfo;
+		GroupInfo.StartIndex = 0;
+		GroupInfo.IndexCount = static_cast<uint32>(FinalIndices.size());
+		GroupInfo.InitialMaterialName = "";
+		FinalGroupInfos.push_back(GroupInfo);
 	}
 
 	// 병합된 데이터를 OutMeshData에 설정
 	OutMeshData.Vertices = std::move(MergedVertices);
-	OutMeshData.Indices = std::move(MergedIndices);
-	OutMeshData.VertexToControlPointMap = std::move(mergedVertexToControlPointMap);
-	OutMeshData.GroupInfos = std::move(MergedGroupInfos);
+	OutMeshData.Indices = std::move(FinalIndices);
+	OutMeshData.VertexToControlPointMap = std::move(MergedVertexToControlPointMap);
+	OutMeshData.GroupInfos = std::move(FinalGroupInfos);
 
 	return true;
 }
@@ -628,11 +707,11 @@ bool FFbxImporter::ExtractStaticMeshData(
 
 	if (ControlPointCount == 0 || PolygonCount == 0)
 	{
-		UE_LOG("[FBX] ExtractStaticMeshData: Mesh has no vertices or polygons");
+		UE_LOG("[FBX] ExtractStaticMeshData: Mesh has no vertices or Polygons");
 		return false;
 	}
 
-	UE_LOG("[FBX] Extracting StaticMesh: %d control points, %d polygons", ControlPointCount, PolygonCount);
+	UE_LOG("[FBX] Extracting StaticMesh: %d control points, %d Polygons", ControlPointCount, PolygonCount);
 
 	// Control Points (위치 정보)
 	FbxVector4* ControlPoints = Mesh->GetControlPoints();
@@ -836,11 +915,11 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, FSkeletalMesh& OutMeshData
 
 	if (VertexCount == 0 || PolygonCount == 0)
 	{
-		SetError("ExtractMeshData: Mesh has no vertices or polygons");
+		SetError("ExtractMeshData: Mesh has no vertices or Polygons");
 		return false;
 	}
 
-	UE_LOG("[FBX] Mesh has %d control points, %d polygons", VertexCount, PolygonCount);
+	UE_LOG("[FBX] Mesh has %d control points, %d Polygons", VertexCount, PolygonCount);
 
 	// FBX는 Polygon당 3개의 vertex를 가짐 (Triangulated)
 	// FBX는 각 폴리곤 vertex마다 별도의 normal/UV를 가질 수 있음
@@ -862,6 +941,7 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, FSkeletalMesh& OutMeshData
 	FbxGeometryElementNormal* NormalElement = FbxMesh->GetElementNormal();
 	FbxGeometryElementUV* UvElement = FbxMesh->GetElementUV();
 	FbxGeometryElementTangent* TangentElement = FbxMesh->GetElementTangent();
+
 
 	// Skeleton 정보 (Static vs Skeletal 구분용)
 	USkeleton* Skeleton = OutMeshData.Skeleton;
@@ -953,6 +1033,7 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, FSkeletalMesh& OutMeshData
 				FbxVector2 FbxUV;
 				bool bUnmapped;
 				FbxMesh->GetPolygonVertexUV(PolyIndex, VertInPoly, UvElement->GetName(), FbxUV, bUnmapped);
+
 				// DirectX UV 좌표계: V를 반전 (OpenGL/Blender는 V가 아래→위, DirectX는 위→아래)
 				Vertex.UV = FVector2D(
 					static_cast<float>(FbxUV[0]),      // U (그대로)
@@ -1008,100 +1089,36 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, FSkeletalMesh& OutMeshData
 
 	UE_LOG("[FBX] Extracted %zu vertices, %zu indices", Vertices.Num(), Indices.Num());
 
-	// Material별로 GroupInfo 생성 및 Index Buffer 재배치
-	// Polygon이 Material별로 섞여있을 수 있으므로 정렬 필요
-	TArray<FGroupInfo> groupInfos;
-
-	if (!polygonMaterialIndices.empty())
+	// Material 이름 배열 생성
+	TArray<FString> materialNames;
+	for (int32 i = 0; i < MeshNode->GetMaterialCount(); i++)
 	{
-		// Material 인덱스별로 Polygon 그룹화
-		TMap<int32, TArray<int32>> materialToPolygons;
-
-		for (int32 polyIndex = 0; polyIndex < polygonMaterialIndices.size(); polyIndex++)
+		FbxSurfaceMaterial* mat = MeshNode->GetMaterial(i);
+		if (mat)
 		{
-			int32 materialIndex = polygonMaterialIndices[polyIndex];
-			materialToPolygons[materialIndex].push_back(polyIndex);
+			materialNames.push_back(mat->GetName());
 		}
-
-		UE_LOG("[FBX] === DIAGNOSTIC: Material Grouping ===");
-		UE_LOG("[FBX] Total unique materials: %zu", materialToPolygons.size());
-
-		for (auto& pair : materialToPolygons)
-		{
-			UE_LOG("[FBX] Material[%d]: %zu polygons", pair.first, pair.second.size());
-		}
-
-		UE_LOG("[FBX] Reorganizing index buffer by Material...");
-
-		// 원본 Index Buffer 백업
-		TArray<uint32> originalIndices = Indices;
-
-		// 새로운 Index Buffer 생성 (Material별로 재배치)
-		Indices.clear();
-		uint32 currentStartIndex = 0;
-
-		// 각 Material별로 GroupInfo 생성 및 Index 추가
-		for (auto& pair : materialToPolygons)
-		{
-			int32 materialIndex = pair.first;
-			const TArray<int32>& polygons = pair.second;
-
-			if (polygons.empty())
-				continue;
-
-			FGroupInfo groupInfo;
-			groupInfo.StartIndex = currentStartIndex;
-			groupInfo.IndexCount = polygons.size() * 3;
-			groupInfo.InitialMaterialName = "";
-
-			// Material 이름 설정
-			if (materialIndex >= 0 && materialIndex < MeshNode->GetMaterialCount())
-			{
-				FbxSurfaceMaterial* mat = MeshNode->GetMaterial(materialIndex);
-				if (mat)
-				{
-					groupInfo.InitialMaterialName = mat->GetName();
-				}
-			}
-
-			// 이 Material의 모든 Polygon의 Index를 새 버퍼에 추가
-			for (int32 polyIndex : polygons)
-			{
-				// 각 Polygon은 3개의 Index를 가짐
-				uint32 polyStartIdx = polyIndex * 3;
-				Indices.push_back(originalIndices[polyStartIdx + 0]);
-				Indices.push_back(originalIndices[polyStartIdx + 1]);
-				Indices.push_back(originalIndices[polyStartIdx + 2]);
-			}
-
-			currentStartIndex += groupInfo.IndexCount;
-			groupInfos.push_back(groupInfo);
-		}
-	}
-	else
-	{
-		// Material 정보가 없으면 전체를 하나의 그룹으로
-		FGroupInfo groupInfo;
-		groupInfo.StartIndex = 0;
-		groupInfo.IndexCount = static_cast<uint32>(Indices.size());
-		groupInfo.InitialMaterialName = "";
-		groupInfos.push_back(groupInfo);
 	}
 
 	// FSkeletalMesh에 데이터 설정 (Move Semantics)
 	OutMeshData.Vertices = std::move(Vertices);
 	OutMeshData.Indices = std::move(Indices);
 	OutMeshData.VertexToControlPointMap = std::move(VertexToControlPointMap);
-	OutMeshData.GroupInfos = std::move(groupInfos);
+	OutMeshData.PolygonMaterialIndices = std::move(polygonMaterialIndices);
+	OutMeshData.MaterialNames = std::move(materialNames);
 
-	UE_LOG("[FBX] Stored vertex to control point mapping (%zu entries)", VertexToControlPointMap.Num());
-
-	// STATIC MESH 처리: Skeleton이 없는 경우 Unreal Engine 방식 적용
+	// STATIC MESH 처리: 이 메쉬가 Skin Deformer를 가지고 있지 않은 경우 Transform 적용
 	// Skeletal Mesh는 ExtractSkinWeights()에서 변환되므로 여기서는 건너뜀
 	// Skeleton 변수는 함수 시작 부분에서 이미 선언됨
-	if (!Skeleton || Skeleton->GetBoneCount() == 0)
+
+	// 이 메쉬가 Skin Deformer를 가지고 있는지 확인
+	int32 DeformerCount = FbxMesh->GetDeformerCount(FbxDeformer::eSkin);
+	bool bHasSkinDeformer = (DeformerCount > 0);
+
+	// Skin Deformer가 없으면 Static Mesh로 처리 (Transform 직접 적용)
+	if (!bHasSkinDeformer)
 	{
-		UE_LOG("[FBX] No skeleton detected - applying Static Mesh transform (Unreal Engine style)");
+		UE_LOG("[FBX] Mesh '%s' has no skin deformer - applying Static Mesh transform", MeshNodePtr->GetName());
 
 		// UNREAL ENGINE 방식: ComputeTotalMatrix() 구현
 		// bTransformVertexToAbsolute = true (Static Mesh 기본값)
@@ -1217,10 +1234,68 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* Mesh, FSkeletalMesh& OutMeshData)
 	FbxVector4 GeoScaling = MeshNode->GetGeometricScaling(FbxNode::eSourcePivot);
 	FbxAMatrix GeometryTransform(GeoTranslation, GeoRotation, GeoScaling);
 
+	UE_LOG("[FBX] Mesh: %s", MeshNode->GetName());
 	UE_LOG("[FBX] Geometry Transform - T:(%.3f, %.3f, %.3f) R:(%.3f, %.3f, %.3f) S:(%.3f, %.3f, %.3f)",
 		GeoTranslation[0], GeoTranslation[1], GeoTranslation[2],
 		GeoRotation[0], GeoRotation[1], GeoRotation[2],
 		GeoScaling[0], GeoScaling[1], GeoScaling[2]);
+
+	// CRITICAL FIX: 각 메쉬의 Global Transform을 직접 계산
+	// Cluster의 TransformMatrix를 사용하지 않고, 메쉬 노드에서 직접 가져옴
+	// 이렇게 해야 여러 메쉬(body, sphere, sphere001)가 각자의 올바른 위치에 렌더링됨
+	FbxAMatrix MeshGlobalTransform = Scene->GetAnimationEvaluator()->GetNodeGlobalTransform(MeshNode);
+	FbxAMatrix TotalTransform = MeshGlobalTransform * GeometryTransform;
+
+	UE_LOG("[FBX] Mesh Global Transform - T:(%.3f, %.3f, %.3f) R:(%.3f, %.3f, %.3f) S:(%.3f, %.3f, %.3f)",
+		MeshGlobalTransform.GetT()[0], MeshGlobalTransform.GetT()[1], MeshGlobalTransform.GetT()[2],
+		MeshGlobalTransform.GetR()[0], MeshGlobalTransform.GetR()[1], MeshGlobalTransform.GetR()[2],
+		MeshGlobalTransform.GetS()[0], MeshGlobalTransform.GetS()[1], MeshGlobalTransform.GetS()[2]);
+
+	// Normal/Tangent용 Transform (Inverse Transpose)
+	FbxAMatrix NormalTransform = TotalTransform;
+	NormalTransform.SetT(FbxVector4(0, 0, 0, 0));
+
+	// 이 메쉬의 모든 Vertex를 Mesh Global Space로 변환
+	UE_LOG("[FBX] Transforming vertices to Mesh Global Space");
+	TArray<FSkinnedVertex>& Vertices = OutMeshData.Vertices;
+
+	for (auto& Vertex : Vertices)
+	{
+		// Position 변환 (FBX Transform 적용 후 ConvertFbxPosition으로 Y축 반전)
+		FbxVector4 FbxPos;
+		FbxPos.Set(Vertex.Position.X, Vertex.Position.Y, Vertex.Position.Z, 1.0);
+		FbxVector4 TransformedPos = TotalTransform.MultT(FbxPos);
+		Vertex.Position = ConvertFbxPosition(TransformedPos);
+
+		// Normal 변환 (FBX Transform 적용 후 ConvertFbxDirection으로 Y축 반전)
+		FbxVector4 FbxNormal;
+		FbxNormal.Set(Vertex.Normal.X, Vertex.Normal.Y, Vertex.Normal.Z, 0.0);
+		FbxVector4 TransformedNormal = NormalTransform.MultT(FbxNormal);
+		Vertex.Normal = ConvertFbxDirection(TransformedNormal);
+
+		// Tangent 변환 (FBX Transform 적용 후 ConvertFbxDirection으로 Y축 반전)
+		FbxVector4 FbxTangent;
+		FbxTangent.Set(Vertex.Tangent.X, Vertex.Tangent.Y, Vertex.Tangent.Z, 0.0);
+		FbxVector4 TransformedTangent = NormalTransform.MultT(FbxTangent);
+		FVector Tangent3D = ConvertFbxDirection(TransformedTangent);
+		Vertex.Tangent = FVector4(Tangent3D.X, Tangent3D.Y, Tangent3D.Z, Vertex.Tangent.W);
+	}
+
+	UE_LOG("[FBX] Vertex transformation complete. Vertex count: %d", Vertices.Num());
+
+	// CRITICAL DIFFERENCE: Mundi vs Unreal Engine Winding Order
+	// - Unreal Engine: CCW = Front Face (FrontCounterClockwise = TRUE)
+	// - Mundi Engine: CW = Front Face (FrontCounterClockwise = FALSE, D3D11 기본)
+	//
+	// Y-flip은 Handedness만 변경 (RH→LH), Winding Order는 변경 안 함 (CCW 유지)
+	// 따라서 Mundi는 CCW→CW 변환을 위해 Index Reversal 필요!
+	TArray<uint32>& IndicesRef = OutMeshData.Indices;
+	for (size_t i = 0; i < IndicesRef.Num(); i += 3)
+	{
+		std::swap(IndicesRef[i], IndicesRef[i + 2]);  // [0,1,2] → [2,1,0] (CCW → CW)
+	}
+
+	UE_LOG("[FBX] Triangle indices reversed (CCW → CW) for Mundi winding order");
 
 	// Control Point → Bone Influences 매핑
 	// FBX는 Control Point 기준으로 Bone Weight를 저장
@@ -1237,11 +1312,6 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* Mesh, FSkeletalMesh& OutMeshData)
 
 	TArray<FControlPointInfluence> ControlPointInfluences;
 	ControlPointInfluences.SetNum(ControlPointCount);
-
-	// CRITICAL: Mesh Transform을 사용해 Vertex를 Global Space로 변환
-	// 첫 번째 Cluster에서 Mesh Transform을 가져와서 모든 Vertex에 적용
-	FbxAMatrix MeshGlobalTransform;
-	bool bMeshTransformExtracted = false;
 
 	// 각 Cluster(Bone) 순회
 	for (int32 ClusterIndex = 0; ClusterIndex < ClusterCount; ClusterIndex++)
@@ -1266,118 +1336,8 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* Mesh, FSkeletalMesh& OutMeshData)
 
 		// UNREAL ENGINE 방식: Cluster API에서 Bind Pose Transform 가져오기
 		// Cluster->GetTransformLinkMatrix()는 Bind Pose 시점의 Bone Global Transform
-		// Cluster->GetTransformMatrix()는 Bind Pose 시점의 Mesh Global Transform
-		// 이 값들은 ConvertScene() 후의 값이다 (FBX SDK가 자동 처리)
 		FbxAMatrix TransformLinkMatrix;
-		FbxAMatrix TransformMatrix;
 		Cluster->GetTransformLinkMatrix(TransformLinkMatrix);  // Bone Global at Bind Pose
-		Cluster->GetTransformMatrix(TransformMatrix);          // Mesh Global at Bind Pose
-
-		// 디버그: 첫 번째 Bone의 변환된 Transform 출력
-		if (BoneIndex == 0)
-		{
-			UE_LOG("[FBX DEBUG] === First Bone Cluster Transform Analysis ===");
-			UE_LOG("[FBX DEBUG] Bone Name: %s", BoneName.c_str());
-
-			// TransformLinkMatrix (Bone Global Transform) 출력
-			UE_LOG("[FBX DEBUG] TransformLinkMatrix (Bone Global):");
-			for (int row = 0; row < 4; row++)
-			{
-				UE_LOG("[FBX DEBUG]   Row %d: (%.6f, %.6f, %.6f, %.6f)",
-					row,
-					TransformLinkMatrix.Get(row, 0),
-					TransformLinkMatrix.Get(row, 1),
-					TransformLinkMatrix.Get(row, 2),
-					TransformLinkMatrix.Get(row, 3));
-			}
-
-			// TransformMatrix (Mesh Global Transform) 출력
-			UE_LOG("[FBX DEBUG] TransformMatrix (Mesh Global):");
-			for (int row = 0; row < 4; row++)
-			{
-				UE_LOG("[FBX DEBUG]   Row %d: (%.6f, %.6f, %.6f, %.6f)",
-					row,
-					TransformMatrix.Get(row, 0),
-					TransformMatrix.Get(row, 1),
-					TransformMatrix.Get(row, 2),
-					TransformMatrix.Get(row, 3));
-			}
-
-			// GeometryTransform 출력
-			UE_LOG("[FBX DEBUG] GeometryTransform:");
-			for (int row = 0; row < 4; row++)
-			{
-				UE_LOG("[FBX DEBUG]   Row %d: (%.6f, %.6f, %.6f, %.6f)",
-					row,
-					GeometryTransform.Get(row, 0),
-					GeometryTransform.Get(row, 1),
-					GeometryTransform.Get(row, 2),
-					GeometryTransform.Get(row, 3));
-			}
-		}
-
-		// 첫 번째 Cluster 처리 시: Vertex를 Mesh Global Space로 변환
-		if (!bMeshTransformExtracted)
-		{
-			MeshGlobalTransform = TransformMatrix;
-			bMeshTransformExtracted = true;
-
-			// UNREAL ENGINE 방식: Vertex들을 Mesh Global Space로 변환
-			// TransformMatrix는 Bind Pose에서의 Mesh Global Transform
-			// GeometryTransform은 Mesh의 Pivot/Geometry Offset
-			// Vertex는 현재 Component Space (Raw FBX)에 있으므로
-			// (TransformMatrix × GeometryTransform)을 적용해서 Global Space로 이동
-			FbxAMatrix TotalTransform = TransformMatrix * GeometryTransform;
-
-			// Odd Negative Scale 확인 (Unreal Engine 방식)
-			bool bOddNegativeScale = IsOddNegativeScale(TotalTransform);
-
-			// Normal/Tangent용 Transform (Inverse Transpose)
-			FbxAMatrix NormalTransform = TotalTransform;
-			NormalTransform.SetT(FbxVector4(0, 0, 0, 0));
-
-			UE_LOG("[FBX] Transforming vertices to Mesh Global Space (Unreal Engine style)");
-
-			TArray<FSkinnedVertex>& Vertices = OutMeshData.Vertices;
-
-			for (auto& Vertex : Vertices)
-			{
-				// Position 변환 (FBX Transform 적용 후 ConvertFbxPosition으로 Y축 반전)
-				FbxVector4 FbxPos;
-				FbxPos.Set(Vertex.Position.X, Vertex.Position.Y, Vertex.Position.Z, 1.0);
-				FbxVector4 TransformedPos = TotalTransform.MultT(FbxPos);
-				Vertex.Position = ConvertFbxPosition(TransformedPos);
-
-				// Normal 변환 (FBX Transform 적용 후 ConvertFbxDirection으로 Y축 반전)
-				FbxVector4 FbxNormal;
-				FbxNormal.Set(Vertex.Normal.X, Vertex.Normal.Y, Vertex.Normal.Z, 0.0);
-				FbxVector4 TransformedNormal = NormalTransform.MultT(FbxNormal);
-				Vertex.Normal = ConvertFbxDirection(TransformedNormal);
-
-				// Tangent 변환 (FBX Transform 적용 후 ConvertFbxDirection으로 Y축 반전)
-				FbxVector4 FbxTangent;
-				FbxTangent.Set(Vertex.Tangent.X, Vertex.Tangent.Y, Vertex.Tangent.Z, 0.0);
-				FbxVector4 TransformedTangent = NormalTransform.MultT(FbxTangent);
-				FVector Tangent3D = ConvertFbxDirection(TransformedTangent);
-				Vertex.Tangent = FVector4(Tangent3D.X, Tangent3D.Y, Tangent3D.Z, Vertex.Tangent.W);
-			}
-
-			UE_LOG("[FBX] Vertex transformation complete. Vertex count: %d", Vertices.Num());
-
-			// CRITICAL DIFFERENCE: Mundi vs Unreal Engine Winding Order
-			// - Unreal Engine: CCW = Front Face (FrontCounterClockwise = TRUE)
-			// - Mundi Engine: CW = Front Face (FrontCounterClockwise = FALSE, D3D11 기본)
-			//
-			// Y-flip은 Handedness만 변경 (RH→LH), Winding Order는 변경 안 함 (CCW 유지)
-			// 따라서 Mundi는 CCW→CW 변환을 위해 Index Reversal 필요!
-			TArray<uint32>& IndicesRef = OutMeshData.Indices;
-			for (size_t i = 0; i < IndicesRef.Num(); i += 3)
-			{
-				std::swap(IndicesRef[i], IndicesRef[i + 2]);  // [0,1,2] → [2,1,0] (CCW → CW)
-			}
-
-			UE_LOG("[FBX] Triangle indices reversed (CCW → CW) for Mundi winding order");
-		}
 
 		// UNREAL ENGINE 방식: Global Bind Pose Matrix 저장 (Y축 반전 적용)
 		// ConvertFbxMatrixWithYAxisFlip() 사용하여 Y축 선택적 반전
@@ -1469,8 +1429,7 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* Mesh, FSkeletalMesh& OutMeshData)
 	// 이제 FSkeletalMesh의 각 Vertex에 Bone Weight 적용
 	// ExtractMeshData에서 생성한 Vertex들을 가져와서 Bone Weights를 적용
 
-	// 기존 Vertices 가져오기 (수정 가능)
-	TArray<FSkinnedVertex>& Vertices = OutMeshData.Vertices;
+	// Vertices는 이미 함수 시작 부분에서 선언됨
 	const TArray<int32>& VertexToControlPointMap = OutMeshData.VertexToControlPointMap;
 
 	// 매핑 데이터 검증
