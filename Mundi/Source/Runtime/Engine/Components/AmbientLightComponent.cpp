@@ -49,7 +49,11 @@ void UAmbientLightComponent::OnRegister(UWorld* InWorld)
 
 void UAmbientLightComponent::OnUnregister()
 {
-	GWorld->GetLightManager()->DeRegisterLight(this);
+	// 등록했던 World에서 해제 (GWorld가 아님!)
+	if (UWorld* World = GetWorld())
+	{
+		World->GetLightManager()->DeRegisterLight(this);
+	}
 }
 
 void UAmbientLightComponent::Serialize(const bool bInIsLoading, JSON& InOutHandle)

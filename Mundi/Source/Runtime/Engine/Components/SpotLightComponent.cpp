@@ -181,7 +181,11 @@ void USpotLightComponent::OnRegister(UWorld* InWorld)
 
 void USpotLightComponent::OnUnregister()
 {
-	GWorld->GetLightManager()->DeRegisterLight(this);
+	// 등록했던 World에서 해제 (GWorld가 아님!)
+	if (UWorld* World = GetWorld())
+	{
+		World->GetLightManager()->DeRegisterLight(this);
+	}
 
 	Super::OnUnregister();
 }
