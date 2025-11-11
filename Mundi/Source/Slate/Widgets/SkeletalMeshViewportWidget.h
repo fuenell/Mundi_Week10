@@ -28,6 +28,18 @@ public:
 	// 위젯 업데이트 (입력 처리 등)
 	void Update() override;
 
+	/**
+	 * 표시할 SkeletalMesh 설정
+	 * @param InMesh - SkeletalMesh 객체
+	 */
+	void SetSkeletalMesh(class USkeletalMesh* InMesh);
+
+	/**
+	 * 현재 SkeletalMesh 가져오기
+	 * @return SkeletalMesh 객체
+	 */
+	class USkeletalMesh* GetSkeletalMesh() const { return CurrentSkeletalMesh; }
+
 private:
 	/** ImGui 영역 크기에 맞춰 렌더 타겟을 관리합니다. */
 	//void UpdateRenderTexture(FIntPoint NewSize);
@@ -53,4 +65,7 @@ private:
 	UWorld* PreviewWorld = nullptr;
 	ACameraActor* PreviewCamera = nullptr;
 	ASkeletalMeshActor* PreviewActor = nullptr;
+
+	// 현재 표시 중인 SkeletalMesh
+	class USkeletalMesh* CurrentSkeletalMesh = nullptr;
 };

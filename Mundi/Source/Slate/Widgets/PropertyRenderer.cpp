@@ -1153,30 +1153,56 @@ bool UPropertyRenderer::RenderSkeletalMeshProperty(const FProperty& Prop, void* 
 		ImGui::EndTooltip();
 	}
 
-	// In MainMenuBarWindow::RenderWindow() or similar main UI loop
-
-	// 1. "도구" 메뉴 (가정
+	// "뷰어" 버튼 - SkeletalMesh Editor Window 열기
+	ImGui::SameLine();
 	if (ImGui::Button("뷰어"))
 	{
-		// 3. UUIManager에게 "Skeletal Mesh Viewer" 창이 이미 있는지 물어봅니다.
-		UUIWindow* FoundWindow = UI.FindUIWindow("Skeletal Mesh Viewer");
+		// 현재 선택된 SkeletalMesh 가져오기
+		USkeletalMesh* CurrentMesh = *MeshPtr;
 
-		if (FoundWindow)
+		if (CurrentMesh == nullptr)
 		{
-			// 4-A. 이미 존재하면: 그냥 보이게 하고 포커스를 줍니다.
-			FoundWindow->SetWindowState(EUIWindowState::Visible);
-			ImGui::SetWindowFocus("Skeletal Mesh Viewer"); // ImGui 20.0+
+			// SkeletalMesh가 없으면 경고 메시지
+			ImGui::OpenPopup("NoMeshWarning");
 		}
 		else
 		{
-			// 4-B. 존재하지 않으면: **이때 생성하고 등록합니다.**
-			USkeletalMeshEditorWindow* SkelMeshViewer = new USkeletalMeshEditorWindow();
-			SkelMeshViewer->SetWindowTitle("Skeletal Mesh Viewer");
+			// UUIManager에게 "Skeletal Mesh Viewer" 창이 이미 있는지 확인
+			UUIWindow* FoundWindow = UI.FindUIWindow("Skeletal Mesh Viewer");
 
-			// RegisterUIWindow가 내부적으로 Window->Initialize()를 호출합니다.
-			// (Initialize에서 프리뷰 월드, RTV/SRV 생성 등 무거운 작업을 수행)
-			UI.RegisterUIWindow(SkelMeshViewer);
+			if (FoundWindow)
+			{
+				// 이미 존재하면: 보이게 하고 포커스
+				FoundWindow->SetWindowState(EUIWindowState::Visible);
+				ImGui::SetWindowFocus("Skeletal Mesh Viewer");
+
+				// SkeletalMesh 업데이트
+				USkeletalMeshEditorWindow* EditorWindow = static_cast<USkeletalMeshEditorWindow*>(FoundWindow);
+				EditorWindow->SetSkeletalMesh(CurrentMesh);
+			}
+			else
+			{
+				// 존재하지 않으면: 생성하고 등록
+				USkeletalMeshEditorWindow* EditorWindow = new USkeletalMeshEditorWindow();
+
+				// RegisterUIWindow가 내부적으로 Window->Initialize()를 호출
+				UI.RegisterUIWindow(EditorWindow);
+
+				// SkeletalMesh 설정
+				EditorWindow->SetSkeletalMesh(CurrentMesh);
+			}
 		}
+	}
+
+	// SkeletalMesh 없음 경고 팝업
+	if (ImGui::BeginPopup("NoMeshWarning"))
+	{
+		ImGui::Text("SkeletalMesh를 먼저 선택해주세요.");
+		if (ImGui::Button("확인"))
+		{
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndPopup();
 	}
 
 	return false;

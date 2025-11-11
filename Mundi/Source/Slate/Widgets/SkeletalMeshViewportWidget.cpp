@@ -6,7 +6,8 @@
 #include "RHIDevice.h"
 #include "World.h"
 #include "CameraActor.h"
-// ... (기타 필요한 헤더)
+#include "SkeletalMesh.h"
+#include "Skeleton.h"
 
 IMPLEMENT_CLASS(USkeletalMeshViewportWidget)
 
@@ -44,25 +45,51 @@ void USkeletalMeshViewportWidget::Update()
 
 void USkeletalMeshViewportWidget::RenderWidget()
 {
-    //// 1. 뷰포트로 사용할 영역의 크기를 가져옴 (창 크기 100%)
-    //ImVec2 ViewportSize = ImGui::GetContentRegionAvail();
-    //FIntPoint NewTextureSize = { (int)ViewportSize.x, (int)ViewportSize.y };
+    // TODO: 실제 3D 렌더링 구현
+    // 현재는 임시로 텍스트 정보만 표시
 
-    //// 2. 텍스처(RTV/SRV) 크기 갱신
-    //UpdateRenderTexture(NewTextureSize);
+    ImVec2 ViewportSize = ImGui::GetContentRegionAvail();
 
-    //// 3. 프리뷰 씬 렌더링 (RTV에 그리기)
-    //RenderPreviewScene(NewTextureSize);
+    // 배경색 표시 (3D Viewport처럼 보이게)
+    ImDrawList* DrawList = ImGui::GetWindowDrawList();
+    ImVec2 p_min = ImGui::GetCursorScreenPos();
+    ImVec2 p_max = ImVec2(p_min.x + ViewportSize.x, p_min.y + ViewportSize.y);
+    DrawList->AddRectFilled(p_min, p_max, IM_COL32(45, 45, 48, 255));
 
-    //// 4. 렌더링된 텍스처를 ImGui 창에 이미지로 표시
-    //if (SceneSRV)
-    //{
-    //    // Y축 뒤집힘 문제 해결 (UV (0,1) -> (1,0))
-    //    ImGui::Image((void*)SceneSRV, ViewportSize, ImVec2(0, 1), ImVec2(1, 0));
-    //}
+    // SkeletalMesh 정보 표시
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 20);
+    ImGui::Indent(20);
 
-    //// 5. ImGui 입력 처리 (카메라 이동, 픽킹)
-    //HandleViewportInput(FVector2D(ViewportSize.x, ViewportSize.y));
+    if (CurrentSkeletalMesh != nullptr)
+    {
+        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "SkeletalMesh Loaded");
+        ImGui::Spacing();
+
+        // Skeleton 정보
+        if (CurrentSkeletalMesh->GetSkeleton() != nullptr)
+        {
+            USkeleton* Skeleton = CurrentSkeletalMesh->GetSkeleton();
+            ImGui::Text("Bone Count: %d", Skeleton->GetBoneCount());
+            ImGui::Text("Vertex Count: %d", CurrentSkeletalMesh->GetVertexCount());
+            ImGui::Text("Index Count: %d", CurrentSkeletalMesh->GetIndexCount());
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "TODO: 3D Viewport 구현");
+        ImGui::TextWrapped("현재는 임시로 텍스트 정보만 표시합니다.");
+        ImGui::TextWrapped("3D 렌더링을 위해서는 PreviewWorld, Camera, RenderTarget 설정이 필요합니다.");
+    }
+    else
+    {
+        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No SkeletalMesh");
+        ImGui::Spacing();
+        ImGui::TextWrapped("Property에서 SkeletalMesh를 선택하고 '뷰어' 버튼을 눌러주세요.");
+    }
+
+    ImGui::Unindent(20);
 }
 
 // --- (이하 구현은 이전 답변과 동일) ---
@@ -86,6 +113,17 @@ void USkeletalMeshViewportWidget::RenderWidget()
 //        // ); 
 //    }
 //}
+
+void USkeletalMeshViewportWidget::SetSkeletalMesh(USkeletalMesh* InMesh)
+{
+    CurrentSkeletalMesh = InMesh;
+
+    // TODO: PreviewActor에 SkeletalMesh 설정
+    // if (PreviewActor && CurrentSkeletalMesh)
+    // {
+    //     PreviewActor->GetSkeletalMeshComponent()->SetSkeletalMesh(CurrentSkeletalMesh);
+    // }
+}
 
 void USkeletalMeshViewportWidget::HandleViewportInput(FVector2D ViewportSize)
 {
