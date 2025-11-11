@@ -479,26 +479,7 @@ void USkeletalMeshViewportWidget::HandleViewportInput(FVector2D ViewportSize)
     bool bInputChanged = false;
     const float MouseSensitivity = 0.25f;  // CameraActor와 동일
     const float CameraMoveSpeed = 0.05f;    // 이동 속도
-
-    // === 마우스 휠: 줌 ===
-    if (io.MouseWheel != 0.0f)
-    {
-        FVector Location = CameraComp->GetWorldLocation();
-        // DirectX LH 기준: Forward = +X
-        FQuat Quat = CameraComp->GetWorldRotation();
-        FVector Forward = Quat.RotateVector(FVector(1, 0, 0)).GetNormalized();
-
-        float ZoomDelta = io.MouseWheel * 20.0f;
-        CameraComp->SetWorldLocation(Location + Forward * ZoomDelta);
-
-        UE_LOG("[SkeletalMeshViewport] Camera Zoom - Location: (%.2f, %.2f, %.2f)",
-            Location.X + Forward.X * ZoomDelta,
-            Location.Y + Forward.Y * ZoomDelta,
-            Location.Z + Forward.Z * ZoomDelta);
-
-        bInputChanged = true;
-    }
-
+    
     // === 우클릭: 회전 + WASD 이동 ===
     if (ImGui::IsMouseDown(ImGuiMouseButton_Right))
     {
