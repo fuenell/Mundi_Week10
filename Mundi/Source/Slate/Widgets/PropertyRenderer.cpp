@@ -298,12 +298,16 @@ void UPropertyRenderer::CacheResources()
 	if (CachedStaticMeshPaths.IsEmpty() && CachedStaticMeshItems.IsEmpty())
 	{
 		CachedStaticMeshPaths = ResMgr.GetAllFilePaths<UStaticMesh>();
-		for (const FString& path : CachedStaticMeshPaths)
-		{
-			CachedStaticMeshItems.push_back(path.c_str());
-		}
+
+		// c_str 안전성을 위해 미리 삽입 후 아래서 for로 추가
 		CachedStaticMeshPaths.Insert("", 0);
 		CachedStaticMeshItems.Insert("None", 0);
+
+		// i=0 은 "None" / "" 이므로 i=1 부터 시작)
+		for (size_t i = 1; i < CachedStaticMeshPaths.size(); ++i)
+		{
+			CachedStaticMeshItems.push_back(CachedStaticMeshPaths[i].c_str());
+		}
 	}
 
 	// 2. 머티리얼
