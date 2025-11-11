@@ -64,23 +64,23 @@ void USkeletalMeshViewportWidget::Initialize()
         PreviewCamera = PreviewWorld->SpawnActor<ACameraActor>();
         if (PreviewCamera)
         {
-
             UCameraComponent* CameraComp = PreviewCamera->GetCameraComponent();
             if (CameraComp)
             {
                 // 카메라를 SkeletalMesh가 잘 보이는 위치에 배치
-                CameraComp->SetWorldLocation(FVector(5.0f, 0.0f, 5.0f));  // 뒤쪽 위
+                CameraComp->SetWorldLocation(FVector(5.0f, 0.0f, 2.0f));  // 뒤쪽 위
 
                 // 초기 카메라 회전 설정
-                CameraPitchDeg = -45.0f;     // Initialize에서 설정한 Pitch
-                CameraYawDeg = 0.0f;      // Initialize에서 설정한 Yaw
+                CameraPitchDeg = 0.0f;     // Initialize에서 설정한 Pitch
+                CameraYawDeg = 180.0f;      // Initialize에서 설정한 Yaw
 
                 // Pitch/Yaw로 쿼터니언 생성 (HandleViewportInput과 동일한 방식)
                 float RadPitch = CameraPitchDeg * (3.14159f / 180.0f);
                 float RadYaw = CameraYawDeg * (3.14159f / 180.0f);
-                FQuat PitchQuat = FQuat::FromAxisAngle(FVector(0, 1, 0), RadPitch);
+                FQuat RollQuat = FQuat::FromAxisAngle(FVector(1, 0, 0), 3.14159f);
                 FQuat YawQuat = FQuat::FromAxisAngle(FVector(0, 0, 1), RadYaw);
-                FQuat CameraRotation = YawQuat * PitchQuat;
+                FQuat PitchQuat = FQuat::FromAxisAngle(FVector(0, 1, 0), RadPitch);
+                FQuat CameraRotation = YawQuat * PitchQuat * RollQuat;
                 CameraRotation.Normalize();
 
                 CameraComp->SetWorldRotation(CameraRotation);
@@ -477,7 +477,7 @@ void USkeletalMeshViewportWidget::HandleViewportInput(FVector2D ViewportSize)
     if (!CameraComp) return;
 
     bool bInputChanged = false;
-    const float MouseSensitivity = 0.05f;  // CameraActor와 동일
+    const float MouseSensitivity = 0.25f;  // CameraActor와 동일
     const float CameraMoveSpeed = 0.05f;    // 이동 속도
 
     // === 마우스 휠: 줌 ===
@@ -490,6 +490,12 @@ void USkeletalMeshViewportWidget::HandleViewportInput(FVector2D ViewportSize)
 
         float ZoomDelta = io.MouseWheel * 20.0f;
         CameraComp->SetWorldLocation(Location + Forward * ZoomDelta);
+
+        UE_LOG("[SkeletalMeshViewport] Camera Zoom - Location: (%.2f, %.2f, %.2f)",
+            Location.X + Forward.X * ZoomDelta,
+            Location.Y + Forward.Y * ZoomDelta,
+            Location.Z + Forward.Z * ZoomDelta);
+
         bInputChanged = true;
     }
 
@@ -507,18 +513,23 @@ void USkeletalMeshViewportWidget::HandleViewportInput(FVector2D ViewportSize)
             // Pitch 제한 (짐벌락 방지)
             CameraPitchDeg = std::clamp(CameraPitchDeg, -89.0f, 89.0f);
 
-            // 축별 쿼터니언 생성 (Initialize와 동일한 축 사용: UE 좌표계)
-            float RadPitch = CameraPitchDeg * (3.14159f / 180.0f);
+            // 축별 쿼터니언 생성 (축을 반대로 시도)
             float RadYaw = CameraYawDeg * (3.14159f / 180.0f);
+            float RadPitch = CameraPitchDeg * (3.14159f / 180.0f);
 
-            FQuat PitchQuat = FQuat::FromAxisAngle(FVector(0, 1, 0), RadPitch);  // Y축 회전 (Pitch)
-            FQuat YawQuat = FQuat::FromAxisAngle(FVector(0, 0, 1), RadYaw);      // Z축 회전 (Yaw)
+            FQuat YawQuat = FQuat::FromAxisAngle(FVector(0, 0, 1), -RadYaw);      // Z축 회전
+            FQuat PitchQuat = FQuat::FromAxisAngle(FVector(0, 1, 0), RadPitch);  // Y축 회전
+            FQuat RollQuat = FQuat::FromAxisAngle(FVector(1, 0, 0), 3.14159f); // X축 회전 (180도 뒤집기)
 
             // Yaw * Pitch 순서로 합성
-            FQuat FinalRotation = YawQuat * PitchQuat;
+            FQuat FinalRotation = YawQuat * PitchQuat * RollQuat;
             FinalRotation.Normalize();
 
             CameraComp->SetWorldRotation(FinalRotation);
+
+            // 카메라 회전 각도 출력
+            UE_LOG("[SkeletalMeshViewport] Camera Rotation - Pitch: %.2f, Yaw: %.2f", CameraPitchDeg, CameraYawDeg);
+
             bInputChanged = true;
         }
 
@@ -535,36 +546,24 @@ void USkeletalMeshViewportWidget::HandleViewportInput(FVector2D ViewportSize)
         if (ImGui::IsKeyDown(ImGuiKey_S)) Move -= Forward;  // 후진
         if (ImGui::IsKeyDown(ImGuiKey_D)) Move += Right;    // 오른쪽
         if (ImGui::IsKeyDown(ImGuiKey_A)) Move -= Right;    // 왼쪽
-        if (ImGui::IsKeyDown(ImGuiKey_E)) Move += Up;       // 위
-        if (ImGui::IsKeyDown(ImGuiKey_Q)) Move -= Up;       // 아래
+        if (ImGui::IsKeyDown(ImGuiKey_E)) Move -= Up;       // 위
+        if (ImGui::IsKeyDown(ImGuiKey_Q)) Move += Up;       // 아래
 
         // 이동 적용
         if (Move.SizeSquared() > 0.0f)
         {
             Move = Move.GetNormalized() * CameraMoveSpeed;
             FVector Location = CameraComp->GetWorldLocation();
-            CameraComp->SetWorldLocation(Location + Move);
+            FVector NewLocation = Location + Move;
+            CameraComp->SetWorldLocation(NewLocation);
+
+            UE_LOG("[SkeletalMeshViewport] Camera Move - Location: (%.2f, %.2f, %.2f)",
+                NewLocation.X, NewLocation.Y, NewLocation.Z);
+
             bInputChanged = true;
         }
     }
-
-    // === 중클릭: 팬 ===
-    if (ImGui::IsMouseDown(ImGuiMouseButton_Middle))
-    {
-        ImVec2 MouseDelta = io.MouseDelta;
-        if (FMath::Abs(MouseDelta.x) > 0.1f || FMath::Abs(MouseDelta.y) > 0.1f)
-        {
-            const FQuat Quat = CameraComp->GetWorldRotation();
-            FVector Right = Quat.RotateVector(FVector(0, 1, 0)).GetNormalized();
-            FVector Up = Quat.RotateVector(FVector(0, 0, 1)).GetNormalized();
-
-            FVector Location = CameraComp->GetWorldLocation();
-            FVector PanOffset = Right * (-MouseDelta.x * 0.5f) + Up * (MouseDelta.y * 0.5f);
-            CameraComp->SetWorldLocation(Location + PanOffset);
-            bInputChanged = true;
-        }
-    }
-
+    
     // 입력이 있으면 다시 렌더링
     if (bInputChanged)
     {
