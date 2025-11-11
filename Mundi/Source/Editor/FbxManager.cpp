@@ -213,21 +213,31 @@ FStaticMesh* FFbxManager::LoadFbxStaticMeshAsset(const FString& PathFileName)
 	// ═══════════════════════════════════════════════════════════
 	// ExtractMaterialsFromScene()은 USkeletalMesh*만 받으므로 임시 SkeletalMesh 사용
 	// (Material extraction은 Scene에서 직접 추출하므로 Mesh 타입 무관)
-	USkeletalMesh* TempSkeletalMesh = ObjectFactory::NewObject<USkeletalMesh>();
-	if (Importer.ExtractMaterialsFromScene(TempSkeletalMesh))
+	USkeletalMesh* TempUSkeletalMesh = ObjectFactory::NewObject<USkeletalMesh>();
+	if (Importer.ExtractMaterialsFromScene(TempUSkeletalMesh))
 	{
-		UE_LOG("FFbxManager: Extracted materials from Static Mesh FBX");
+		const TArray<FString>& ExtractedMaterialNames = TempUSkeletalMesh->GetMaterialNames();
+		UE_LOG("FFbxManager: Extracted %d materials from Static Mesh FBX", ExtractedMaterialNames.size());
+
+		// CRITICAL FIX: 추출된 Material 이름을 FStaticMesh의 GroupInfos에 복사
+		// ExtractMaterialsFromScene()가 실제 FBX Material 노드에서 생성한 Material 이름 사용
+		// 이를 통해 SetMaterialByName()이 ResourceManager에서 Material을 찾을 수 있음
+		for (size_t i = 0; i < Mesh->GroupInfos.size() && i < ExtractedMaterialNames.size(); ++i)
+		{
+			Mesh->GroupInfos[i].InitialMaterialName = ExtractedMaterialNames[i];
+			UE_LOG("FFbxManager: Updated GroupInfo[%zu] Material: %s", i, ExtractedMaterialNames[i].c_str());
+		}
 
 		// 추출된 텍스처들을 즉시 DDS로 변환
 		// (첫 Import 시에도 DDS 캐시가 생성되도록 보장)
-		ConvertExtractedTexturesForStaticMesh(nullptr, Mesh->GroupInfos, PathFileName);
+		ConvertExtractedTexturesForStaticMesh(Mesh->GroupInfos, PathFileName);
 	}
 	else
 	{
 		UE_LOG("[warning] FFbxManager: Failed to extract materials from Static Mesh FBX");
 	}
 	// 임시 SkeletalMesh 삭제
-	ObjectFactory::DeleteObject(TempSkeletalMesh);
+	ObjectFactory::DeleteObject(TempUSkeletalMesh);
 
 	// 캐시에 저장
 	SaveStaticMeshToCache(CachePath, Mesh);
@@ -523,11 +533,10 @@ void FFbxManager::ForceDDSConversionForTexture(const FString& TexturePath)
 }
 
 void FFbxManager::ConvertExtractedTexturesForStaticMesh(
-	UStaticMesh* TempStaticMesh,
 	const TArray<FGroupInfo>& GroupInfos,
 	const FString& FbxPath)
 {
-	if (!TempStaticMesh || GroupInfos.empty())
+	if (GroupInfos.empty())
 	{
 		return;
 	}

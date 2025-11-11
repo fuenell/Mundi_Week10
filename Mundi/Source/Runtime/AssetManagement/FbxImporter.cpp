@@ -1739,8 +1739,8 @@ bool FFbxImporter::ExtractMaterials(FbxScene* InScene, USkeletalMesh* OutSkeleta
 	std::filesystem::path FbxDirAbsolute = std::filesystem::path(FbxFilePath.Buffer()).parent_path();
 
 	// ResolveAssetRelativePath 사용하여 Data/ 기준 상대 경로로 변환
-	FString fbxDirStr = ResolveAssetRelativePath(FbxDirAbsolute.string(), GDataDir);
-	UE_LOG("[FBX] FBX directory (relative to Data/): %s", fbxDirStr.c_str());
+	FString FbxDirStr = ResolveAssetRelativePath(FbxDirAbsolute.string(), GDataDir);
+	UE_LOG("[FBX] FBX directory (relative to Data/): %s", FbxDirStr.c_str());
 
 	// Helper lambda: 텍스처 경로를 Data/ 기준 상대 경로로 변환
 	auto ResolveTexturePath = [&](FbxFileTexture* Texture) -> FString

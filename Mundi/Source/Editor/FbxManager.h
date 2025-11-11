@@ -159,12 +159,10 @@ private:
 	/**
 	 * Static Mesh의 GroupInfos에서 Material을 추출하여 DDS로 변환
 	 * ExtractMaterialsFromScene() 직후 호출하여 첫 Import 시에도 DDS 캐시 생성
-	 * @param TempStaticMesh - Material이 추출된 임시 UStaticMesh
 	 * @param GroupInfos - Static Mesh의 Material 그룹 정보
 	 * @param FbxPath - FBX 파일 경로 (로깅용)
 	 */
 	static void ConvertExtractedTexturesForStaticMesh(
-		UStaticMesh* TempStaticMesh,
 		const TArray<FGroupInfo>& GroupInfos,
 		const FString& FbxPath);
 };
