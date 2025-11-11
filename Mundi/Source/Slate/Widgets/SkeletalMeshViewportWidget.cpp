@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "SkeletalMeshViewportWidget.h"
 #include "ImGui/imgui.h"
 #include "RenderManager.h"
@@ -18,6 +18,7 @@
 #include "AmbientLightComponent.h"
 #include "Grid/GridActor.h"
 #include "ObjectFactory.h"
+#include "StaticMeshActor.h"
 #include <d3d11.h>
 
 IMPLEMENT_CLASS(USkeletalMeshViewportWidget)
@@ -59,6 +60,7 @@ void USkeletalMeshViewportWidget::Initialize()
     PreviewWorld = NewObject<UWorld>();
     if (PreviewWorld)
     {
+        PreviewWorld->Initialize();
         UE_LOG("[SkeletalMeshViewport] PreviewWorld created: World=%p, LightManager=%p",
             PreviewWorld, PreviewWorld->GetLightManager());
         UE_LOG("[SkeletalMeshViewport] BEFORE spawning lights - DirLights: %d, AmbientLights: %d",
@@ -94,11 +96,11 @@ void USkeletalMeshViewportWidget::Initialize()
                 CameraYawDeg = 180.0f;      // Initialize에서 설정한 Yaw
 
                 // Pitch/Yaw로 쿼터니언 생성 (HandleViewportInput과 동일한 방식)
-                float RadPitch = CameraPitchDeg * (3.14159f / 180.0f);
-                float RadYaw = CameraYawDeg * (3.14159f / 180.0f);
-                FQuat RollQuat = FQuat::FromAxisAngle(FVector(1, 0, 0), 3.14159f);
+                float RadPitch = DegreesToRadians(CameraPitchDeg);
+                float RadYaw = DegreesToRadians(CameraYawDeg);
                 FQuat YawQuat = FQuat::FromAxisAngle(FVector(0, 0, 1), RadYaw);
                 FQuat PitchQuat = FQuat::FromAxisAngle(FVector(0, 1, 0), RadPitch);
+                FQuat RollQuat = FQuat::FromAxisAngle(FVector(1, 0, 0), 0);
                 FQuat CameraRotation = YawQuat * PitchQuat * RollQuat;
                 CameraRotation.Normalize();
 
@@ -138,17 +140,6 @@ void USkeletalMeshViewportWidget::Initialize()
                 AmbientComp->SetIntensity(0.3f);  // 강도 증가 (0.3)
                 AmbientComp->SetLightColor(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f));
             }
-        }
-
-        // === Grid 생성 (바닥 참조용) ===
-        PreviewGrid = PreviewWorld->SpawnActor<AGridActor>();
-        if (PreviewGrid)
-        {
-            PreviewGrid->SetActorLocation(FVector(0.0f, 0.0f, 0.0f));
-            PreviewGrid->Initialize();  // 그리드 라인 생성
-
-            // 그리드 크기 설정 (작은 뷰포트에 맞게 조정)
-            PreviewGrid->CreateGridLines(20, 1.0f, FVector::Zero());  // 20x20 그리드, 1.0 간격
         }
 
         // === 초기화 완료 후 라이트 카운트 확인 ===
@@ -237,10 +228,10 @@ void USkeletalMeshViewportWidget::RenderWidget()
     {
         ImTextureID TextureID = (ImTextureID)SceneSRV;
 
-        // D3D11 좌표계 → ImGui 좌표계 (Y축 반전)
+        // D3D11 좌표계와 ImGui 좌표계 모두 (0,0)이 Top-Left이므로 반전 불필요
         ImGui::Image(TextureID, ViewportSize,
-            ImVec2(0, 1),  // uv_min
-            ImVec2(1, 0)   // uv_max
+            ImVec2(0, 0),  // uv_min
+            ImVec2(1, 1)   // uv_max
         );
 
         HandleViewportInput(FVector2D(ViewportSize.x, ViewportSize.y));
@@ -532,12 +523,12 @@ void USkeletalMeshViewportWidget::HandleViewportInput(FVector2D ViewportSize)
             CameraPitchDeg = std::clamp(CameraPitchDeg, -89.0f, 89.0f);
 
             // 축별 쿼터니언 생성 (축을 반대로 시도)
-            float RadYaw = CameraYawDeg * (3.14159f / 180.0f);
-            float RadPitch = CameraPitchDeg * (3.14159f / 180.0f);
+            float RadYaw = DegreesToRadians(CameraYawDeg);
+            float RadPitch = DegreesToRadians(CameraPitchDeg);
 
-            FQuat YawQuat = FQuat::FromAxisAngle(FVector(0, 0, 1), -RadYaw);      // Z축 회전
+            FQuat YawQuat = FQuat::FromAxisAngle(FVector(0, 0, 1), RadYaw);      // Z축 회전
             FQuat PitchQuat = FQuat::FromAxisAngle(FVector(0, 1, 0), RadPitch);  // Y축 회전
-            FQuat RollQuat = FQuat::FromAxisAngle(FVector(1, 0, 0), 3.14159f); // X축 회전 (180도 뒤집기)
+            FQuat RollQuat = FQuat::FromAxisAngle(FVector(1, 0, 0), 0); // X축 회전 (180도 뒤집기)
 
             // Yaw * Pitch 순서로 합성
             FQuat FinalRotation = YawQuat * PitchQuat * RollQuat;
@@ -564,8 +555,8 @@ void USkeletalMeshViewportWidget::HandleViewportInput(FVector2D ViewportSize)
         if (ImGui::IsKeyDown(ImGuiKey_S)) Move -= Forward;  // 후진
         if (ImGui::IsKeyDown(ImGuiKey_D)) Move += Right;    // 오른쪽
         if (ImGui::IsKeyDown(ImGuiKey_A)) Move -= Right;    // 왼쪽
-        if (ImGui::IsKeyDown(ImGuiKey_E)) Move -= Up;       // 위
-        if (ImGui::IsKeyDown(ImGuiKey_Q)) Move += Up;       // 아래
+        if (ImGui::IsKeyDown(ImGuiKey_E)) Move += Up;       // 위
+        if (ImGui::IsKeyDown(ImGuiKey_Q)) Move -= Up;       // 아래
 
         // 이동 적용
         if (Move.SizeSquared() > 0.0f)
