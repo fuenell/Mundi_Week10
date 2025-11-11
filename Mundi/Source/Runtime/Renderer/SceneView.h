@@ -75,4 +75,10 @@ public:
     float ZoomFactor = 0.0f;
 
     TArray<FPostProcessModifier> Modifiers;
+
+    /**
+     * true인 경우, SceneRenderer가 RenderTarget을 전환하지 않습니다.
+     * 외부(Widget 등)에서 이미 RenderTarget을 설정한 경우 사용합니다.
+     */
+    bool bUseExternalRenderTarget = false;
 };

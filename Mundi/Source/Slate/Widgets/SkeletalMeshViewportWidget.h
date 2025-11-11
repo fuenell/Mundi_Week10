@@ -8,6 +8,9 @@ struct ID3D11DepthStencilView;
 
 class ACameraActor;
 class ASkeletalMeshActor;
+class ADirectionalLightActor;
+class AAmbientLightActor;
+class AGridActor;
 class UWorld;
 
 // 스켈레탈 메시 뷰어의 뷰포트 위젯입니다.
@@ -41,23 +44,24 @@ public:
 	class USkeletalMesh* GetSkeletalMesh() const { return CurrentSkeletalMesh; }
 
 private:
-	/** ImGui 영역 크기에 맞춰 렌더 타겟을 관리합니다. */
-	//void UpdateRenderTexture(FIntPoint NewSize);
+	/** RenderTarget 생성 (RTV, SRV, DSV) */
+	bool CreateRenderTarget(int32 Width, int32 Height);
 
-	/** RTV/SRV 리소스를 해제합니다. */
+	/** PreviewWorld를 RTV에 렌더링하고 SRV로 변환 */
+	bool RenderPreviewWorldToRTV(int32 Width, int32 Height);
+
+	/** RTV/SRV/DSV 리소스를 해제합니다. */
 	void ReleaseRenderTexture();
 
 	/** 뷰포트 내의 ImGui 입력을 처리합니다. */
 	void HandleViewportInput(FVector2D ViewportSize);
-
-	/** 프리뷰 씬을 텍스처에 렌더링합니다. */
-	//void RenderPreviewScene(FIntPoint TargetSize);
 
 private:
 	// --- Render-to-Texture 리소스 ---
 	ID3D11RenderTargetView* SceneRTV = nullptr;
 	ID3D11ShaderResourceView* SceneSRV = nullptr;
 	ID3D11DepthStencilView* SceneDSV = nullptr;
+	ID3D11RenderTargetView* DummyIdRTV = nullptr;  // IdBuffer 대체용 더미 (슬롯 1)
 	// (픽킹용 ID 타겟도 필요)
 	//FIntPoint TextureSize = { 0, 0 };
 
@@ -65,7 +69,14 @@ private:
 	UWorld* PreviewWorld = nullptr;
 	ACameraActor* PreviewCamera = nullptr;
 	ASkeletalMeshActor* PreviewActor = nullptr;
+	ADirectionalLightActor* PreviewLight = nullptr;
+	AAmbientLightActor* PreviewAmbientLight = nullptr;
+	AGridActor* PreviewGrid = nullptr;
 
 	// 현재 표시 중인 SkeletalMesh
 	class USkeletalMesh* CurrentSkeletalMesh = nullptr;
+
+	// 렌더링 최적화
+	bool bNeedsRedraw = true;  // 다시 그려야 하는지 여부
+	FVector2D LastViewportSize = FVector2D::Zero();  // 이전 뷰포트 크기
 };
