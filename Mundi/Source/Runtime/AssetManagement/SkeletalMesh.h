@@ -69,6 +69,12 @@ struct FSkinnedVertex
 			BoneWeights[i] = 0.0f;
 		}
 	}
+
+	// Binary serialization operators
+	friend class FWindowsBinWriter;
+	friend class FWindowsBinReader;
+	friend FWindowsBinWriter& operator<<(FWindowsBinWriter& Writer, const FSkinnedVertex& Vertex);
+	friend FWindowsBinReader& operator>>(FWindowsBinReader& Reader, FSkinnedVertex& Vertex);
 };
 
 /**
@@ -135,6 +141,12 @@ struct FSkeletalMesh
 	{
 		return !Vertices.empty() && !Indices.empty() && Skeleton != nullptr;
 	}
+
+	// Binary serialization operators
+	friend class FWindowsBinWriter;
+	friend class FWindowsBinReader;
+	friend FWindowsBinWriter& operator<<(FWindowsBinWriter& Writer, const FSkeletalMesh& Mesh);
+	friend FWindowsBinReader& operator>>(FWindowsBinReader& Reader, FSkeletalMesh& Mesh);
 };
 
 /**
