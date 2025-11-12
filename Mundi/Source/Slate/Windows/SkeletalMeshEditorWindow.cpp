@@ -136,7 +136,7 @@ void USkeletalMeshEditorWindow::OnBoneSelectedEvent(int32 BoneIndex)
 
 	if (ViewportWidget)
 	{
-		ViewportWidget->SelectBone(BoneIndex);
+		ViewportWidget->UpdateGizmo(BoneIndex);
 	}
 
 	if (HierarchyWidget != nullptr)

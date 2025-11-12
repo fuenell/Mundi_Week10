@@ -115,6 +115,8 @@ void USkeletalMeshViewportWidget::Initialize()
             }
         }
 
+        PreviewWorld->GetGizmoActor()->SetSpace(EGizmoSpace::Local);
+
         PreviewWorld->SetEditorCameraActor(PreviewCamera);
 
         // === SkeletalMeshActor 생성 (나중에 SetSkeletalMesh에서 메시 설정) ===
@@ -754,12 +756,12 @@ void USkeletalMeshViewportWidget::HandleBonePicking(const FVector2D& ViewportSiz
 }
 
 // 기즈모 표시
-void USkeletalMeshViewportWidget::SelectBone(int32 BoneIndex)
+void USkeletalMeshViewportWidget::UpdateGizmo(int32 BoneIndex)
 {
     FBoneInfo BoneInfo = PreviewActor->GetSkeletalMeshComponent()->GetSkeleton()->GetBone(BoneIndex);
-    FMatrix TM = BoneInfo.GlobalBindPoseMatrix;
-    FVector Pos = FVector(BoneInfo.GlobalBindPoseMatrix.M[3][0], BoneInfo.GlobalBindPoseMatrix.M[3][1], BoneInfo.GlobalBindPoseMatrix.M[3][2]);
-    BoneTransformComp->SetWorldLocation(Pos);
+    //FMatrix TM = BoneInfo.GlobalBindPoseMatrix;
+    FTransform BoneWorldTransform = PreviewActor->GetSkeletalMeshComponent()->GetBoneWorldTransform(BoneIndex);
+    BoneTransformComp->SetWorldTransform(BoneWorldTransform);
     PreviewWorld->GetSelectionManager()->SelectComponent(BoneTransformComp);
     PreviewWorld->GetGizmoActor()->Tick(0);
     bNeedsRedraw = true;    // 기즈모 위치를 다시 그려야 하기 때문에
@@ -772,114 +774,6 @@ void USkeletalMeshViewportWidget::UpdateBone(int32 BoneIndex)
 
     PreviewActor->GetSkeletalMeshComponent()->StartUpdateBoneRecursive();
     PreviewActor->GetSkeletalMeshComponent()->PerformCPUSkinning();
+    UpdateGizmo(BoneIndex);
     bNeedsRedraw = true;    // 변경된 뼈를 반영해서 다시 그리기 위해
-}
-
-void USkeletalMeshViewportWidget::CreateGizmoForBone(const FBonePicking& PickingResult)
-{
-    UE_LOG("[SkeletalMeshViewport] CreateGizmoForBone: BoneIndex=%d", PickingResult.BoneIndex);
-
-    if (!PreviewWorld || !PreviewActor)
-    {
-        UE_LOG("[SkeletalMeshViewport] ERROR: PreviewWorld or PreviewActor is null!");
-        return;
-    }
-
-    USkeletalMeshComponent* SkelMeshComp = PreviewActor->GetSkeletalMeshComponent();
-    if (!SkelMeshComp)
-    {
-        UE_LOG("[SkeletalMeshViewport] ERROR: SkeletalMeshComponent is null!");
-        return;
-    }
-
-    // 같은 본을 다시 클릭한 경우 기즈모 유지
-    if (BoneGizmoProxyComponent && PickedBoneIndex == PickingResult.BoneIndex)
-    {
-        UE_LOG("[SkeletalMeshViewport] Same bone clicked - keeping existing gizmo");
-        return;
-    }
-
-    // 다른 본을 클릭한 경우 기존 기즈모 파괴
-    DestroyCurrentGizmo();
-    PickedBoneIndex = PickingResult.BoneIndex;
-
-    // Create BoneGizmoProxyComponent
-    UE_LOG("[SkeletalMeshViewport] Creating BoneGizmoProxyComponent...");
-    BoneGizmoProxyComponent = NewObject<UBoneGizmoProxyComponent>();
-
-    if (BoneGizmoProxyComponent)
-    {
-        BoneGizmoProxyComponent->SetupAttachment(PreviewActor->GetRootComponent());
-        BoneGizmoProxyComponent->SetTargetBone(SkelMeshComp, PickingResult.BoneIndex);
-        BoneGizmoProxyComponent->RegisterComponent(PreviewWorld);  // RegisterComponent 호출
-        UE_LOG("[SkeletalMeshViewport] BoneGizmoProxyComponent created and attached");
-
-        // Create Gizmo Actor
-        UE_LOG("[SkeletalMeshViewport] Spawning GizmoActor...");
-        CurrentGizmo = PreviewWorld->SpawnActor<AGizmoActor>();
-        if (CurrentGizmo)
-        {
-            UE_LOG("[SkeletalMeshViewport] GizmoActor spawned successfully");
-
-            // Attach gizmo root component to proxy component
-            USceneComponent* GizmoRoot = CurrentGizmo->GetRootComponent();
-            if (GizmoRoot)
-            {
-                GizmoRoot->SetupAttachment(BoneGizmoProxyComponent);
-                UE_LOG("[SkeletalMeshViewport] Gizmo root attached to proxy component");
-            }
-            else
-            {
-                UE_LOG("[SkeletalMeshViewport] WARNING: Gizmo root component is null!");
-            }
-
-            CurrentGizmo->SetMode(EGizmoMode::Translate); // Default to translate mode
-            UE_LOG("[SkeletalMeshViewport] Gizmo created for bone %d", PickingResult.BoneIndex);
-        }
-        else
-        {
-            UE_LOG("[SkeletalMeshViewport] ERROR: Failed to spawn GizmoActor!");
-        }
-
-        PickedBoneIndex = PickingResult.BoneIndex;
-        bNeedsRedraw = true;
-    }
-    else
-    {
-        UE_LOG("[SkeletalMeshViewport] ERROR: Failed to create BoneGizmoProxyComponent!");
-    }
-}
-
-void USkeletalMeshViewportWidget::DestroyCurrentGizmo()
-{
-    UE_LOG("[SkeletalMeshViewport] DestroyCurrentGizmo called");
-
-    // Destroy gizmo actor
-    if (CurrentGizmo)
-    {
-        UE_LOG("[SkeletalMeshViewport] Destroying GizmoActor...");
-        ObjectFactory::DeleteObject(CurrentGizmo);
-        CurrentGizmo = nullptr;
-    }
-
-    // Destroy proxy component - 언레지스터 후 삭제
-    if (BoneGizmoProxyComponent)
-    {
-        UE_LOG("[SkeletalMeshViewport] Destroying BoneGizmoProxyComponent...");
-
-        // 먼저 언레지스터
-        if (BoneGizmoProxyComponent->IsRegistered())
-        {
-            BoneGizmoProxyComponent->UnregisterComponent();
-            UE_LOG("[SkeletalMeshViewport] BoneGizmoProxyComponent unregistered");
-        }
-
-        // 그 다음 파괴
-        BoneGizmoProxyComponent->DestroyComponent();
-        BoneGizmoProxyComponent = nullptr;
-    }
-
-    PickedBoneIndex = -1;
-    bNeedsRedraw = true;
-    UE_LOG("[SkeletalMeshViewport] Gizmo destroyed");
 }

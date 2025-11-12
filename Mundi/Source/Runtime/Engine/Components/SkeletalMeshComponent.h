@@ -128,9 +128,11 @@ public:
 	DECLARE_DUPLICATE(USkeletalMeshComponent)
 
 
-	void MoveBone(int BoneIndex, FMatrix Matrix);
+	void MoveBone(int BoneIndex, const FTransform& Transform);
 
 	void UpdateBoneRecursive(int32 BoneIndex, const FMatrix& ParentAnimatedTransform);
+
+	FTransform GetBoneWorldTransform(int32 BoneIndex);
 
 protected:
 	void MarkWorldPartitionDirty();
@@ -167,5 +169,5 @@ private:
 	
 	// 사용자가 'SetBoneTransform'으로 설정한 커스텀 로컬 트랜스폼을
 	// BoneIndex를 키로 하여 저장하는 맵(Map)입니다.
-	TMap<int32, FMatrix> CustomBoneLocalMetrics;
+	TMap<int32, FTransform> CustomBoneLocalTransform;
 };

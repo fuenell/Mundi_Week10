@@ -47,6 +47,7 @@ void USkeletalMeshComponent::SetSkeletalMesh(USkeletalMesh* InSkeletalMesh)
 
 	// Material 슬롯 초기화
 	MaterialSlots.Empty();
+	CustomBoneLocalTransform.clear();
 	if (SkeletalMesh)
 	{
 		// Static Mesh Component와 동일한 패턴: GroupInfos 기반 Material 자동 설정
@@ -314,8 +315,8 @@ void USkeletalMeshComponent::TickComponent(float DeltaTime)
 	// 한 바퀴 계속 회전 (360도)
 	float RotationRad = DeltaTime * 1.0f;  // 초당 2 라디안 회전 (약 114도/초)
 
-	FMatrix RotationMatrix = FQuat::MakeFromEulerZYX(FVector(0, 0, RadiansToDegrees(RotationRad))).ToMatrix();
-	FMatrix RotationMatrix1 = FQuat::MakeFromEulerZYX(FVector(RadiansToDegrees(RotationRad), 0, 0)).ToMatrix();
+	FTransform RotationMatrix = FTransform(FVector::Zero(), FQuat::MakeFromEulerZYX(FVector(0, 0, RadiansToDegrees(RotationRad))), FVector::One());
+	FTransform RotationMatrix1 = FTransform(FVector::Zero(), FQuat::MakeFromEulerZYX(FVector(0, RadiansToDegrees(RotationRad), 0)), FVector::One());
 
 	MoveBone(0, RotationMatrix);
 	MoveBone(1, RotationMatrix1);
@@ -452,12 +453,12 @@ void USkeletalMeshComponent::SetBoneTransform(int32 BoneIndex, const FTransform&
 
 	// 전달받은 '로컬' 트랜스폼을 '커스텀 오버라이드 맵'에 저장합니다.
 	// TickComponent가 이 값을 읽어갈 것입니다.
-	CustomBoneLocalMetrics[BoneIndex] = Transform.ToMatrix();
+	CustomBoneLocalTransform[BoneIndex] = Transform;
 	bNeedsBoneTransformUpdate = true;
 }
 
 // 상대 좌표 행렬로 움직이기
-void USkeletalMeshComponent::MoveBone(int TargetBoneIndex, FMatrix Matrix)
+void USkeletalMeshComponent::MoveBone(int TargetBoneIndex, const FTransform& Transform)
 {
 	USkeleton* Skeleton = GetSkeleton();
 	if (Skeleton && Skeleton->GetBoneCount() > TargetBoneIndex)
@@ -465,14 +466,14 @@ void USkeletalMeshComponent::MoveBone(int TargetBoneIndex, FMatrix Matrix)
 		// 루트 본부터 시작 (부모 행렬은 단위 행렬)
 		const FBoneInfo& CurrentBoneInfo = Skeleton->GetBone(TargetBoneIndex);
 
-		if (CustomBoneLocalMetrics.find(TargetBoneIndex) != CustomBoneLocalMetrics.end())
+		if (CustomBoneLocalTransform.find(TargetBoneIndex) != CustomBoneLocalTransform.end())
 		{
 			// 오버라이드
-			CustomBoneLocalMetrics[TargetBoneIndex] = CustomBoneLocalMetrics[TargetBoneIndex] * Matrix;
+			CustomBoneLocalTransform[TargetBoneIndex] = CustomBoneLocalTransform[TargetBoneIndex].GetWorldTransform(Transform);
 		}
 		else
 		{
-			CustomBoneLocalMetrics[TargetBoneIndex] = CurrentBoneInfo.BindPoseRelativeTransform.ToMatrix() * Matrix;
+			CustomBoneLocalTransform[TargetBoneIndex] = CurrentBoneInfo.BindPoseRelativeTransform.GetWorldTransform(Transform);
 		}
 
 		bNeedsBoneTransformUpdate = true;
@@ -488,16 +489,16 @@ void USkeletalMeshComponent::UpdateBoneRecursive(int32 BoneIndex, const FMatrix&
 
 	const FBoneInfo& CurrentBoneInfo = Skeleton->GetBone(BoneIndex);
 
-	FMatrix LocalTransform = CurrentBoneInfo.BindPoseRelativeTransform.ToMatrix();
+	FTransform LocalTransform = CurrentBoneInfo.BindPoseRelativeTransform;
 
-	if (CustomBoneLocalMetrics.find(BoneIndex) != CustomBoneLocalMetrics.end())
+	if (CustomBoneLocalTransform.find(BoneIndex) != CustomBoneLocalTransform.end())
 	{
 		// 오버라이드
-		LocalTransform = CustomBoneLocalMetrics[BoneIndex];
+		LocalTransform = CustomBoneLocalTransform[BoneIndex];
 	}
 
 	// 로컬 행렬에 부모 행렬을 곱해서 본의 모델위치를 복구 
-	FMatrix CurrentAnimatedTransform = LocalTransform * ParentAnimatedTransform;
+	FMatrix CurrentAnimatedTransform = LocalTransform.ToMatrix() * ParentAnimatedTransform;
 
 	// 4. (기존과 동일 - 올바른 로직)
 	// 최종 스키닝 행렬을 계산합니다.
@@ -517,6 +518,35 @@ void USkeletalMeshComponent::UpdateBoneRecursive(int32 BoneIndex, const FMatrix&
 	}
 }
 
+// NOTE: 각 뼈 트랜스폼을 캐싱해서 반환하도록 변경해도 좋음, 일단 매번 부모 노드까지 순회해서 계산
+FTransform USkeletalMeshComponent::GetBoneWorldTransform(int32 BoneIndex)
+{
+	USkeleton* Skeleton = GetSkeleton();
+
+	FTransform Result;
+
+	if (BoneIndex < 0 || BoneIndex >= Skeleton->GetBoneCount())
+		return Result;
+
+	// 부모 노드까지 순회
+	while (0 <= BoneIndex)
+	{
+		const FBoneInfo& CurrentBoneInfo = Skeleton->GetBone(BoneIndex);
+
+		FTransform LocalTransform = CurrentBoneInfo.BindPoseRelativeTransform;
+
+		if (CustomBoneLocalTransform.find(BoneIndex) != CustomBoneLocalTransform.end())
+		{
+			LocalTransform = CustomBoneLocalTransform[BoneIndex];
+		}
+
+		Result = LocalTransform.GetWorldTransform(Result);
+
+		BoneIndex = CurrentBoneInfo.ParentIndex;
+	}
+
+	return Result;
+}
 
 void USkeletalMeshComponent::MarkWorldPartitionDirty()
 {

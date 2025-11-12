@@ -60,7 +60,7 @@ public:
 	bool IsBoneVisualizationEnabled() const;
 
 	// 선택된 본 기즈모 표시
-	void SelectBone(int32 BoneIndex);
+	void UpdateGizmo(int32 BoneIndex);
 	
 	void UpdateBone(int32 BoneIndex);
 
@@ -82,12 +82,6 @@ private:
 	/** 본 피킹 처리 */
 	void HandleBonePicking(const FVector2D& ViewportSize, const FVector2D& LocalMousePos);
 
-	/** 피킹된 본에 기즈모 생성 */
-	void CreateGizmoForBone(const FBonePicking& PickingResult);
-
-	/** 현재 기즈모 제거 */
-	void DestroyCurrentGizmo();
-
 private:
 	// --- Render-to-Texture 리소스 ---
 	ID3D11RenderTargetView* SceneRTV = nullptr;
@@ -95,7 +89,7 @@ private:
 	ID3D11DepthStencilView* SceneDSV = nullptr;
 	ID3D11RenderTargetView* DummyIdRTV = nullptr;  // IdBuffer 대체용 더미 (슬롯 1)
 	// (픽킹용 ID 타겟도 필요)
-	//FIntPoint TextureSize = { 0, 0 };
+	//FIntPoint TextureSize = { 0, 0 };ㅔㄴ스
 
 	// --- 프리뷰 씬(Scene) ---
 	UWorld* PreviewWorld = nullptr;
