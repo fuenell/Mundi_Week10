@@ -124,6 +124,8 @@ void FSceneRenderer::Render()
 	if (View->bUseExternalRenderTarget)
 	{
 		RenderDebugPass();	// 그리드만 렌더링
+
+		RenderOverayEditorPrimitivesPass();	// 기즈모 출력
 	}
 	else if (!World->bPie)
 	{
@@ -1370,16 +1372,28 @@ void FSceneRenderer::RenderDebugPass()
 
 void FSceneRenderer::RenderOverayEditorPrimitivesPass()
 {
-	// External RenderTarget 사용 시 오버레이 렌더링하지 않음 (기즈모 등)
-	if (View->bUseExternalRenderTarget)
-		return;
 
-	// 후처리된 최종 이미지 위에 원본 씬의 뎁스 버퍼를 사용하여 3D 오버레이를 렌더링합니다.
-	RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTargetWithId);
-
-	// 뎁스 버퍼를 Clear하고 LessEqual로 그리기 때문에 오버레이로 표시되는데
-	// 오버레이 끼리는 깊이 테스트가 가능함
-	RHIDevice->ClearDepthBuffer(1.0f, 0);
+	// External RenderTarget을 사용하는 경우 RTV 전환을 스킵
+	// (이미 외부에서 설정된 RTV를 사용)
+	if (!View->bUseExternalRenderTarget)
+	{
+		RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTargetWithId);
+		// 뎁스 버퍼를 Clear하고 LessEqual로 그리기 때문에 오버레이로 표시되는데
+		// 오버레이 끼리는 깊이 테스트가 가능함
+		RHIDevice->ClearDepthBuffer(1.0f, 0);
+	}
+	else
+	{
+		// 디버그: External RTV 사용 중
+		ID3D11RenderTargetView* CheckRTVs[2] = { nullptr, nullptr };
+		ID3D11DepthStencilView* CheckDSV = nullptr;
+		RHIDevice->GetDeviceContext()->OMGetRenderTargets(2, CheckRTVs, &CheckDSV);
+		UE_LOG("[SceneRenderer] RenderLitPath: External RTV mode - RTV[0]=%p, RTV[1]=%p, DSV=%p",
+			CheckRTVs[0], CheckRTVs[1], CheckDSV);
+		if (CheckRTVs[0]) CheckRTVs[0]->Release();
+		if (CheckRTVs[1]) CheckRTVs[1]->Release();
+		if (CheckDSV) CheckDSV->Release();
+	}
 
 	for (UPrimitiveComponent* GizmoComp : Proxies.OverlayPrimitives)
 	{

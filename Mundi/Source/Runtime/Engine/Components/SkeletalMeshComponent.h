@@ -63,7 +63,7 @@ public:
 	 * Bone Transforms 업데이트
 	 * 현재는 Bind Pose만 사용하지만, 향후 Animation 시스템에서 사용
 	 */
-	void UpdateBoneTransforms();
+	void ResetBoneTransforms();
 
 	/**
 	 * Bone Matrices 가져오기 (Component Space)
@@ -85,6 +85,8 @@ public:
 	 * Bone Transforms를 사용하여 Vertex 위치 계산
 	 */
 	void PerformCPUSkinning();
+
+	void StartUpdateBoneRecursive();
 
 	/**
 	 * CPU Skinning 활성화/비활성화
@@ -128,6 +130,8 @@ public:
 
 	void MoveBone(int BoneIndex, FMatrix Matrix);
 
+	void UpdateBoneRecursive(int32 BoneIndex, const FMatrix& ParentAnimatedTransform);
+
 protected:
 	void MarkWorldPartitionDirty();
 
@@ -160,4 +164,8 @@ private:
 	// TODO: Animation 관련 멤버 변수들 (Phase 6+)
 	// UAnimSequence* CurrentAnimation = nullptr;
 	// float CurrentAnimationTime = 0.0f;
+	
+	// 사용자가 'SetBoneTransform'으로 설정한 커스텀 로컬 트랜스폼을
+	// BoneIndex를 키로 하여 저장하는 맵(Map)입니다.
+	TMap<int32, FMatrix> CustomBoneLocalMetrics;
 };

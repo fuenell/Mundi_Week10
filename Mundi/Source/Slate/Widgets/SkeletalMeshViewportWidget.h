@@ -58,6 +58,11 @@ public:
 	 */
 	bool IsBoneVisualizationEnabled() const;
 
+	// 선택된 본 기즈모 표시
+	void SelectBone(int32 BoneIndex);
+	
+	void UpdateBone(int32 BoneIndex);
+
 private:
 	/** RenderTarget 생성 (RTV, SRV, DSV) */
 	bool CreateRenderTarget(int32 Width, int32 Height);
@@ -91,11 +96,13 @@ private:
 
 	// --- 프리뷰 씬(Scene) ---
 	UWorld* PreviewWorld = nullptr;
+private:
 	ACameraActor* PreviewCamera = nullptr;
 	ASkeletalMeshActor* PreviewActor = nullptr;
 	ADirectionalLightActor* PreviewLight = nullptr;
 	AAmbientLightActor* PreviewAmbientLight = nullptr;
 	AGridActor* PreviewGrid = nullptr;
+	USceneComponent* BoneTransformComp = nullptr;
 
 	// 현재 표시 중인 SkeletalMesh
 	class USkeletalMesh* CurrentSkeletalMesh = nullptr;

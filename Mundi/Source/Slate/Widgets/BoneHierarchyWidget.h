@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "Widget.h"
 #include "Delegates.h"
 
@@ -77,6 +77,7 @@ public:
 	 * int32: 선택된 Bone 인덱스
 	 */
 	TDelegate<int32> OnBoneSelected;
+
 
 private:
 	/**

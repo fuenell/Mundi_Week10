@@ -23,6 +23,7 @@
 #include "BoneGizmoProxyComponent.h"
 #include "Gizmo/GizmoActor.h"
 #include "Picking.h"
+#include "SelectionManager.h"
 #include <d3d11.h>
 
 IMPLEMENT_CLASS(USkeletalMeshViewportWidget)
@@ -113,11 +114,21 @@ void USkeletalMeshViewportWidget::Initialize()
             }
         }
 
+        PreviewWorld->SetEditorCameraActor(PreviewCamera);
+
         // === SkeletalMeshActor 생성 (나중에 SetSkeletalMesh에서 메시 설정) ===
         PreviewActor = PreviewWorld->SpawnActor<ASkeletalMeshActor>();
         if (PreviewActor)
         {
             PreviewActor->SetActorLocation(FVector::Zero());
+        }
+
+        // === SkeletalMeshActor 생성 (나중에 SetSkeletalMesh에서 메시 설정) ===
+        AActor* Test = PreviewWorld->SpawnActor<AActor>();
+        BoneTransformComp = Test->GetRootComponent();
+        if (BoneTransformComp)
+        {
+            BoneTransformComp->SetWorldLocation(FVector::Zero());
         }
 
         // === DirectionalLight 생성 (조명이 없으면 아무것도 안 보임) ===
@@ -726,15 +737,39 @@ void USkeletalMeshViewportWidget::HandleBonePicking(const FVector2D& ViewportSiz
             PickingResult.Distance);
 
         // Create gizmo for picked bone
-        CreateGizmoForBone(PickingResult);
+        //CreateGizmoForBone(PickingResult);
+
+        SelectBone(PickingResult.BoneIndex);
     }
     else
     {
         UE_LOG("[SkeletalMeshViewport] No bone picked");
 
         // Destroy current gizmo
-        DestroyCurrentGizmo();
+        //DestroyCurrentGizmo();
     }
+}
+
+// 기즈모 표시
+void USkeletalMeshViewportWidget::SelectBone(int32 BoneIndex)
+{
+    FBoneInfo BoneInfo = PreviewActor->GetSkeletalMeshComponent()->GetSkeleton()->GetBone(BoneIndex);
+    FMatrix TM = BoneInfo.GlobalBindPoseMatrix;
+    FVector Pos = FVector(BoneInfo.GlobalBindPoseMatrix.M[3][0], BoneInfo.GlobalBindPoseMatrix.M[3][1], BoneInfo.GlobalBindPoseMatrix.M[3][2]);
+    BoneTransformComp->SetWorldLocation(Pos);
+    PreviewWorld->GetSelectionManager()->SelectComponent(BoneTransformComp);
+    PreviewWorld->GetGizmoActor()->Tick(0);
+    bNeedsRedraw = true;    // 기즈모 위치를 다시 그려야 하기 때문에
+}
+
+void USkeletalMeshViewportWidget::UpdateBone(int32 BoneIndex)
+{
+    FBoneInfo BoneInfo = PreviewActor->GetSkeletalMeshComponent()->GetSkeletalMesh()->GetSkeleton()->GetBone(BoneIndex);
+    PreviewActor->GetSkeletalMeshComponent()->SetBoneTransform(BoneIndex, BoneInfo.BindPoseRelativeTransform);
+
+    PreviewActor->GetSkeletalMeshComponent()->StartUpdateBoneRecursive();
+    PreviewActor->GetSkeletalMeshComponent()->PerformCPUSkinning();
+    bNeedsRedraw = true;    // 변경된 뼈를 반영해서 다시 그리기 위해
 }
 
 void USkeletalMeshViewportWidget::CreateGizmoForBone(const FBonePicking& PickingResult)

@@ -58,6 +58,8 @@ void USkeletalMeshEditorWindow::Initialize()
 	if (DetailWidget != nullptr)
 	{
 		DetailWidget->Initialize();
+
+		DetailWidget->OnBoneUpdated.AddDynamic(this, &USkeletalMeshEditorWindow::OnBoneUpdated);
 	}
 
 	// Layout Widget 생성 및 설정
@@ -124,5 +126,18 @@ void USkeletalMeshEditorWindow::OnBoneSelected(int32 BoneIndex)
 	if (DetailWidget != nullptr)
 	{
 		DetailWidget->SetSelectedBone(BoneIndex);
+	}
+
+	if (ViewportWidget)
+	{
+		ViewportWidget->SelectBone(BoneIndex);
+	}
+}
+
+void USkeletalMeshEditorWindow::OnBoneUpdated(int32 BoneIndex)
+{
+	if (ViewportWidget)
+	{
+		ViewportWidget->UpdateBone(BoneIndex);
 	}
 }

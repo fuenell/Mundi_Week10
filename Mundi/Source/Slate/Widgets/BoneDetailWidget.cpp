@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "BoneDetailWidget.h"
 #include "SkeletalMesh.h"
 #include "Skeleton.h"
@@ -119,6 +119,9 @@ void UBoneDetailWidget::RenderWidget()
 	{
 		ImGui::Spacing();
 		ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "* Transform Modified");
+
+		ApplyBoneTransform();
+		bIsTransformModified = false;
 	}
 }
 
@@ -191,7 +194,7 @@ void UBoneDetailWidget::LoadBoneTransform()
 	const FBoneInfo& BoneInfo = Skeleton->GetBone(CurrentBoneIndex);
 
 	// BindPoseTransform에서 Transform 데이터 추출
-	const FTransform& BindPose = BoneInfo.BindPoseTransform;
+	const FTransform& BindPose = BoneInfo.BindPoseRelativeTransform;
 
 	// Translation
 	BonePosition = BindPose.Translation;
@@ -225,6 +228,7 @@ void UBoneDetailWidget::ApplyBoneTransform()
 	// Skeleton에 적용
 	Skeleton->SetBindPoseTransform(CurrentBoneIndex, NewTransform);
 
+	OnBoneUpdated.Broadcast(CurrentBoneIndex);
 	// TODO: SkeletalMeshComponent에 Bone Transform 업데이트 알림
 	// 현재는 Skeleton의 BindPose만 수정하고 있으므로,
 	// 실시간 프리뷰를 위해서는 SkeletalMeshComponent의 BoneMatrices를 업데이트해야 합니다.

@@ -16,7 +16,7 @@ struct FBoneInfo
 
 	// Bind Pose Transform (Local Space)
 	// 초기 상태에서 부모 본 기준의 상대 Transform
-	FTransform BindPoseTransform;
+	FTransform BindPoseRelativeTransform;
 
 	// Global Bind Pose Matrix (Global Space)
 	// FBX Cluster의 GetTransformLinkMatrix()에서 추출
@@ -31,7 +31,7 @@ struct FBoneInfo
 	FBoneInfo()
 		: Name("")
 		, ParentIndex(-1)
-		, BindPoseTransform(FTransform())
+		, BindPoseRelativeTransform(FTransform())
 		, GlobalBindPoseMatrix(FMatrix::Identity())
 		, InverseBindPoseMatrix(FMatrix::Identity())
 	{
@@ -41,7 +41,7 @@ struct FBoneInfo
 	FBoneInfo(const FString& InName, int32 InParentIndex)
 		: Name(InName)
 		, ParentIndex(InParentIndex)
-		, BindPoseTransform(FTransform())
+		, BindPoseRelativeTransform(FTransform())
 		, GlobalBindPoseMatrix(FMatrix::Identity())
 		, InverseBindPoseMatrix(FMatrix::Identity())
 	{

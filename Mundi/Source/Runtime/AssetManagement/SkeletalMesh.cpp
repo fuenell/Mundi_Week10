@@ -474,7 +474,7 @@ FWindowsBinReader& operator>>(FWindowsBinReader& Reader, FSkeletalMesh& Mesh)
 			int32 BoneIndex = Mesh.Skeleton->AddBone(Bone.Name, Bone.ParentIndex);
 
 			// 본 트랜스폼 설정
-			Mesh.Skeleton->SetBindPoseTransform(BoneIndex, Bone.BindPoseTransform);
+			Mesh.Skeleton->SetBindPoseTransform(BoneIndex, Bone.BindPoseRelativeTransform);
 			Mesh.Skeleton->SetGlobalBindPoseMatrix(BoneIndex, Bone.GlobalBindPoseMatrix);
 			Mesh.Skeleton->SetInverseBindPoseMatrix(BoneIndex, Bone.InverseBindPoseMatrix);
 		}

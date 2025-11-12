@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "Skeleton.h"
 #include "GlobalConsole.h"
 #include "Archive.h"
@@ -135,7 +135,7 @@ void USkeleton::SetBindPoseTransform(int32 BoneIndex, const FTransform& Transfor
 		return;
 	}
 
-	Bones[BoneIndex].BindPoseTransform = Transform;
+	Bones[BoneIndex].BindPoseRelativeTransform = Transform;
 }
 
 void USkeleton::SetGlobalBindPoseMatrix(int32 BoneIndex, const FMatrix& Matrix)
@@ -230,7 +230,7 @@ FWindowsBinWriter& operator<<(FWindowsBinWriter& Writer, const FBoneInfo& Bone)
 	Writer.Serialize(const_cast<int32*>(&Bone.ParentIndex), sizeof(int32));
 
 	// BindPoseTransform 쓰기 (POD 구조체)
-	Writer.Serialize((void*)&Bone.BindPoseTransform, sizeof(FTransform));
+	Writer.Serialize((void*)&Bone.BindPoseRelativeTransform, sizeof(FTransform));
 
 	// 전역 Bind Pose 행렬 쓰기
 	Writer.Serialize((void*)&Bone.GlobalBindPoseMatrix, sizeof(FMatrix));
@@ -245,7 +245,7 @@ FWindowsBinReader& operator>>(FWindowsBinReader& Reader, FBoneInfo& Bone)
 {
 	Serialization::ReadString(Reader, Bone.Name);
 	Reader << Bone.ParentIndex;
-	Reader.Serialize(&Bone.BindPoseTransform, sizeof(FTransform));
+	Reader.Serialize(&Bone.BindPoseRelativeTransform, sizeof(FTransform));
 	Reader.Serialize(&Bone.GlobalBindPoseMatrix, sizeof(FMatrix));
 	Reader.Serialize(&Bone.InverseBindPoseMatrix, sizeof(FMatrix));
 

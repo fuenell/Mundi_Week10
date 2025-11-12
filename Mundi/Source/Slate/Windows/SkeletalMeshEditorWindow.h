@@ -69,6 +69,8 @@ private:
 	 * @param BoneIndex - 선택된 Bone 인덱스
 	 */
 	void OnBoneSelected(int32 BoneIndex);
+	
+	void OnBoneUpdated(int32 BoneIndex);
 
 private:
 	// 현재 표시 중인 SkeletalMesh

@@ -85,55 +85,14 @@ void USkeletalMeshComponent::SetSkeletalMesh(USkeletalMesh* InSkeletalMesh)
 		// Bone Transform 업데이트
 		if (SkeletalMesh->GetSkeleton())
 		{
-			UpdateBoneTransforms();
+			ResetBoneTransforms();
 		}
 	}
 
 	MarkWorldPartitionDirty();
 }
 
-USkeleton* USkeletalMeshComponent::GetSkeleton() const
-{
-	if (SkeletalMesh)
-	{
-		return SkeletalMesh->GetSkeleton();
-	}
-	return nullptr;
-}
-
-void USkeletalMeshComponent::TickComponent(float DeltaTime)
-{
-	Super::TickComponent(DeltaTime);
-
-	if (!SkeletalMesh || !bEnableCPUSkinning)
-	{
-		return;
-	}
-
-	// === TEST: Root 본 회전 애니메이션 ===
-	// 최상위 본을 Y축 기준으로 한 바퀴 계속 회전
-	static float TestAnimationTime = 0.0f;
-	TestAnimationTime += DeltaTime;
-	// 한 바퀴 계속 회전 (360도)
-	float RotationRad = TestAnimationTime * 2.0f;  // 초당 2 라디안 회전 (약 114도/초)
-
-	FMatrix RotationMatrix = FQuat::MakeFromEulerZYX(FVector(0, 0, RadiansToDegrees(RotationRad))).ToMatrix();
-	FMatrix RotationMatrix1 = FQuat::MakeFromEulerZYX(FVector(RadiansToDegrees(RotationRad), 0, 0)).ToMatrix();
-
-	MoveBone(0, RotationMatrix);
-
-	// CPU Skinning 수행
-	PerformCPUSkinning();
-
-	// GPU Buffer 업데이트
-	if (SkeletalMesh->UsesDynamicBuffer() && !SkinnedVertices.empty())
-	{
-		ID3D11DeviceContext* Context = UResourceManager::GetInstance().GetContext();
-		SkeletalMesh->UpdateVertexBuffer(Context, SkinnedVertices);
-	}
-}
-
-void USkeletalMeshComponent::UpdateBoneTransforms()
+void USkeletalMeshComponent::ResetBoneTransforms()
 {
 	if (!SkeletalMesh || !SkeletalMesh->GetSkeleton())
 	{
@@ -178,107 +137,6 @@ void USkeletalMeshComponent::UpdateBoneTransforms()
 	bNeedsBoneTransformUpdate = false;
 }
 
-void USkeletalMeshComponent::SetBoneTransform(int32 BoneIndex, const FTransform& Transform)
-{
-	// TODO: 향후 Animation 시스템에서 사용
-	// 현재는 플래그만 설정
-	bNeedsBoneTransformUpdate = true;
-}
-
-void USkeletalMeshComponent::PerformCPUSkinning()
-{
-	if (!SkeletalMesh || !bEnableCPUSkinning)
-	{
-		return;
-	}
-
-	// Show Flag 체크: Skeletal Mesh가 렌더링되지 않으면 CPU Skinning도 건너뛰기
-	UWorld* World = GetWorld();
-	if (World && !World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_SkeletalMeshes))
-	{
-		return;
-	}
-
-	const TArray<FSkinnedVertex>& SourceVertices = SkeletalMesh->GetVerticesRef();
-	const TArray<FMatrix>& BoneMatricesRef = GetBoneMatrices();
-
-	if (SourceVertices.empty() || BoneMatricesRef.empty())
-	{
-		return;
-	}
-
-	// Skinned Vertices 준비 (GPU 전송용)
-	SkinnedVertices.resize(SourceVertices.size());
-
-	// 각 Vertex Skinning
-	for (size_t VertIndex = 0; VertIndex < SourceVertices.size(); VertIndex++)
-	{
-		const FSkinnedVertex& SrcVert = SourceVertices[VertIndex];
-		FNormalVertex& DstVert = SkinnedVertices[VertIndex];
-
-		// Skinning 계산
-		FVector SkinnedPos(0, 0, 0);
-		FVector SkinnedNormal(0, 0, 0);
-		FVector SkinnedTangent(0, 0, 0);
-
-		// 최대 4개의 Bone Influence 적용
-		for (int32 i = 0; i < 4; i++)
-		{
-			int32 BoneIndex = SrcVert.BoneIndices[i];
-			float Weight = SrcVert.BoneWeights[i];
-
-			if (Weight > 0.0f && BoneIndex >= 0 && BoneIndex < static_cast<int32>(BoneMatricesRef.size()))
-			{
-				const FMatrix& BoneMatrix = BoneMatricesRef[BoneIndex];
-
-				// Position Skinning (Affine Transform)
-				FVector4 Pos4 = FVector4(SrcVert.Position.X,
-					SrcVert.Position.Y,
-					SrcVert.Position.Z,
-					1.0f);  // w=1 (위치)
-				FVector4 TransformedPos = Pos4 * BoneMatrix;
-				SkinnedPos += FVector(TransformedPos.X,
-					TransformedPos.Y,
-					TransformedPos.Z) * Weight;
-
-				// Normal Skinning (3x3 회전만 적용)
-				FVector4 Normal4 = FVector4(SrcVert.Normal.X,
-					SrcVert.Normal.Y,
-					SrcVert.Normal.Z,
-					0.0f);  // w=0 (방향)
-				FVector4 TransformedNormal = Normal4 * BoneMatrix;
-				SkinnedNormal += FVector(TransformedNormal.X,
-					TransformedNormal.Y,
-					TransformedNormal.Z) * Weight;
-
-				// Tangent Skinning
-				FVector4 Tangent4 = FVector4(SrcVert.Tangent.X,
-					SrcVert.Tangent.Y,
-					SrcVert.Tangent.Z,
-					0.0f);  // w=0 (방향)
-				FVector4 TransformedTangent = Tangent4 * BoneMatrix;
-				SkinnedTangent += FVector(TransformedTangent.X,
-					TransformedTangent.Y,
-					TransformedTangent.Z) * Weight;
-			}
-		}
-
-		// 결과 저장 (FNormalVertex 형식)
-		DstVert.pos = SkinnedPos;
-		DstVert.normal = SkinnedNormal.GetNormalized();
-		DstVert.tex = SrcVert.UV;
-
-		// Tangent 저장 (w 성분 유지)
-		FVector NormalizedTangent = SkinnedTangent.GetNormalized();
-		DstVert.Tangent = FVector4(NormalizedTangent.X,
-			NormalizedTangent.Y,
-			NormalizedTangent.Z,
-			SrcVert.Tangent.W);
-
-		DstVert.color = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
-	}
-}
-
 void USkeletalMeshComponent::CollectMeshBatches(TArray<FMeshBatchElement>& OutMeshBatchElements, const FSceneView* View)
 {
 	if (!SkeletalMesh)
@@ -299,29 +157,29 @@ void USkeletalMeshComponent::CollectMeshBatches(TArray<FMeshBatchElement>& OutMe
 	const TArray<FGroupInfo>& MeshGroupInfos = SkeletalMesh->GetMeshGroupInfo();
 
 	auto DetermineMaterialAndShader = [&](uint32 SectionIndex) -> TPair<UMaterialInterface*, UShader*>
-	{
-		UMaterialInterface* Material = GetMaterial(SectionIndex);
-		UShader* Shader = nullptr;
+		{
+			UMaterialInterface* Material = GetMaterial(SectionIndex);
+			UShader* Shader = nullptr;
 
-		if (Material && Material->GetShader())
-		{
-			Shader = Material->GetShader();
-		}
-		else
-		{
-			// 기본 머티리얼 사용
-			Material = UResourceManager::GetInstance().GetDefaultMaterial();
-			if (Material)
+			if (Material && Material->GetShader())
 			{
 				Shader = Material->GetShader();
 			}
-			if (!Material || !Shader)
+			else
 			{
-				return { nullptr, nullptr };
+				// 기본 머티리얼 사용
+				Material = UResourceManager::GetInstance().GetDefaultMaterial();
+				if (Material)
+				{
+					Shader = Material->GetShader();
+				}
+				if (!Material || !Shader)
+				{
+					return { nullptr, nullptr };
+				}
 			}
-		}
-		return { Material, Shader };
-	};
+			return { Material, Shader };
+		};
 
 	const bool bHasSections = !MeshGroupInfos.IsEmpty();
 	const uint32 NumSectionsToProcess = bHasSections ? static_cast<uint32>(MeshGroupInfos.size()) : 1;
@@ -432,67 +290,232 @@ FAABB USkeletalMeshComponent::GetWorldAABB() const
 	return FAABB(WorldMin, WorldMax);
 }
 
+USkeleton* USkeletalMeshComponent::GetSkeleton() const
+{
+	if (SkeletalMesh)
+	{
+		return SkeletalMesh->GetSkeleton();
+	}
+	return nullptr;
+}
+
+void USkeletalMeshComponent::TickComponent(float DeltaTime)
+{
+	Super::TickComponent(DeltaTime);
+
+	if (!SkeletalMesh || !bEnableCPUSkinning)
+	{
+		return;
+	}
+
+	// === TEST: Root 본 회전 애니메이션 ===
+	// 최상위 본을 Y축 기준으로 한 바퀴 계속 회전
+	static float TestAnimationTime = 0.0f;
+	TestAnimationTime += DeltaTime;
+	// 한 바퀴 계속 회전 (360도)
+	float RotationRad = TestAnimationTime * 2.0f;  // 초당 2 라디안 회전 (약 114도/초)
+
+	FMatrix RotationMatrix = FQuat::MakeFromEulerZYX(FVector(0, 0, RadiansToDegrees(RotationRad))).ToMatrix();
+	FMatrix RotationMatrix1 = FQuat::MakeFromEulerZYX(FVector(RadiansToDegrees(RotationRad), 0, 0)).ToMatrix();
+
+	MoveBone(0, RotationMatrix);
+
+	if (bNeedsBoneTransformUpdate)
+	{
+		StartUpdateBoneRecursive();
+
+		// CPU Skinning 수행
+		PerformCPUSkinning();
+
+		bNeedsBoneTransformUpdate = false;
+	}
+}
+
+void USkeletalMeshComponent::StartUpdateBoneRecursive()
+{
+	USkeleton* Skeleton = GetSkeleton();
+	const FBoneInfo& CurrentBoneInfo = Skeleton->GetBone(0);
+
+	UpdateBoneRecursive(0, CurrentBoneInfo.GlobalBindPoseMatrix);
+}
+
+void USkeletalMeshComponent::PerformCPUSkinning()
+{
+	if (!SkeletalMesh || !bEnableCPUSkinning)
+	{
+		return;
+	}
+
+	// Show Flag 체크: Skeletal Mesh가 렌더링되지 않으면 CPU Skinning도 건너뛰기
+	UWorld* World = GetWorld();
+	if (World && !World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_SkeletalMeshes))
+	{
+		return;
+	}
+
+	const TArray<FSkinnedVertex>& SourceVertices = SkeletalMesh->GetVerticesRef();
+	const TArray<FMatrix>& BoneMatricesRef = GetBoneMatrices();
+
+	if (SourceVertices.empty() || BoneMatricesRef.empty())
+	{
+		return;
+	}
+
+	// Skinned Vertices 준비 (GPU 전송용)
+	SkinnedVertices.resize(SourceVertices.size());
+
+	// 각 Vertex Skinning
+	for (size_t VertIndex = 0; VertIndex < SourceVertices.size(); VertIndex++)
+	{
+		const FSkinnedVertex& SrcVert = SourceVertices[VertIndex];
+		FNormalVertex& DstVert = SkinnedVertices[VertIndex];
+
+		// Skinning 계산
+		FVector SkinnedPos(0, 0, 0);
+		FVector SkinnedNormal(0, 0, 0);
+		FVector SkinnedTangent(0, 0, 0);
+
+		// 최대 4개의 Bone Influence 적용
+		for (int32 i = 0; i < 4; i++)
+		{
+			int32 BoneIndex = SrcVert.BoneIndices[i];
+			float Weight = SrcVert.BoneWeights[i];
+
+			if (Weight > 0.0f && BoneIndex >= 0 && BoneIndex < static_cast<int32>(BoneMatricesRef.size()))
+			{
+				const FMatrix& BoneMatrix = BoneMatricesRef[BoneIndex];
+
+				// Position Skinning (Affine Transform)
+				FVector4 Pos4 = FVector4(SrcVert.Position.X,
+					SrcVert.Position.Y,
+					SrcVert.Position.Z,
+					1.0f);  // w=1 (위치)
+				FVector4 TransformedPos = Pos4 * BoneMatrix;
+				SkinnedPos += FVector(TransformedPos.X,
+					TransformedPos.Y,
+					TransformedPos.Z) * Weight;
+
+				// Normal Skinning (3x3 회전만 적용)
+				FVector4 Normal4 = FVector4(SrcVert.Normal.X,
+					SrcVert.Normal.Y,
+					SrcVert.Normal.Z,
+					0.0f);  // w=0 (방향)
+				FVector4 TransformedNormal = Normal4 * BoneMatrix;
+				SkinnedNormal += FVector(TransformedNormal.X,
+					TransformedNormal.Y,
+					TransformedNormal.Z) * Weight;
+
+				// Tangent Skinning
+				FVector4 Tangent4 = FVector4(SrcVert.Tangent.X,
+					SrcVert.Tangent.Y,
+					SrcVert.Tangent.Z,
+					0.0f);  // w=0 (방향)
+				FVector4 TransformedTangent = Tangent4 * BoneMatrix;
+				SkinnedTangent += FVector(TransformedTangent.X,
+					TransformedTangent.Y,
+					TransformedTangent.Z) * Weight;
+			}
+		}
+
+		// 결과 저장 (FNormalVertex 형식)
+		DstVert.pos = SkinnedPos;
+		DstVert.normal = SkinnedNormal.GetNormalized();
+		DstVert.tex = SrcVert.UV;
+
+		// Tangent 저장 (w 성분 유지)
+		FVector NormalizedTangent = SkinnedTangent.GetNormalized();
+		DstVert.Tangent = FVector4(NormalizedTangent.X,
+			NormalizedTangent.Y,
+			NormalizedTangent.Z,
+			SrcVert.Tangent.W);
+
+		DstVert.color = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
+	}
+
+	// GPU Buffer 업데이트
+	if (SkeletalMesh->UsesDynamicBuffer() && !SkinnedVertices.empty())
+	{
+		ID3D11DeviceContext* Context = UResourceManager::GetInstance().GetContext();
+		SkeletalMesh->UpdateVertexBuffer(Context, SkinnedVertices);
+	}
+}
+
+// 'SetBoneTransform'은 이제 로컬 트랜스폼을 '오버라이드 맵'에 저장합니다.
+void USkeletalMeshComponent::SetBoneTransform(int32 BoneIndex, const FTransform& Transform)
+{
+	USkeleton* Skeleton = GetSkeleton();
+	if (!Skeleton || BoneIndex < 0 || BoneIndex >= Skeleton->GetBoneCount())
+	{
+		return;
+	}
+
+	// 전달받은 '로컬' 트랜스폼을 '커스텀 오버라이드 맵'에 저장합니다.
+	// TickComponent가 이 값을 읽어갈 것입니다.
+	CustomBoneLocalMetrics[BoneIndex] = Transform.ToMatrix();
+	bNeedsBoneTransformUpdate = true;
+}
+
+// 상대 좌표 행렬로 움직이기
 void USkeletalMeshComponent::MoveBone(int TargetBoneIndex, FMatrix Matrix)
 {
 	USkeleton* Skeleton = GetSkeleton();
-	if (Skeleton && Skeleton->GetBoneCount() > 0)
+	if (Skeleton && Skeleton->GetBoneCount() > TargetBoneIndex)
 	{
-		// 모든 본을 재귀적으로 업데이트 (Root부터)
-		std::function<void(int32, const FMatrix&)> UpdateBoneRecursive;
-
-		UpdateBoneRecursive = [&](int32 BoneIndex, const FMatrix& ParentAnimatedTransform)
-			{
-			if (BoneIndex < 0 || BoneIndex >= Skeleton->GetBoneCount())
-				return;
-
-
-			const FBoneInfo& CurrentBoneInfo = Skeleton->GetBone(BoneIndex);
-
-			FMatrix LocalTransform = CurrentBoneInfo.BindPoseTransform.ToMatrix();
-
-			// 들어온 본이 TargetBoneIndex와 같을 때만 TRS행렬을 적용. 이 후 자식들은 회전 행렬이 적용된 부모의 행렬로 계산됨
-			if (BoneIndex == TargetBoneIndex)
-			{
-				LocalTransform = LocalTransform * Matrix;
-			}
-			
-			// 로컬 행렬에 부모 행렬을 곱해서 본의 모델위치를 복구 
-			FMatrix CurrentAnimatedTransform = LocalTransform * ParentAnimatedTransform;
-
-			// 4. (기존과 동일 - 올바른 로직)
-			// 최종 스키닝 행렬을 계산합니다.
-			// SkinMatrix = InverseBindPose(Global) * Animated(Global)
-			if (BoneIndex < BoneMatrices.size())
-			{
-				BoneMatrices[BoneIndex] = CurrentBoneInfo.InverseBindPoseMatrix * CurrentAnimatedTransform;
-			}
-
-			// 5. (기존과 동일 - 올바른 로직)
-			// 모든 자식 본 재귀 업데이트
-			TArray<int32> ChildBones = Skeleton->GetChildBones(BoneIndex);
-			for (int32 ChildIndex : ChildBones)
-			{
-				// 자식에게는 방금 계산한 '새로운 글로벌 포즈'를 부모 행렬로 넘겨줍니다.
-				UpdateBoneRecursive(ChildIndex, CurrentAnimatedTransform);
-			}
-		};
-
 		// 루트 본부터 시작 (부모 행렬은 단위 행렬)
-		const FBoneInfo& RootBoneInfo = Skeleton->GetBone(0);
+		const FBoneInfo& CurrentBoneInfo = Skeleton->GetBone(TargetBoneIndex);
 
-		if (TargetBoneIndex >= 0)
+		if (CustomBoneLocalMetrics.find(TargetBoneIndex) != CustomBoneLocalMetrics.end())
 		{
-			UpdateBoneRecursive(0, RootBoneInfo.GlobalBindPoseMatrix);
+			// 오버라이드
+			CustomBoneLocalMetrics[TargetBoneIndex] = CustomBoneLocalMetrics[TargetBoneIndex] * Matrix;
 		}
-	}
-	// === END TEST ===
+		else
+		{
+			CustomBoneLocalMetrics[TargetBoneIndex] = CurrentBoneInfo.BindPoseRelativeTransform.ToMatrix() * Matrix;
+		}
 
-	// Bone Transform 업데이트는 위에서 수동으로 했으므로 스킵
-	// if (bNeedsBoneTransformUpdate)
-	// {
-	// 	UpdateBoneTransforms();
-	// }
+		bNeedsBoneTransformUpdate = true;
+	}
 }
+
+void USkeletalMeshComponent::UpdateBoneRecursive(int32 BoneIndex, const FMatrix& ParentAnimatedTransform)
+{
+	USkeleton* Skeleton = GetSkeleton();
+
+	if (BoneIndex < 0 || BoneIndex >= Skeleton->GetBoneCount())
+		return;
+
+	const FBoneInfo& CurrentBoneInfo = Skeleton->GetBone(BoneIndex);
+
+	FMatrix LocalTransform = CurrentBoneInfo.BindPoseRelativeTransform.ToMatrix();
+
+	if (CustomBoneLocalMetrics.find(BoneIndex) != CustomBoneLocalMetrics.end())
+	{
+		// 오버라이드
+		LocalTransform = CustomBoneLocalMetrics[BoneIndex];
+	}
+
+	// 로컬 행렬에 부모 행렬을 곱해서 본의 모델위치를 복구 
+	FMatrix CurrentAnimatedTransform = LocalTransform * ParentAnimatedTransform;
+
+	// 4. (기존과 동일 - 올바른 로직)
+	// 최종 스키닝 행렬을 계산합니다.
+	// SkinMatrix = InverseBindPose(Global) * Animated(Global)
+	if (BoneIndex < BoneMatrices.size())
+	{
+		BoneMatrices[BoneIndex] = CurrentBoneInfo.InverseBindPoseMatrix * CurrentAnimatedTransform;
+	}
+
+	// 5. (기존과 동일 - 올바른 로직)
+	// 모든 자식 본 재귀 업데이트
+	TArray<int32> ChildBones = Skeleton->GetChildBones(BoneIndex);
+	for (int32 ChildIndex : ChildBones)
+	{
+		// 자식에게는 방금 계산한 '새로운 글로벌 포즈'를 부모 행렬로 넘겨줍니다.
+		UpdateBoneRecursive(ChildIndex, CurrentAnimatedTransform);
+	}
+}
+
 
 void USkeletalMeshComponent::MarkWorldPartitionDirty()
 {

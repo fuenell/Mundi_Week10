@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "Widget.h"
 #include "Vector.h"
 
@@ -108,7 +108,13 @@ private:
 	 */
 	FMatrix ComposeMatrix(const FVector& Position, const FVector& Rotation, const FVector& Scale);
 
+public:
+	TDelegate<int32> OnBoneUpdated;
+
 private:
+	// 수정을 위한 USkeletalMeshComponent
+	USkeletalMeshComponent* TargetComponent;
+
 	// 표시할 SkeletalMesh
 	USkeletalMesh* TargetSkeletalMesh = nullptr;
 
