@@ -123,9 +123,18 @@ public:
 	void CollectMeshBatches(TArray<FMeshBatchElement>& OutMeshBatchElements, const FSceneView* View) override;
 
 	FAABB GetWorldAABB() const override;
-	
+
 	void DuplicateSubObjects() override;
 	DECLARE_DUPLICATE(USkeletalMeshComponent)
+
+	// === Serialization ===
+
+	/**
+	 * 직렬화 (Scene 저장/로드)
+	 * @param bInIsLoading - true면 로드, false면 저장
+	 * @param InOutHandle - JSON 핸들
+	 */
+	void Serialize(const bool bInIsLoading, JSON& InOutHandle) override;
 
 
 	void MoveBone(int BoneIndex, const FTransform& Transform);

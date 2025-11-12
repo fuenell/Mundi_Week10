@@ -579,6 +579,12 @@ void USkeletalMeshComponent::DuplicateSubObjects()
 	}
 }
 
+void USkeletalMeshComponent::Serialize(const bool bInIsLoading, JSON& InOutHandle)
+{
+	Super::Serialize(bInIsLoading, InOutHandle);
+	// SkeletalMesh 리소스는 리플렉션 시스템이 자동으로 직렬화함
+}
+
 void USkeletalMeshComponent::SetShowBoneDebug(bool bShow)
 {
 	if (BoneDebugComponent)
