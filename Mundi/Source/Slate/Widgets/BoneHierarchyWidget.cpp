@@ -104,12 +104,23 @@ void UBoneHierarchyWidget::SetSkeletalMesh(USkeletalMesh* InMesh)
 
 void UBoneHierarchyWidget::SetSelectedBoneIndex(int32 BoneIndex)
 {
+	// 이미 선택된 뼈를 다시 클릭한 경우, 스크롤할 필요 없음
+	if (SelectedBoneIndex == BoneIndex)
+	{
+		return;
+	}
+
 	SelectedBoneIndex = BoneIndex;
+
+	// 다음 RenderBoneTree() 호출 시 해당 위치로 스크롤하도록
+	// '요청 플래그'를 설정합니다.
+	bShouldScrollToSelected = true;
 }
 
 void UBoneHierarchyWidget::ClearSelection()
 {
 	SelectedBoneIndex = -1;
+	bShouldScrollToSelected = false;
 }
 
 void UBoneHierarchyWidget::RenderBoneTree(int32 BoneIndex, USkeleton* Skeleton)
@@ -129,6 +140,15 @@ void UBoneHierarchyWidget::RenderBoneTree(int32 BoneIndex, USkeleton* Skeleton)
 	if (SelectedBoneIndex == BoneIndex)
 	{
 		Flags |= ImGuiTreeNodeFlags_Selected;
+
+		// "스크롤 요청" 플래그가 true 면
+		if (bShouldScrollToSelected)
+		{
+			// ImGui에게 이 아이템 위치로 스크롤하라고 명령합니다. (0.5f = 뷰의 중앙에 오도록 스크롤)
+			ImGui::SetScrollHereY(0.5f);
+
+			bShouldScrollToSelected = false;
+		}
 	}
 
 	// 자식이 없으면 Leaf 플래그 추가
@@ -151,6 +171,7 @@ void UBoneHierarchyWidget::RenderBoneTree(int32 BoneIndex, USkeleton* Skeleton)
 	{
 		// 델리게이트 호출
 		SkeletalMeshEditorWindow->OnBoneSelected.Broadcast(BoneIndex);	// SetSelectedBoneIndex 가 호출됨
+		bShouldScrollToSelected = false; // 사용자가 '클릭'한 경우, 이미 해당 위치로 스크롤되어 있으므로 'bShouldScrollToSelected' 플래그는 켤 필요가 없습니다.
 	}
 
 	// 자식 Bone 렌더링

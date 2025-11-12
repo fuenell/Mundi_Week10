@@ -100,4 +100,6 @@ private:
 	TArray<bool> BoneVisibility;
 
 	USkeletalMeshEditorWindow* SkeletalMeshEditorWindow;
+	
+	bool bShouldScrollToSelected = false;
 };
