@@ -127,11 +127,12 @@ void URenderer::InitializeLineBatch()
 	LineShader = UResourceManager::GetInstance().Load<UShader>("Shaders/UI/ShaderLine.hlsl");
 }
 
-void URenderer::BeginLineBatch()
+void URenderer::BeginLineBatch(bool bIgnoreDepth)
 {
 	if (!LineBatchData) return;
 
 	bLineBatchActive = true;
+	bCurrentBatchIgnoreDepth = bIgnoreDepth;
 
 	// Clear previous batch data
 	LineBatchData->Vertices.clear();
@@ -296,9 +297,21 @@ void URenderer::EndLineBatch(const FMatrix& ModelMatrix)
 		RHIDevice->GetDeviceContext()->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
 		RHIDevice->GetDeviceContext()->IASetIndexBuffer(indexBuffer, DXGI_FORMAT_R32_UINT, 0);
 		RHIDevice->GetDeviceContext()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
-		// 라인을 항상 맨 앞에 그리기 위해 depth test를 Always로 설정 (depth write도 자동으로 꺼짐)
-		RHIDevice->OMSetDepthStencilState(EComparisonFunc::Always);
+
+		// Depth test 설정 (본은 depth 무시, 그리드는 depth 사용)
+		if (bCurrentBatchIgnoreDepth)
+		{
+			// 본의 경우: depth test를 Always로 설정 (depth write도 자동으로 꺼짐)
+			RHIDevice->OMSetDepthStencilState(EComparisonFunc::Always);
+		}
+		else
+		{
+			// 그리드의 경우: 일반적인 depth test 사용
+			RHIDevice->OMSetDepthStencilState(EComparisonFunc::LessEqual);
+		}
+
 		RHIDevice->GetDeviceContext()->DrawIndexed(DynamicLineMesh->GetCurrentIndexCount(), 0, 0);
+
 		// 상태 복구
 		RHIDevice->GetDeviceContext()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		RHIDevice->OMSetDepthStencilState(EComparisonFunc::LessEqual);

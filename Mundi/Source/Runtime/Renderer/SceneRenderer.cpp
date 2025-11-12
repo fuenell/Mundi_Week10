@@ -60,9 +60,6 @@ FSceneRenderer::FSceneRenderer(UWorld* InWorld, FSceneView* InView, URenderer* I
 	TileLightCuller = std::make_unique<FTileLightCuller>();
 	uint32 TileSize = World->GetRenderSettings().GetTileSize();
 	TileLightCuller->Initialize(RHIDevice, TileSize);
-
-	// 라인 수집 시작
-	OwnerRenderer->BeginLineBatch();
 }
 
 FSceneRenderer::~FSceneRenderer()
@@ -1274,19 +1271,16 @@ void FSceneRenderer::RenderEditorPrimitivesPass()
 // 경계, 외곽선 등 표시 (상호 작용, 피킹 X)
 void FSceneRenderer::RenderDebugPass()
 {
-	// [DEBUG] External RenderTarget 사용 시 디버그 정보
-	//if (View->bUseExternalRenderTarget)
-	//{
-	//	UE_LOG("[SceneRenderer] RenderDebugPass: EditorLines count = %d, SF_Grid = %d",
-	//		Proxies.EditorLines.Num(),
-	//		World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_Grid));
-	//}
-
 	// External RenderTarget 사용 시 RTV 전환을 스킵
 	if (!View->bUseExternalRenderTarget)
 	{
 		RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTarget);
 	}
+
+	// ========================================
+	// Pass 1: 그리드 라인 렌더링 (Depth Test 활성화)
+	// ========================================
+	OwnerRenderer->BeginLineBatch(false); // Depth test 사용
 
 	// 그리드 라인 수집
 	for (ULineComponent* LineComponent : Proxies.EditorLines)
@@ -1296,6 +1290,23 @@ void FSceneRenderer::RenderDebugPass()
 			LineComponent->CollectLineBatches(OwnerRenderer);
 		}
 	}
+
+	// Debug draw (BVH, Octree 등)
+	if (World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_BVHDebug) && World->GetPartitionManager())
+	{
+		if (FBVHierarchy* BVH = World->GetPartitionManager()->GetBVH())
+		{
+			BVH->DebugDraw(OwnerRenderer);
+		}
+	}
+
+	// 그리드 라인 렌더링 (Depth test 활성화)
+	OwnerRenderer->EndLineBatch(FMatrix::Identity());
+
+	// ========================================
+	// Pass 2: Bone 디버그 볼륨 렌더링 (Depth Test 비활성화)
+	// ========================================
+	OwnerRenderer->BeginLineBatch(true); // Depth test 무시
 
 	// 선택된 액터의 디버그 볼륨 렌더링
 	if (World->GetSelectionManager())
@@ -1326,9 +1337,16 @@ void FSceneRenderer::RenderDebugPass()
 			Component->RenderDebugVolume(OwnerRenderer);
 
 			// 자식 컴포넌트들도 재귀적으로 렌더링
-			for (USceneComponent* Child : Component->GetAttachChildren())
+			// GetAttachChildren()이 참조를 반환하므로 순회 중 배열이 변경될 수 있음
+			// 복사본을 만들어서 순회
+			TArray<USceneComponent*> Children = Component->GetAttachChildren();
+			for (USceneComponent* Child : Children)
 			{
-				RenderComponentRecursive(Child);
+				// Child가 유효한지 다시 확인 (순회 중 삭제되었을 수 있음)
+				if (Child && Child->IsRegistered())
+				{
+					RenderComponentRecursive(Child);
+				}
 			}
 		};
 
@@ -1344,16 +1362,7 @@ void FSceneRenderer::RenderDebugPass()
 		}
 	}
 
-	// Debug draw (BVH, Octree 등)
-	if (World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_BVHDebug) && World->GetPartitionManager())
-	{
-		if (FBVHierarchy* BVH = World->GetPartitionManager()->GetBVH())
-		{
-			BVH->DebugDraw(OwnerRenderer); // DebugDraw가 LineBatcher를 직접 받도록 수정 필요
-		}
-	}
-
-	// 수집된 라인을 출력하고 정리
+	// Bone 디버그 볼륨 렌더링 (Depth test 비활성화)
 	OwnerRenderer->EndLineBatch(FMatrix::Identity());
 }
 

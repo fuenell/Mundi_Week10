@@ -47,54 +47,23 @@ void UBoneDebugComponent::SetSkeletalMeshComponent(USkeletalMeshComponent* InCom
 
 void UBoneDebugComponent::RenderDebugVolume(URenderer* Renderer) const
 {
-	UE_LOG("[BoneDebugComponent] RenderDebugVolume called");
-
 	// Renderer 또는 SkeletalMeshComponent가 없으면 렌더링 안 함
 	if (!Renderer || !SkeletalMeshComponent)
-	{
-		if (!Renderer)
-			UE_LOG("[BoneDebugComponent] RenderDebugVolume: Renderer is null");
-		if (!SkeletalMeshComponent)
-			UE_LOG("[BoneDebugComponent] RenderDebugVolume: SkeletalMeshComponent is null");
 		return;
-	}
 
 	// Bone/Joint가 모두 숨겨져 있으면 렌더링 안 함
 	if (!bShowBones && !bShowJoints)
-	{
-		UE_LOG("[BoneDebugComponent] RenderDebugVolume: Both bones and joints are hidden");
 		return;
-	}
 
-	UE_LOG("[BoneDebugComponent] Getting SkeletalMesh...");
 	// SkeletalMesh 가져오기
 	USkeletalMesh* SkeletalMesh = SkeletalMeshComponent->GetSkeletalMesh();
 	if (!SkeletalMesh)
-	{
-		UE_LOG("[BoneDebugComponent] RenderDebugVolume: SkeletalMesh is null");
 		return;
-	}
 
-	UE_LOG("[BoneDebugComponent] Getting Skeleton...");
 	// Skeleton 가져오기
 	USkeleton* Skeleton = SkeletalMesh->GetSkeleton();
 	if (!Skeleton)
-	{
-		UE_LOG("[BoneDebugComponent] RenderDebugVolume: Skeleton is null");
 		return;
-	}
-
-	UE_LOG("[BoneDebugComponent] Getting BoneMatrices...");
-	// BoneMatrices 가져오기
-	const TArray<FMatrix>& BoneMatrices = SkeletalMeshComponent->GetBoneMatrices();
-	if (BoneMatrices.empty())
-	{
-		UE_LOG("[BoneDebugComponent] RenderDebugVolume: BoneMatrices is empty");
-		return;
-	}
-
-	UE_LOG("[BoneDebugComponent] RenderDebugVolume: Rendering bones (Count=%d, ShowBones=%d, ShowJoints=%d)",
-		Skeleton->GetBoneCount(), bShowBones, bShowJoints);
 
 	// Component의 World Matrix 가져오기
 	FMatrix ComponentWorldMatrix = SkeletalMeshComponent->GetWorldMatrix();
@@ -106,12 +75,25 @@ void UBoneDebugComponent::RenderDebugVolume(URenderer* Renderer) const
 
 	int32 BoneCount = Skeleton->GetBoneCount();
 
+	// 디버깅: 본 계층 구조 로그 (한 번만)
+	static bool bLoggedOnce = false;
+	if (!bLoggedOnce)
+	{
+		UE_LOG("[BoneDebugComponent] Bone hierarchy for rendering:");
+		for (int32 i = 0; i < BoneCount; i++)
+		{
+			const FBoneInfo& BoneInfo = Skeleton->GetBone(i);
+			UE_LOG("  Bone[%d]: %s, ParentIndex=%d", i, BoneInfo.Name.c_str(), BoneInfo.ParentIndex);
+		}
+		bLoggedOnce = true;
+	}
+
 	// 각 Bone에 대해 시각화
 	for (int32 BoneIndex = 0; BoneIndex < BoneCount; BoneIndex++)
 	{
 		const FBoneInfo& BoneInfo = Skeleton->GetBone(BoneIndex);
 
-		// Bone의 World 위치 계산
+		// Bone의 World 위치 계산 (Bind Pose 사용)
 		FMatrix BoneWorldMatrix = BoneInfo.GlobalBindPoseMatrix * ComponentWorldMatrix;
 		FVector BoneWorldPos = FVector(
 			BoneWorldMatrix.M[3][0],
@@ -126,17 +108,26 @@ void UBoneDebugComponent::RenderDebugVolume(URenderer* Renderer) const
 				StartPoints, EndPoints, Colors);
 		}
 
-		// Bone 팔면체 그리기 (부모와 연결)
-		if (bShowBones && BoneInfo.ParentIndex >= 0)
+		// Bone 팔면체 그리기 (유효한 부모가 있을 때만)
+		// 루트 본이 아니고(BoneIndex > 0), 부모 인덱스가 유효하고, 자기 자신이 아닐 때
+		// "_end" 본은 제외 (더미 엔드 포인트)
+		if (bShowBones &&
+			BoneIndex > 0 &&
+			BoneInfo.ParentIndex >= 0 &&
+			BoneInfo.ParentIndex < BoneCount &&
+			BoneInfo.ParentIndex != BoneIndex &&
+			BoneInfo.Name.find("_end") == std::string::npos)
 		{
-			const FBoneInfo& ParentBone = Skeleton->GetBone(BoneInfo.ParentIndex);
-			FMatrix ParentWorldMatrix = ParentBone.GlobalBindPoseMatrix * ComponentWorldMatrix;
+			// 부모 본의 World 위치 계산
+			const FBoneInfo& ParentBoneInfo = Skeleton->GetBone(BoneInfo.ParentIndex);
+			FMatrix ParentWorldMatrix = ParentBoneInfo.GlobalBindPoseMatrix * ComponentWorldMatrix;
 			FVector ParentWorldPos = FVector(
 				ParentWorldMatrix.M[3][0],
 				ParentWorldMatrix.M[3][1],
 				ParentWorldMatrix.M[3][2]
 			);
 
+			// 부모에서 현재 본으로 팔면체 그리기
 			GenerateBoneOctahedron(ParentWorldPos, BoneWorldPos, BoneScale,
 				StartPoints, EndPoints, Colors);
 		}
@@ -145,12 +136,7 @@ void UBoneDebugComponent::RenderDebugVolume(URenderer* Renderer) const
 	// 모든 라인을 한 번에 렌더링
 	if (!StartPoints.empty())
 	{
-		UE_LOG("[BoneDebugComponent] Adding %d lines to renderer", StartPoints.size());
 		Renderer->AddLines(StartPoints, EndPoints, Colors);
-	}
-	else
-	{
-		UE_LOG("[BoneDebugComponent] WARNING: No lines generated!");
 	}
 }
 

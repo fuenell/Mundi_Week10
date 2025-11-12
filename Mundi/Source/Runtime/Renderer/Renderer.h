@@ -35,7 +35,7 @@ public:
 	UPrimitiveComponent* GetPrimitiveCollided(int MouseX, int MouseY) const;
 
 	// Batch Line Rendering System
-	void BeginLineBatch();
+	void BeginLineBatch(bool bIgnoreDepth = false);
 	void AddLine(const FVector& Start, const FVector& End, const FVector4& Color = FVector4(1.0f, 1.0f, 1.0f, 1.0f));
 	void AddLines(const TArray<FVector>& Lines, const FVector4& Color = FVector4(1.0f, 1.0f, 1.0f, 1.0f));
 	void AddLinesRange(const TArray<FVector>& Lines,int startIdx, int Count, const FVector4& Color = FVector4(1.0f, 1.0f, 1.0f, 1.0f));
@@ -61,6 +61,7 @@ private:
 	FMeshData* LineBatchData = nullptr;
 	UShader* LineShader = nullptr;
 	bool bLineBatchActive = false;
+	bool bCurrentBatchIgnoreDepth = false;
 	static const uint32 MAX_LINES = 200000;  // Maximum lines per batch (safety headroom)
 
 	void InitializeLineBatch();

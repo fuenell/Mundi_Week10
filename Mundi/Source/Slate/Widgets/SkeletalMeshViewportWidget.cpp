@@ -713,8 +713,10 @@ void USkeletalMeshViewportWidget::HandleBonePicking(const FVector2D& ViewportSiz
         Ray.Origin.X, Ray.Origin.Y, Ray.Origin.Z,
         Ray.Direction.X, Ray.Direction.Y, Ray.Direction.Z);
 
-    // Perform bone picking
-    FBonePicking PickingResult = CPickingSystem::PerformBonePicking(SkelMeshComp, Ray);
+    // Perform bone picking using BoneDebugComponent's radius/scale if available
+    float JointRadius = 0.02f;  // BoneDebugComponent의 기본값과 동일
+    float BoneScale = 0.05f;    // BoneDebugComponent의 기본값과 동일
+    FBonePicking PickingResult = CPickingSystem::PerformBonePicking(SkelMeshComp, Ray, JointRadius, BoneScale);
 
     if (PickingResult.IsValid())
     {
@@ -752,8 +754,16 @@ void USkeletalMeshViewportWidget::CreateGizmoForBone(const FBonePicking& Picking
         return;
     }
 
-    // Destroy existing gizmo
+    // 같은 본을 다시 클릭한 경우 기즈모 유지
+    if (BoneGizmoProxyComponent && PickedBoneIndex == PickingResult.BoneIndex)
+    {
+        UE_LOG("[SkeletalMeshViewport] Same bone clicked - keeping existing gizmo");
+        return;
+    }
+
+    // 다른 본을 클릭한 경우 기존 기즈모 파괴
     DestroyCurrentGizmo();
+    PickedBoneIndex = PickingResult.BoneIndex;
 
     // Create BoneGizmoProxyComponent
     UE_LOG("[SkeletalMeshViewport] Creating BoneGizmoProxyComponent...");
@@ -814,10 +824,19 @@ void USkeletalMeshViewportWidget::DestroyCurrentGizmo()
         CurrentGizmo = nullptr;
     }
 
-    // Destroy proxy component
+    // Destroy proxy component - 언레지스터 후 삭제
     if (BoneGizmoProxyComponent)
     {
         UE_LOG("[SkeletalMeshViewport] Destroying BoneGizmoProxyComponent...");
+
+        // 먼저 언레지스터
+        if (BoneGizmoProxyComponent->IsRegistered())
+        {
+            BoneGizmoProxyComponent->UnregisterComponent();
+            UE_LOG("[SkeletalMeshViewport] BoneGizmoProxyComponent unregistered");
+        }
+
+        // 그 다음 파괴
         BoneGizmoProxyComponent->DestroyComponent();
         BoneGizmoProxyComponent = nullptr;
     }
