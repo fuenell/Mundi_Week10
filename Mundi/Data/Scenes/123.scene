@@ -1,6 +1,6 @@
 {
   "Actors" : {
-    "822" : {
+    "805" : {
       "ObjectName" : "ADirectionalLightActor_3",
       "OwnedComponents" : [{
           "CascadedAreaColorDebugValue" : 0.000000,
@@ -8,7 +8,7 @@
           "CascadedCount" : 4,
           "CascadedLinearBlendingValue" : 0.500000,
           "CascadedOverlapValue" : 0.200000,
-          "Id" : 823,
+          "Id" : 807,
           "Intensity" : 1.000000,
           "LightColor" : [1.000000, 1.000000, 1.000000, 1.000000],
           "ObjectName" : "UDirectionalLightComponent_4",
@@ -30,16 +30,16 @@
           "bOverrideCameraLightPerspective" : false,
           "bTickEnabled" : true
         }],
-      "RootComponentId" : 823,
+      "RootComponentId" : 807,
       "Tag" : "",
       "Type" : "ADirectionalLightActor",
       "bActorHiddenInGame" : false,
       "bActorIsActive" : true
     },
-    "824" : {
+    "808" : {
       "ObjectName" : "AAmbientLightActor_3",
       "OwnedComponents" : [{
-          "Id" : 825,
+          "Id" : 810,
           "Intensity" : 0.100000,
           "LightColor" : [1.000000, 1.000000, 1.000000, 1.000000],
           "ObjectName" : "UAmbientLightComponent_4",
@@ -59,16 +59,16 @@
           "bIsVisible" : true,
           "bTickEnabled" : true
         }],
-      "RootComponentId" : 825,
+      "RootComponentId" : 810,
       "Tag" : "",
       "Type" : "AAmbientLightActor",
       "bActorHiddenInGame" : false,
       "bActorIsActive" : true
     },
-    "829" : {
+    "811" : {
       "ObjectName" : "APlayerCameraManager_3",
       "OwnedComponents" : [{
-          "Id" : 830,
+          "Id" : 812,
           "ObjectName" : "USceneComponent_5",
           "ParentId" : 0,
           "RelativeLocation" : [0.000000, 0.000000, 0.000000],
@@ -80,22 +80,19 @@
           "bIsVisible" : true,
           "bTickEnabled" : true
         }],
-      "RootComponentId" : 830,
+      "RootComponentId" : 812,
       "Tag" : "",
       "TransitionCurve" : [0.470000, 0.000000, 0.745000, 0.715000],
       "Type" : "APlayerCameraManager",
       "bActorHiddenInGame" : false,
       "bActorIsActive" : true
     },
-    "832" : {
+    "813" : {
       "ObjectName" : "스켈레탈 메시_0",
       "OwnedComponents" : [{
-          "Id" : 833,
+          "Id" : 816,
           "MaterialSlots" : [{
-              "AssetPath" : "Beta_Joints_MAT1",
-              "Type" : "UMaterial"
-            }, {
-              "AssetPath" : "Beta_HighLimbsGeoSG3",
+              "AssetPath" : "mutant_M",
               "Type" : "UMaterial"
             }],
           "ObjectName" : "USkeletalMeshComponent_1",
@@ -103,6 +100,7 @@
           "RelativeLocation" : [-190.199615, -53.525829, 99.839272],
           "RelativeRotationEuler" : [0.000000, -0.000000, 0.000000],
           "RelativeScale" : [1.000000, 1.000000, 1.000000],
+          "SkeletalMesh" : "Data/Model/Fbx/MutantFinal.fbx",
           "Type" : "USkeletalMeshComponent",
           "bBlockComponent" : false,
           "bGenerateOverlapEvents" : true,
@@ -111,14 +109,14 @@
           "bIsVisible" : true,
           "bTickEnabled" : true
         }],
-      "RootComponentId" : 833,
+      "RootComponentId" : 816,
       "Tag" : "",
       "Type" : "ASkeletalMeshActor",
       "bActorHiddenInGame" : false,
       "bActorIsActive" : true
     }
   },
-  "NextUUID" : 837,
+  "NextUUID" : 1289,
   "PerspectiveCamera" : {
     "FOV" : [60.000000],
     "FarClip" : [505.000000],

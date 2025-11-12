@@ -50,7 +50,7 @@ public:
 
     bool GetbIsDragging() const { return bIsDragging; }
 
-    void NextMode(EGizmoMode GizmoMode);
+    void NextMode();
     TArray<USceneComponent*>* GetGizmoComponents();
 
     
@@ -65,7 +65,7 @@ public:
     ACameraActor* GetEditorCameraActor() const { return CameraActor; }
     
 
-    void ProcessGizmoInteraction(ACameraActor* Camera, FViewport* Viewport, float MousePositionX, float MousePositionY);
+    void ProcessGizmoInteraction(ACameraActor* Camera, FViewport* Viewport, bool bIsMouseLeftButtonDown, float MousePositionX, float MousePositionY);
     void ProcessGizmoModeSwitch();
 
     // 어차피 gizmo가 게임모드에서 안나오니까 할 필요 없을지도?
@@ -109,7 +109,7 @@ protected:
     // Gizmo interaction methods
    
     void ProcessGizmoHovering(ACameraActor* Camera, FViewport* Viewport, float MousePositionX, float MousePositionY);
-    void ProcessGizmoDragging(ACameraActor* Camera, FViewport* Viewport, float MousePositionX, float MousePositionY);
+    void ProcessGizmoDragging(ACameraActor* Camera, FViewport* Viewport, bool bIsMouseLeftButtonDown, float MousePositionX, float MousePositionY);
     void UpdateComponentVisibility();
 
 private:

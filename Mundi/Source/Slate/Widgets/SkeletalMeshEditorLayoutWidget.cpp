@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "SkeletalMeshEditorLayoutWidget.h"
 #include "SkeletalMeshViewportWidget.h"
 #include "BoneHierarchyWidget.h"
@@ -17,7 +17,7 @@ void USkeletalMeshEditorLayoutWidget::RenderWidget()
 	float RightWidth = WindowSize.x * (1.0f - LeftRightSplitRatio);
 
 	// === 좌측 패널: Viewport ===
-	ImGui::BeginChild("ViewportPanel", ImVec2(LeftWidth, 0), true, ImGuiWindowFlags_NoScrollbar);
+	ImGui::BeginChild("ViewportPanel", ImVec2(LeftWidth, 0), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoMove);
 	{
 		// Bone 시각화 토글 버튼
 		if (ViewportWidget != nullptr)

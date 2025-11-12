@@ -129,5 +129,9 @@ private:
 	// Bone 시각화 활성화 여부
 	bool bBoneVisualizationEnabled = true;
 
+	bool bWasHovering = false;
+
 	USkeletalMeshEditorWindow* SkeletalMeshEditorWindow;
+
+	int32 CurrentBoneIndex = -1;
 };

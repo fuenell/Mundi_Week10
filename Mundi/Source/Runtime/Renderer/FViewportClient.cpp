@@ -200,7 +200,7 @@ void FViewportClient::SetupCameraMode()
 void FViewportClient::MouseMove(FViewport* Viewport, int32 X, int32 Y)
 {
 	if (World->GetGizmoActor())
-		World->GetGizmoActor()->ProcessGizmoInteraction(Camera, Viewport, static_cast<float>(X), static_cast<float>(Y));
+		World->GetGizmoActor()->ProcessGizmoInteraction(Camera, Viewport, UInputManager::GetInstance().IsMouseButtonDown(LeftButton), static_cast<float>(X), static_cast<float>(Y));
 
 	if (!bIsMouseButtonDown &&
 		(!World->GetGizmoActor() || !World->GetGizmoActor()->GetbIsHovering()) &&
@@ -302,7 +302,7 @@ void FViewportClient::MouseButtonUp(FViewport* Viewport, int32 X, int32 Y, int32
 		// 드래그 종료 처리를 위해 한번 더 호출
 		if (World->GetGizmoActor())
 		{
-			World->GetGizmoActor()->ProcessGizmoInteraction(Camera, Viewport, static_cast<float>(X), static_cast<float>(Y));
+			World->GetGizmoActor()->ProcessGizmoInteraction(Camera, Viewport, false, static_cast<float>(X), static_cast<float>(Y));
 		}
 	}
 	else

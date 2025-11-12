@@ -208,9 +208,12 @@ void AGizmoActor::SetSpaceWorldMatrix(EGizmoSpace NewSpace, USceneComponent* Sel
 	}
 }
 
-void AGizmoActor::NextMode(EGizmoMode GizmoMode)
+void AGizmoActor::NextMode()
 {
-	CurrentMode = GizmoMode;
+	int GizmoModeIndex = static_cast<int>(GetMode());
+	GizmoModeIndex = (GizmoModeIndex + 1) % static_cast<uint32>(EGizmoMode::Select);	// 3 = enum 개수
+	EGizmoMode NewGizmoMode = static_cast<EGizmoMode>(GizmoModeIndex);
+	CurrentMode = NewGizmoMode;
 }
 
 TArray<USceneComponent*>* AGizmoActor::GetGizmoComponents()
@@ -391,7 +394,7 @@ void AGizmoActor::OnDrag(USceneComponent* Target, uint32 GizmoAxis, float MouseD
 	}
 }
 
-void AGizmoActor::ProcessGizmoInteraction(ACameraActor* Camera, FViewport* Viewport, float MousePositionX, float MousePositionY)
+void AGizmoActor::ProcessGizmoInteraction(ACameraActor* Camera, FViewport* Viewport, bool bIsMouseLeftButtonDown, float MousePositionX, float MousePositionY)
 {
 	if (!SelectionManager)
 	{
@@ -401,7 +404,7 @@ void AGizmoActor::ProcessGizmoInteraction(ACameraActor* Camera, FViewport* Viewp
 	if (!SelectedComponent || !Camera) return;
 
 	// 기즈모 드래그
-	ProcessGizmoDragging(Camera, Viewport, MousePositionX, MousePositionY);
+	ProcessGizmoDragging(Camera, Viewport, bIsMouseLeftButtonDown, MousePositionX, MousePositionY);
 
 	// 호버링 (드래그 중이 아닐 때만)
 	if (!bIsDragging)
@@ -442,7 +445,7 @@ void AGizmoActor::ProcessGizmoHovering(ACameraActor* Camera, FViewport* Viewport
 	}
 }
 
-void AGizmoActor::ProcessGizmoDragging(ACameraActor* Camera, FViewport* Viewport, float MousePositionX, float MousePositionY)
+void AGizmoActor::ProcessGizmoDragging(ACameraActor* Camera, FViewport* Viewport, bool bIsMouseLeftButtonDown, float MousePositionX, float MousePositionY)
 {
 	USceneComponent* SelectedComponent = SelectionManager->GetSelectedComponent();
 	if (!SelectedComponent || !Camera) return;
@@ -450,7 +453,7 @@ void AGizmoActor::ProcessGizmoDragging(ACameraActor* Camera, FViewport* Viewport
 	FVector2D CurrentMousePosition(MousePositionX, MousePositionY);
 
 	// --- 1. Begin Drag (드래그 시작) ---
-	if (InputManager->IsMouseButtonDown(LeftButton) && !bIsDragging && GizmoAxis > 0)
+	if (bIsMouseLeftButtonDown && !bIsDragging && GizmoAxis > 0)
 	{
 		bIsDragging = true;
 		DraggingAxis = GizmoAxis;
@@ -540,7 +543,7 @@ void AGizmoActor::ProcessGizmoDragging(ACameraActor* Camera, FViewport* Viewport
 	}
 
 	// --- 2. Continue Drag (드래그 지속) ---
-	if (InputManager->IsMouseButtonDown(LeftButton) && bIsDragging)
+	if (bIsMouseLeftButtonDown && bIsDragging)
 	{
 		// 드래그 시작점으로부터의 '총 변위(Total Offset)' 계산
 		FVector2D MouseOffset = CurrentMousePosition - DragStartPosition;
@@ -550,16 +553,13 @@ void AGizmoActor::ProcessGizmoDragging(ACameraActor* Camera, FViewport* Viewport
 	}
 
 	// --- 3. End Drag (드래그 종료) ---
-	if (InputManager->IsMouseButtonReleased(LeftButton))
+	if (bIsMouseLeftButtonDown == false && bIsDragging)
 	{
-		if (bIsDragging)
-		{
-			bIsDragging = false;
-			DraggingAxis = 0; // 고정된 축 해제
-			DragCamera = nullptr;
-			GizmoAxis = 0; // 하이라이트 해제
-			SetSpaceWorldMatrix(CurrentSpace, SelectedComponent);
-		}
+		bIsDragging = false;
+		DraggingAxis = 0; // 고정된 축 해제
+		DragCamera = nullptr;
+		GizmoAxis = 0; // 하이라이트 해제
+		SetSpaceWorldMatrix(CurrentSpace, SelectedComponent);
 	}
 }
 
@@ -594,10 +594,7 @@ void AGizmoActor::ProcessGizmoModeSwitch()
 	// 스페이스 키로 기즈모 모드 순환 전환 (기존 기능 유지)
 	else if (InputManager->IsKeyPressed(VK_SPACE))
 	{
-		int GizmoModeIndex = static_cast<int>(GetMode());
-		GizmoModeIndex = (GizmoModeIndex + 1) % static_cast<uint32>(EGizmoMode::Select);	// 3 = enum 개수
-		EGizmoMode NewGizmoMode = static_cast<EGizmoMode>(GizmoModeIndex);
-		NextMode(NewGizmoMode);
+		NextMode();
 	}
 	// Tab 키로 월드-로컬 모드 전환
 	if (InputManager->IsKeyPressed(VK_TAB))

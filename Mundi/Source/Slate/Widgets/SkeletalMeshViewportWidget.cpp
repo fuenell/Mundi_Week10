@@ -24,6 +24,7 @@
 #include "Gizmo/GizmoActor.h"
 #include "Picking.h"
 #include "SelectionManager.h"
+#include "FViewport.h"
 #include "Windows/SkeletalMeshEditorWindow.h"
 #include <d3d11.h>
 
@@ -607,8 +608,65 @@ void USkeletalMeshViewportWidget::HandleViewportInput(FVector2D ViewportSize)
         }
     }
     
+    if (ImGui::IsKeyPressed(ImGuiKey::ImGuiKey_Space))
+    {
+        PreviewWorld->GetGizmoActor()->NextMode();
+        PreviewWorld->GetGizmoActor()->Tick(0);
+        bNeedsRedraw = true;
+    }
+
+    // 기즈모 부터 우선 처리
+    if (PreviewWorld->GetGizmoActor())
+    {
+        ImVec2 MousePos = ImGui::GetMousePos();
+        ImVec2 ViewportMin = ImGui::GetItemRectMin();
+        ImVec2 ViewportMax = ImGui::GetItemRectMax();
+        FVector2D LocalMousePos(MousePos.x - ViewportMin.x, MousePos.y - ViewportMin.y);
+
+        FViewport Viewport;
+        Viewport.Resize(0, 0, ViewportMax.x - ViewportMin.x, ViewportMax.y - ViewportMin.y);
+        
+        bool bIsMouseLeftButtonDown = ImGui::IsMouseDown(ImGuiMouseButton_Left);
+        PreviewWorld->GetGizmoActor()->ProcessGizmoInteraction(PreviewWorld->GetEditorCameraActor(), &Viewport, bIsMouseLeftButtonDown, static_cast<float>(LocalMousePos.X), static_cast<float>(LocalMousePos.Y));
+        bool bIsHovering = PreviewWorld->GetGizmoActor()->GetbIsHovering();
+
+        if (bIsHovering || bIsHovering != bWasHovering)
+        {
+            if (bIsMouseLeftButtonDown)
+            {
+                USkeleton* Skeleton = PreviewActor->GetSkeletalMeshComponent()->GetSkeleton();
+                if (Skeleton == nullptr || CurrentBoneIndex >= Skeleton->GetBoneCount())
+                {
+                    return;
+                }
+
+                const FBoneInfo& CurrentBone = Skeleton->GetBone(CurrentBoneIndex);
+
+                FTransform ParentWorldTransform;
+                if (CurrentBone.ParentIndex != -1)
+                {
+                    ParentWorldTransform = PreviewActor->GetSkeletalMeshComponent()->GetBoneWorldTransform(CurrentBone.ParentIndex);
+                }
+
+                FTransform NewBoneWorldTransform = BoneTransformComp->GetWorldTransform();
+
+                FTransform NewLocalTransform = ParentWorldTransform.GetRelativeTransform(NewBoneWorldTransform);
+
+                // Skeleton에 적용
+                Skeleton->SetBindPoseTransform(CurrentBoneIndex, NewLocalTransform);
+
+                SkeletalMeshEditorWindow->OnBoneUpdated.Broadcast(CurrentBoneIndex);
+            }
+
+            // 이전 프레임과에서 호버링 하다가 false로 바뀔때도 한번
+            PreviewWorld->GetGizmoActor()->Tick(0);
+            bNeedsRedraw = true;
+        }
+        bWasHovering = bIsHovering;
+    }
+
     // === 좌클릭: 본 피킹 (본 시각화가 활성화된 경우만) ===
-    if (bBoneVisualizationEnabled && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+    if (bWasHovering == false && bBoneVisualizationEnabled && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
     {
         // Get local mouse position within viewport
         ImVec2 MousePos = ImGui::GetMousePos();
@@ -789,6 +847,7 @@ void USkeletalMeshViewportWidget::HandleBonePicking(const FVector2D& ViewportSiz
             bNeedsRedraw = true;  // Request redraw to clear highlighting
         }
 
+        SkeletalMeshEditorWindow->OnBoneSelected.Broadcast(-1);
         // Destroy current gizmo
         //DestroyCurrentGizmo();
     }
@@ -797,22 +856,32 @@ void USkeletalMeshViewportWidget::HandleBonePicking(const FVector2D& ViewportSiz
 // 기즈모 표시
 void USkeletalMeshViewportWidget::UpdateGizmo(int32 BoneIndex)
 {
-    FBoneInfo BoneInfo = PreviewActor->GetSkeletalMeshComponent()->GetSkeleton()->GetBone(BoneIndex);
-    //FMatrix TM = BoneInfo.GlobalBindPoseMatrix;
-    FTransform BoneWorldTransform = PreviewActor->GetSkeletalMeshComponent()->GetBoneWorldTransform(BoneIndex);
-    BoneTransformComp->SetWorldTransform(BoneWorldTransform);
-    PreviewWorld->GetSelectionManager()->SelectComponent(BoneTransformComp);
+    CurrentBoneIndex = BoneIndex;
+    if (BoneIndex != -1)
+    {
+        FBoneInfo BoneInfo = PreviewActor->GetSkeletalMeshComponent()->GetSkeleton()->GetBone(BoneIndex);
+        FTransform BoneWorldTransform = PreviewActor->GetSkeletalMeshComponent()->GetBoneWorldTransform(BoneIndex);
+        BoneTransformComp->SetWorldTransform(BoneWorldTransform);
+        PreviewWorld->GetSelectionManager()->SelectComponent(BoneTransformComp);
+    }
+    else
+    {
+        PreviewWorld->GetSelectionManager()->SelectComponent(nullptr);
+    }
     PreviewWorld->GetGizmoActor()->Tick(0);
     bNeedsRedraw = true;    // 기즈모 위치를 다시 그려야 하기 때문에
 }
 
 void USkeletalMeshViewportWidget::UpdateBone(int32 BoneIndex)
 {
-    FBoneInfo BoneInfo = PreviewActor->GetSkeletalMeshComponent()->GetSkeletalMesh()->GetSkeleton()->GetBone(BoneIndex);
-    PreviewActor->GetSkeletalMeshComponent()->SetBoneTransform(BoneIndex, BoneInfo.BindPoseRelativeTransform);
+    if (BoneIndex != -1)
+    {
+        FBoneInfo BoneInfo = PreviewActor->GetSkeletalMeshComponent()->GetSkeletalMesh()->GetSkeleton()->GetBone(BoneIndex);
+        PreviewActor->GetSkeletalMeshComponent()->SetBoneTransform(BoneIndex, BoneInfo.BindPoseRelativeTransform);
 
-    PreviewActor->GetSkeletalMeshComponent()->StartUpdateBoneRecursive();
-    PreviewActor->GetSkeletalMeshComponent()->PerformCPUSkinning();
+        PreviewActor->GetSkeletalMeshComponent()->StartUpdateBoneRecursive();
+        PreviewActor->GetSkeletalMeshComponent()->PerformCPUSkinning();
+    }
     UpdateGizmo(BoneIndex);
     bNeedsRedraw = true;    // 변경된 뼈를 반영해서 다시 그리기 위해
 }
