@@ -1143,16 +1143,16 @@ bool UPropertyRenderer::RenderSkeletalMeshProperty(const FProperty& Prop, void* 
 
 		ImGui::TextUnformatted(CurrentPath.c_str());
 
-		// NOTE: 추후 fbx bin 캐싱 추가되면 주석 해제해서 캐싱된 경로 표시
-		//if ((*MeshPtr))
-		//{
-		//	const FString& CachedPath = (*MeshPtr)->GetCacheFilePath();
-		//	if (!CachedPath.empty())
-		//	{
-		//		ImGui::Separator();
-		//		ImGui::Text("Cache: %s", CachedPath.c_str());
-		//	}
-		//}
+		// FBX bin 캐싱 경로 표시
+		if ((*MeshPtr))
+		{
+			const FString& CachedPath = (*MeshPtr)->GetCacheFilePath();
+			if (!CachedPath.empty())
+			{
+				ImGui::Separator();
+				ImGui::Text("Cache: %s", CachedPath.c_str());
+			}
+		}
 
 		ImGui::EndTooltip();
 	}

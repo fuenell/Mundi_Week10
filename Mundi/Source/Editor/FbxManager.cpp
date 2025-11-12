@@ -219,6 +219,9 @@ FStaticMesh* FFbxManager::LoadFbxStaticMeshAsset(const FString& PathFileName)
 				PathFileName.c_str());
 		}
 
+		// 캐시 경로 설정 (UI 툴팁 표시용)
+		Mesh->CacheFilePath = CachePath;
+
 		FbxStaticMeshCache[PathFileName] = Mesh;
 		return Mesh;
 	}
@@ -268,6 +271,9 @@ FStaticMesh* FFbxManager::LoadFbxStaticMeshAsset(const FString& PathFileName)
 	}
 	// 임시 SkeletalMesh 삭제
 	ObjectFactory::DeleteObject(TempUSkeletalMesh);
+
+	// 캐시 경로 설정 (UI 툴팁 표시용)
+	Mesh->CacheFilePath = CachePath;
 
 	// 캐시에 저장
 	SaveStaticMeshToCache(CachePath, Mesh);
@@ -330,6 +336,9 @@ FSkeletalMesh* FFbxManager::LoadFbxSkeletalMeshAsset(const FString& PathFileName
 				PathFileName.c_str());
 		}
 
+		// 캐시 경로 설정 (UI 툴팁 표시용)
+		Mesh->CacheFilePath = CachePath;
+
 		FbxSkeletalMeshCache[PathFileName] = Mesh;
 		return Mesh;
 	}
@@ -370,6 +379,9 @@ FSkeletalMesh* FFbxManager::LoadFbxSkeletalMeshAsset(const FString& PathFileName
 	}
 	// 임시 USkeletalMesh 삭제
 	ObjectFactory::DeleteObject(TempUSkeletalMesh);
+
+	// 캐시 경로 설정 (UI 툴팁 표시용)
+	Mesh->CacheFilePath = CachePath;
 
 	// 캐시에 저장
 	SaveSkeletalMeshToCache(CachePath, Mesh);
