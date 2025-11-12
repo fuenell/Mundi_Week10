@@ -167,7 +167,6 @@ FStaticMesh* FFbxManager::LoadFbxStaticMeshAsset(const FString& PathFileName)
 	auto It = FbxStaticMeshCache.find(PathFileName);
 	if (It != FbxStaticMeshCache.end())
 	{
-		UE_LOG("FFbxManager: Static Mesh FBX cache hit: %s", PathFileName.c_str());
 		return It->second;
 	}
 
@@ -202,8 +201,6 @@ FStaticMesh* FFbxManager::LoadFbxStaticMeshAsset(const FString& PathFileName)
 			if (Importer.ExtractMaterialsFromScene(TempUSkeletalMesh))
 			{
 				const TArray<FString>& ExtractedMaterialNames = TempUSkeletalMesh->GetMaterialNames();
-				UE_LOG("FFbxManager: Re-registered %d materials from cached Static Mesh FBX",
-					ExtractedMaterialNames.size());
 
 				// Material 이름을 GroupInfos에 복사 (첫 Baking 때와 동일)
 				for (size_t i = 0; i < Mesh->GroupInfos.size() && i < ExtractedMaterialNames.size(); ++i)
@@ -250,7 +247,6 @@ FStaticMesh* FFbxManager::LoadFbxStaticMeshAsset(const FString& PathFileName)
 	if (Importer.ExtractMaterialsFromScene(TempUSkeletalMesh))
 	{
 		const TArray<FString>& ExtractedMaterialNames = TempUSkeletalMesh->GetMaterialNames();
-		UE_LOG("FFbxManager: Extracted %d materials from Static Mesh FBX", ExtractedMaterialNames.size());
 
 		// CRITICAL FIX: 추출된 Material 이름을 FStaticMesh의 GroupInfos에 복사
 		// ExtractMaterialsFromScene()가 실제 FBX Material 노드에서 생성한 Material 이름 사용
@@ -258,7 +254,6 @@ FStaticMesh* FFbxManager::LoadFbxStaticMeshAsset(const FString& PathFileName)
 		for (size_t i = 0; i < Mesh->GroupInfos.size() && i < ExtractedMaterialNames.size(); ++i)
 		{
 			Mesh->GroupInfos[i].InitialMaterialName = ExtractedMaterialNames[i];
-			UE_LOG("FFbxManager: Updated GroupInfo[%zu] Material: %s", i, ExtractedMaterialNames[i].c_str());
 		}
 
 		// 추출된 텍스처들을 즉시 DDS로 변환
@@ -289,7 +284,6 @@ FSkeletalMesh* FFbxManager::LoadFbxSkeletalMeshAsset(const FString& PathFileName
 	auto It = FbxSkeletalMeshCache.find(PathFileName);
 	if (It != FbxSkeletalMeshCache.end())
 	{
-		UE_LOG("FFbxManager: Skeletal Mesh FBX cache hit: %s", PathFileName.c_str());
 		return It->second;
 	}
 
@@ -325,8 +319,6 @@ FSkeletalMesh* FFbxManager::LoadFbxSkeletalMeshAsset(const FString& PathFileName
 			{
 				// Material 이름을 FSkeletalMesh에 복사 (첫 Baking 때와 동일)
 				Mesh->MaterialNames = TempUSkeletalMesh->GetMaterialNames();
-				UE_LOG("FFbxManager: Re-registered %d materials from cached Skeletal Mesh FBX",
-					Mesh->MaterialNames.size());
 			}
 			ObjectFactory::DeleteObject(TempUSkeletalMesh);
 		}
@@ -367,7 +359,6 @@ FSkeletalMesh* FFbxManager::LoadFbxSkeletalMeshAsset(const FString& PathFileName
 	{
 		// Material 이름을 FSkeletalMesh에 복사
 		Mesh->MaterialNames = TempUSkeletalMesh->GetMaterialNames();
-		UE_LOG("FFbxManager: Extracted %d materials from FBX", Mesh->MaterialNames.size());
 
 		// 추출된 텍스처들을 즉시 DDS로 변환
 		// (첫 Import 시에도 DDS 캐시가 생성되도록 보장)
@@ -429,9 +420,6 @@ bool FFbxManager::LoadStaticMeshFromCache(const FString& CachePath, FStaticMesh*
 	Reader << *OutMesh;
 	Reader.Close();
 
-	UE_LOG("FFbxManager: Loaded Static Mesh from cache: %s (%d vertices, %d indices)",
-		CachePath.c_str(), static_cast<uint32>(OutMesh->Vertices.size()), static_cast<uint32>(OutMesh->Indices.size()));
-
 	return true;
 }
 
@@ -475,9 +463,6 @@ bool FFbxManager::LoadSkeletalMeshFromCache(const FString& CachePath, FSkeletalM
 	Reader >> *OutMesh;
 	Reader.Close();
 
-	UE_LOG("FFbxManager: Loaded Skeletal Mesh from cache: %s (%zu vertices, %zu indices)",
-		CachePath.c_str(), OutMesh->Vertices.size(), OutMesh->Indices.size());
-
 	return true;
 }
 
@@ -517,11 +502,8 @@ void FFbxManager::ConvertExtractedTexturesToDDS(USkeletalMesh* SkeletalMesh, con
 
 	if (MaterialNames.empty())
 	{
-		UE_LOG("[FBX] No materials to convert for: %s", FbxPath.c_str());
 		return;
 	}
-
-	UE_LOG("[FBX] Converting extracted textures to DDS for: %s", FbxPath.c_str());
 
 	for (const FString& MaterialName : MaterialNames)
 	{
@@ -546,8 +528,6 @@ void FFbxManager::ConvertExtractedTexturesToDDS(USkeletalMesh* SkeletalMesh, con
 			ForceDDSConversionForTexture(MatInfo.NormalTextureFileName);
 		}
 	}
-
-	UE_LOG("[FBX] DDS conversion completed for %zu materials", MaterialNames.size());
 }
 
 void FFbxManager::ForceDDSConversionForTexture(const FString& TexturePath)
@@ -584,18 +564,10 @@ void FFbxManager::ForceDDSConversionForTexture(const FString& TexturePath)
 		// 권장 포맷으로 변환 (알파 포함, sRGB)
 		DXGI_FORMAT TargetFormat = FTextureConverter::GetRecommendedFormat(true, true);
 
-		if (FTextureConverter::ConvertToDDS(TexturePath, DDSCachePath, TargetFormat))
-		{
-			UE_LOG("[FBX] Successfully converted texture to DDS: %s", DDSCachePath.c_str());
-		}
-		else
+		if (!FTextureConverter::ConvertToDDS(TexturePath, DDSCachePath, TargetFormat))
 		{
 			UE_LOG("[warning] Failed to convert texture to DDS: %s", TexturePath.c_str());
 		}
-	}
-	else
-	{
-		UE_LOG("[FBX] DDS cache already valid: %s", DDSCachePath.c_str());
 	}
 }
 
@@ -609,8 +581,6 @@ void FFbxManager::ConvertExtractedTexturesForStaticMesh(
 	}
 
 	auto& RM = UResourceManager::GetInstance();
-
-	UE_LOG("[FBX] Converting extracted textures to DDS for Static Mesh: %s", FbxPath.c_str());
 
 	// GroupInfos의 각 Material에 대해 DDS 변환
 	for (const FGroupInfo& Group : GroupInfos)
@@ -640,6 +610,4 @@ void FFbxManager::ConvertExtractedTexturesForStaticMesh(
 			ForceDDSConversionForTexture(MatInfo.NormalTextureFileName);
 		}
 	}
-
-	UE_LOG("[FBX] DDS conversion completed for Static Mesh (%zu materials)", GroupInfos.size());
 }

@@ -108,19 +108,8 @@ void FFbxImporter::ConvertScene()
 	// === 좌표계 변환 (Unreal Engine 방식) ===
 	if (CurrentOptions.bConvertScene)
 	{
-		// 원본 Scene Axis System 정보 출력
+		// 원본 Scene Axis System 정보
 		FbxAxisSystem SceneAxis = Scene->GetGlobalSettings().GetAxisSystem();
-
-		int UpSign;
-		FbxAxisSystem::EUpVector UpVector = SceneAxis.GetUpVector(UpSign);
-		int FrontSign;
-		FbxAxisSystem::EFrontVector FrontVector = SceneAxis.GetFrontVector(FrontSign);
-		FbxAxisSystem::ECoordSystem CoordSystem = SceneAxis.GetCoorSystem();
-
-		UE_LOG("[FBX DEBUG] === Original Scene Coordinate System ===");
-		UE_LOG("[FBX DEBUG] UpVector: %d (sign: %d)", (int)UpVector, UpSign);
-		UE_LOG("[FBX DEBUG] FrontVector: %d (sign: %d)", (int)FrontVector, FrontSign);
-		UE_LOG("[FBX DEBUG] CoordSystem: %s", CoordSystem == FbxAxisSystem::eRightHanded ? "RightHanded" : "LeftHanded");
 
 		// Target 좌표계 설정 (Unreal Engine 스타일)
 		FbxAxisSystem::ECoordSystem TargetCoordSystem = FbxAxisSystem::eRightHanded;
@@ -131,7 +120,6 @@ void FFbxImporter::ConvertScene()
 		if (CurrentOptions.bForceFrontXAxis)
 		{
 			TargetFrontVector = FbxAxisSystem::eParityEven;  // +X Forward
-			UE_LOG("[FBX] bForceFrontXAxis enabled - using +X as Forward axis");
 		}
 
 		FbxAxisSystem UnrealImportAxis(TargetUpVector, TargetFrontVector, TargetCoordSystem);
@@ -139,14 +127,10 @@ void FFbxImporter::ConvertScene()
 		// 좌표계가 다른 경우만 변환
 		if (SceneAxis != UnrealImportAxis)
 		{
-			UE_LOG("[FBX] Converting scene coordinate system...");
-
 			// CRITICAL: FBX Root 노드 제거 먼저 수행!
-			UE_LOG("[FBX] Removing FBX root nodes (Unreal Engine style)");
 			FbxRootNodeUtility::RemoveAllFbxRoots(Scene);
 
 			// 좌표계 변환 수행
-			UE_LOG("[FBX] Applying FbxAxisSystem::ConvertScene()");
 			UnrealImportAxis.ConvertScene(Scene);
 
 			// CRITICAL: bForceFrontXAxis = true면 JointOrientationMatrix 설정
@@ -154,8 +138,6 @@ void FFbxImporter::ConvertScene()
 			if (CurrentOptions.bForceFrontXAxis)
 			{
 				JointPostConversionMatrix.SetR(FbxVector4(-90.0, -90.0, 0.0));
-				UE_LOG("[FBX] JointOrientationMatrix set: (-90 degrees, -90 degrees, 0 degrees)");
-				UE_LOG("[FBX] This will convert Bone Hierarchy from -Y Forward to +X Forward");
 			}
 
 			// Axis Conversion Matrix 계산
@@ -163,31 +145,7 @@ void FFbxImporter::ConvertScene()
 			SceneAxis.GetMatrix(SourceMatrix);
 			UnrealImportAxis.GetMatrix(TargetMatrix);
 			AxisConversionMatrix = SourceMatrix.Inverse() * TargetMatrix;
-
-			UE_LOG("[FBX] Axis Conversion Matrix calculated");
-
-			// 변환 후 검증
-			FbxAxisSystem ConvertedAxis = Scene->GetGlobalSettings().GetAxisSystem();
-			int ConvertedUpSign;
-			FbxAxisSystem::EUpVector ConvertedUpVector = ConvertedAxis.GetUpVector(ConvertedUpSign);
-			int ConvertedFrontSign;
-			FbxAxisSystem::EFrontVector ConvertedFrontVector = ConvertedAxis.GetFrontVector(ConvertedFrontSign);
-			FbxAxisSystem::ECoordSystem ConvertedCoordSystem = ConvertedAxis.GetCoorSystem();
-
-			UE_LOG("[FBX DEBUG] === After Conversion ===");
-			UE_LOG("[FBX DEBUG] UpVector: %d (sign: %d)", (int)ConvertedUpVector, ConvertedUpSign);
-			UE_LOG("[FBX DEBUG] FrontVector: %d (sign: %d)", (int)ConvertedFrontVector, ConvertedFrontSign);
-			UE_LOG("[FBX DEBUG] CoordSystem: %s", ConvertedCoordSystem == FbxAxisSystem::eRightHanded ? "RightHanded" : "LeftHanded");
 		}
-		else
-		{
-			UE_LOG("[FBX] Scene already in target coordinate system");
-		}
-	}
-	else
-	{
-		UE_LOG("[FBX] bConvertScene = false - skipping coordinate conversion");
-		UE_LOG("[FBX] Only Y-axis flip will be applied during vertex transformation");
 	}
 
 	// FFbxDataConverter에 Matrix 저장
@@ -198,30 +156,15 @@ void FFbxImporter::ConvertScene()
 	if (CurrentOptions.bConvertSceneUnit)
 	{
 		FbxSystemUnit SceneUnit = Scene->GetGlobalSettings().GetSystemUnit();
-		double SceneScale = SceneUnit.GetScaleFactor();
-
-		UE_LOG("[FBX] Original scene unit scale factor: %.6f", SceneScale);
 
 		if (SceneUnit != FbxSystemUnit::m)
 		{
-			UE_LOG("[FBX] Converting scene unit to meters (m)");
 			FbxSystemUnit::m.ConvertScene(Scene);
 		}
-		else
-		{
-			UE_LOG("[FBX] Scene already in meter (m) unit");
-		}
-	}
-	else
-	{
-		UE_LOG("[FBX] bConvertSceneUnit = false - keeping original unit");
 	}
 
 	// Animation Evaluator Reset (Unreal Engine 방식)
 	Scene->GetAnimationEvaluator()->Reset();
-
-	UE_LOG("[FBX] ConvertScene() complete");
-	UE_LOG("[FBX] Next: Per-vertex Y-flip will convert Right-Handed to Left-Handed");
 }
 
 void FFbxImporter::ReleaseScene()
@@ -311,7 +254,7 @@ bool FFbxImporter::ImportSkeletalMesh(const FString& FilePath, const FFbxImportO
 	}
 
 	// 2. 좌표계 및 단위 변환
-	// ConvertScene()은 좌표계 변환 + 단위 변환(cm)을 수행 (Unreal Engine 방식)
+	// ConvertScene()은 좌표계 변환 + 단위 변환(cm -> m)을 수행 (Unreal Engine 방식)
 	// bConvertSceneUnit 옵션에 따라 단위 변환 수행 여부 결정
 	if (CurrentOptions.bConvertScene)
 	{
@@ -322,7 +265,6 @@ bool FFbxImporter::ImportSkeletalMesh(const FString& FilePath, const FFbxImportO
 	if (CurrentOptions.ImportScale != 1.0f)
 	{
 		FbxSystemUnit CustomUnit(CurrentOptions.ImportScale);
-		UE_LOG("[FBX] Applying additional custom scale: %.2f", CurrentOptions.ImportScale);
 		CustomUnit.ConvertScene(Scene);
 	}
 
@@ -532,8 +474,6 @@ USkeleton* FFbxImporter::ExtractSkeleton(FbxNode* RootNode)
 		return nullptr;
 	}
 
-	UE_LOG("[FBX] Extracting skeleton hierarchy...");
-
 	// FbxNode* → Mundi Bone Index 매핑 (FBX 노드 포인터를 키로 사용)
 	TMap<FbxNode*, int32> NodeToIndexMap;
 
@@ -635,7 +575,6 @@ bool FFbxImporter::ImportStaticMesh(const FString& FilePath, const FFbxImportOpt
 	if (CurrentOptions.ImportScale != 1.0f)
 	{
 		FbxSystemUnit CustomUnit(CurrentOptions.ImportScale);
-		UE_LOG("[FBX] Applying additional custom scale: %.2f", CurrentOptions.ImportScale);
 		CustomUnit.ConvertScene(Scene);
 	}
 
@@ -853,8 +792,6 @@ bool FFbxImporter::ExtractStaticMeshData(
 		return false;
 	}
 
-	UE_LOG("[FBX] Extracting StaticMesh: %d control points, %d Polygons", ControlPointCount, PolygonCount);
-
 	// Control Points (위치 정보)
 	FbxVector4* ControlPoints = Mesh->GetControlPoints();
 
@@ -1040,8 +977,6 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, FSkeletalMesh& OutMeshData
 		return false;
 	}
 
-	UE_LOG("[FBX] Extracting mesh data...");
-
 	// Vertex 및 Index 데이터 준비
 	int32 VertexCount = FbxMesh->GetControlPointsCount();
 	int32 PolygonCount = FbxMesh->GetPolygonCount();
@@ -1051,8 +986,6 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, FSkeletalMesh& OutMeshData
 		SetError("ExtractMeshData: Mesh has no vertices or Polygons");
 		return false;
 	}
-
-	UE_LOG("[FBX] Mesh has %d control points, %d Polygons", VertexCount, PolygonCount);
 
 	// FBX는 Polygon당 3개의 vertex를 가짐 (Triangulated)
 	// FBX는 각 폴리곤 vertex마다 별도의 normal/UV를 가질 수 있음
@@ -1338,8 +1271,6 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* Mesh, FSkeletalMesh& OutMeshData)
 		return false;
 	}
 
-	UE_LOG("[FBX] Extracting skin weights...");
-
 	// Skin Deformer 가져오기
 	int32 DeformerCount = Mesh->GetDeformerCount(FbxDeformer::eSkin);
 	if (DeformerCount == 0)
@@ -1357,7 +1288,6 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* Mesh, FSkeletalMesh& OutMeshData)
 	}
 
 	int32 ClusterCount = SkinDeformer->GetClusterCount();
-	UE_LOG("[FBX] Skin has %d clusters (bones)", ClusterCount);
 
 	// IMPORTANT: Geometry Transform 추출 (Unreal Engine 방식)
 	// Mesh Node의 Geometric Translation/Rotation/Scaling
@@ -1477,21 +1407,6 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* Mesh, FSkeletalMesh& OutMeshData)
 		FMatrix GlobalBindPoseMatrix = ConvertFbxMatrixWithYAxisFlip(FbxMatrix(TransformLinkMatrix));
 		Skeleton->SetGlobalBindPoseMatrix(BoneIndex, GlobalBindPoseMatrix);
 
-		// 디버그: 변환된 GlobalBindPoseMatrix 출력
-		if (BoneIndex == 0)
-		{
-			UE_LOG("[FBX DEBUG] After ConvertFbxMatrixWithYAxisFlip - GlobalBindPoseMatrix:");
-			for (int row = 0; row < 4; row++)
-			{
-				UE_LOG("[FBX DEBUG]   Row %d: (%.6f, %.6f, %.6f, %.6f)",
-					row,
-					GlobalBindPoseMatrix.M[row][0],
-					GlobalBindPoseMatrix.M[row][1],
-					GlobalBindPoseMatrix.M[row][2],
-					GlobalBindPoseMatrix.M[row][3]);
-			}
-		}
-
 		// UNREAL ENGINE 방식: Inverse Bind Pose Matrix 계산
 		// Vertex는 Mesh Global Space에 있음 (ConvertFbxPosition으로 Y축 반전 적용됨)
 		// InverseBindPose = BoneGlobal^-1 (단순 역행렬)
@@ -1506,39 +1421,6 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* Mesh, FSkeletalMesh& OutMeshData)
 		// Skeleton에 Inverse Bind Pose Matrix 설정 (Y축 반전 적용)
 		FMatrix InverseBindPoseMatrix = ConvertFbxMatrixWithYAxisFlip(FbxMatrix(InverseBindMatrix));
 		Skeleton->SetInverseBindPoseMatrix(BoneIndex, InverseBindPoseMatrix);
-
-		// 디버그: 변환된 InverseBindPoseMatrix 출력
-		if (BoneIndex == 0)
-		{
-			UE_LOG("[FBX DEBUG] After ConvertFbxMatrixWithYAxisFlip - InverseBindPoseMatrix:");
-			for (int row = 0; row < 4; row++)
-			{
-				UE_LOG("[FBX DEBUG]   Row %d: (%.6f, %.6f, %.6f, %.6f)",
-					row,
-					InverseBindPoseMatrix.M[row][0],
-					InverseBindPoseMatrix.M[row][1],
-					InverseBindPoseMatrix.M[row][2],
-					InverseBindPoseMatrix.M[row][3]);
-			}
-
-			// InverseBindPose × GlobalBindPose 계산
-			// 디버그 목적: Bind Pose에서 어떤 변환이 적용되는지 확인
-			// InverseBindPose × BoneGlobal = BoneGlobal^-1 × BoneGlobal = Identity (이론적으로)
-			FMatrix TestMatrix = InverseBindPoseMatrix * GlobalBindPoseMatrix;
-			UE_LOG("[FBX DEBUG] InverseBindPose × GlobalBindPose (should be Identity):");
-
-			for (int row = 0; row < 4; row++)
-			{
-				UE_LOG("[FBX DEBUG]   Row %d: (%.6f, %.6f, %.6f, %.6f)",
-					row,
-					TestMatrix.M[row][0],
-					TestMatrix.M[row][1],
-					TestMatrix.M[row][2],
-					TestMatrix.M[row][3]);
-			}
-		}
-
-		UE_LOG("[FBX] Set bind poses for bone [%d]: %s (Global + Inverse from Cluster)", BoneIndex, BoneName.c_str());
 
 		// Cluster의 Control Point Indices와 Weights 가져오기
 		int32* ControlPointIndices = Cluster->GetControlPointIndices();
