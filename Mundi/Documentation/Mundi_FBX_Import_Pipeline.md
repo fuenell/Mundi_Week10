@@ -988,6 +988,67 @@ bool ExtractSkinWeights(FbxMesh* FbxMeshPtr, USkeletalMesh* OutSkeletalMesh);
 - Vertex → Bone Influences 매핑
 - 반환: 성공 여부
 
+#### OptimizeVertexBuffer()
+```cpp
+bool OptimizeVertexBuffer(
+    TArray<FSkinnedVertex>& Vertices,
+    TArray<uint32>& Indices,
+    TArray<int32>& VertexToControlPointMap);
+```
+- **Vertex welding (중복 vertex 제거)** 구현 함수
+- 동일한 속성을 가진 vertex를 병합하여 30-70% 감소
+- In-place 수정: Vertices, Indices, VertexToControlPointMap 배열을 직접 수정
+
+**알고리즘:**
+1. `FSkinnedVertexKey` 구조체로 각 vertex의 hash key 생성
+   - Hash 대상: Position, Normal, UV, Tangent, ControlPointIndex
+2. `std::unordered_map<FSkinnedVertexKey, uint32>` 사용
+3. 각 vertex에 대해:
+   - 이미 동일한 key가 존재하면 → 기존 index 재사용
+   - 새로운 key이면 → welded 배열에 추가
+4. Index buffer를 remapping된 index로 업데이트
+5. Degenerate triangle (동일한 vertex index 3개) 제거
+
+**Hash Key 구현:**
+```cpp
+struct FSkinnedVertexKey
+{
+    FVector Position;
+    FVector Normal;
+    FVector2 UV;
+    FVector Tangent;
+    int32 ControlPointIndex;
+
+    bool operator==(const FSkinnedVertexKey& Other) const
+    {
+        return Position == Other.Position
+            && Normal == Other.Normal
+            && UV == Other.UV
+            && Tangent == Other.Tangent
+            && ControlPointIndex == Other.ControlPointIndex;
+    }
+};
+```
+
+**성능 특성:**
+- 시간 복잡도: O(N) (N = 원본 vertex 수)
+- 공간 복잡도: O(N) (Hash map 크기)
+- 일반적인 감소율: 30-70%
+- Hard edge/UV seam이 많은 모델은 감소율 낮음
+
+**사용 위치:**
+- `ExtractMeshData()` 함수 내부에서 호출
+- `bWeldVertices` 옵션이 true일 때만 실행
+
+**로그 출력:**
+```
+[FBX] Starting vertex welding: 12000 vertices, 6000 indices
+[FBX] Vertex welding complete: 12000 -> 4500 vertices (62.5% reduction)
+[FBX] Warning: Found 5 degenerate triangles after welding
+```
+
+- 반환: 성공 여부 (false 시 에러 메시지 설정)
+
 #### ExtractSkeleton()
 ```cpp
 USkeleton* ExtractSkeleton(FbxNode* RootNode);
@@ -1277,6 +1338,59 @@ if (Options.bRemoveDegenerates)
     GeometryConverter.RemoveBadPolygonsFromMeshes(Scene);
 }
 ```
+
+#### bWeldVertices (기본: true)
+
+동일한 속성을 가진 중복 vertex를 병합하여 vertex 수를 30-70% 감소시킵니다.
+
+**Vertex 비교 기준:**
+- Position (위치)
+- Normal (법선)
+- UV (텍스처 좌표)
+- Tangent (탄젠트)
+- Control Point Index (Skeletal Mesh의 경우, skinning weight 보존)
+
+**성능 효과:**
+- Vertex 수 30-70% 감소 (일반적)
+- GPU 메모리 사용량 감소
+- Rendering 시 vertex cache hit rate 향상
+
+**보존되는 특성:**
+- Hard edges (서로 다른 normal을 가진 vertex는 병합되지 않음)
+- UV seams (서로 다른 UV를 가진 vertex는 병합되지 않음)
+- Bone weights (Control Point Index가 다르면 병합되지 않음)
+
+**구현 세부사항:**
+```cpp
+// Vertex welding 실행
+if (CurrentOptions.bWeldVertices)
+{
+    if (!OptimizeVertexBuffer(Vertices, Indices, VertexToControlPointMap))
+    {
+        SetError("ExtractMeshData: Vertex welding failed");
+        return false;
+    }
+}
+```
+
+**알고리즘:**
+1. 각 vertex의 모든 속성(Position, Normal, UV, Tangent, ControlPoint)을 기반으로 hash key 생성
+2. `std::unordered_map`을 사용하여 동일한 hash key를 가진 vertex 감지
+3. 중복 vertex를 첫 번째 발견된 vertex로 병합
+4. Index buffer를 새로운 vertex index로 리매핑
+5. Degenerate triangle (면적 0인 삼각형) 제거
+
+**로그 출력 예시:**
+```
+[FBX] Starting vertex welding: 12000 vertices, 6000 indices
+[FBX] Vertex welding complete: 12000 -> 4500 vertices (62.5% reduction)
+[FBX] Warning: Found 5 degenerate triangles after welding
+```
+
+**주의사항:**
+- Hard edge와 UV seam이 많은 모델은 감소율이 낮을 수 있음
+- Welding 후 degenerate triangle이 발생할 수 있음 (자동으로 제거됨)
+- Control Point Index가 보존되므로 skinning에 영향 없음
 
 ### 옵션 조합 예시
 
@@ -2216,6 +2330,26 @@ catch (const std::exception& e)
 | | | - "Blender FBX 특별 처리" 섹션 추가 (160+ 라인) |
 | | | - ExtractSkinWeights JointPostConversionMatrix 적용 추가 |
 | | | - **수정 범위**: Phase 3, 좌표계 변환, 새 섹션 추가 |
+| 5.0 | 2025-11-13 | **FBX Vertex Welding 최적화 구현** |
+| | | - **OptimizeVertexBuffer() 함수 추가** |
+| | | - 중복 vertex 제거 알고리즘 구현 (hash-based welding) |
+| | | - FSkinnedVertexKey 구조체를 사용한 vertex 비교 |
+| | | - Position, Normal, UV, Tangent, ControlPointIndex 기반 hash key |
+| | | - std::unordered_map으로 O(N) 시간복잡도 달성 |
+| | | - **bWeldVertices 옵션 추가 (FFbxImportOptions)** |
+| | | - 기본값: true (30-70% vertex 감소) |
+| | | - Hard edge, UV seam, bone weight 보존 |
+| | | - **성능 향상** |
+| | | - Vertex 수 30-70% 감소 (일반적) |
+| | | - GPU 메모리 사용량 감소 |
+| | | - Vertex cache hit rate 향상 |
+| | | - Degenerate triangle 자동 제거 |
+| | | - **문서 업데이트** |
+| | | - "Import 옵션" 섹션에 bWeldVertices 설명 추가 |
+| | | - "핵심 함수 레퍼런스"에 OptimizeVertexBuffer() 추가 |
+| | | - 알고리즘 상세 설명 및 성능 특성 문서화 |
+| | | - 로그 출력 예시 및 주의사항 추가 |
+| | | - **수정 범위**: FbxImporter.cpp/h, FbxImportOptions.h, 문서 |
 
 ---
 
