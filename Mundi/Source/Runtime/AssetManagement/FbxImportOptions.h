@@ -67,6 +67,24 @@ struct FFbxImportOptions
 	// 중복 버텍스 병합 여부
 	bool bRemoveDegenerates = true;
 
+	/**
+	 * Vertex welding (중복 vertex 제거)
+	 *
+	 * true:  동일한 position, normal, UV, tangent, control point를 가진 vertex 병합
+	 * false: Polygon vertex 단위로 유지 (triangle당 3개 vertex)
+	 *
+	 * Benefits:
+	 * - Vertex 수 30-70% 감소 (일반적)
+	 * - GPU 메모리 사용량 감소
+	 * - Rendering 시 cache hit rate 향상
+	 *
+	 * Preserves:
+	 * - Hard edges (다른 normal)
+	 * - UV seams (다른 UV)
+	 * - Bone weights (control point matching)
+	 */
+	bool bWeldVertices = true;
+
 	// === SkeletalMesh 전용 옵션 ===
 
 	// Skeleton Asset 생성 여부

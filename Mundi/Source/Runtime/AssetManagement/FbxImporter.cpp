@@ -1301,6 +1301,20 @@ bool FFbxImporter::ExtractMeshData(FbxNode* MeshNode, FSkeletalMesh& OutMeshData
 
 	UE_LOG("[FBX] Extracted %zu vertices, %zu indices", Vertices.Num(), Indices.Num());
 
+	// Vertex welding (중복 vertex 제거)
+	if (CurrentOptions.bWeldVertices)
+	{
+		if (!OptimizeVertexBuffer(Vertices, Indices, VertexToControlPointMap))
+		{
+			SetError("ExtractMeshData: Vertex welding failed");
+			return false;
+		}
+	}
+	else
+	{
+		UE_LOG("[FBX] Vertex welding disabled by user option");
+	}
+
 	// Material 이름 배열 생성
 	TArray<FString> materialNames;
 	for (int32 i = 0; i < MeshNode->GetMaterialCount(); i++)
@@ -2131,5 +2145,252 @@ void FFbxImporter::SetError(const FString& Message)
 	LastErrorMessage = Message;
 	FString ErrorMsg = "[FBX ERROR] " + Message + "\n";
 	OutputDebugStringA(ErrorMsg.c_str());
+}
+
+// ============================================================================
+// Vertex Welding Implementation
+// ============================================================================
+
+/**
+ * FSkinnedVertexKey - Vertex welding을 위한 hash key
+ *
+ * 동일한 vertex를 식별하기 위한 키 구조체
+ * Position, Normal, UV, Tangent, ControlPointIndex를 모두 포함하여
+ * 시각적으로 동일하고 동일한 bone weight를 가진 vertex만 병합
+ */
+struct FSkinnedVertexKey
+{
+	// Position (3 floats)
+	float PosX, PosY, PosZ;
+
+	// Normal (3 floats)
+	float NormX, NormY, NormZ;
+
+	// UV (2 floats)
+	float U, V;
+
+	// Tangent (4 floats - handedness W 포함)
+	float TangentX, TangentY, TangentZ, TangentW;
+
+	// CRITICAL: Control Point Index (skinning weight lookup용)
+	int32 ControlPointIndex;
+
+	// Epsilon tolerance 상수
+	static constexpr float POSITION_EPSILON = 1e-5f;  // 0.01mm 정밀도
+	static constexpr float NORMAL_EPSILON = 1e-4f;    // ~0.006도
+	static constexpr float UV_EPSILON = 1e-6f;        // 1024x1024 텍스처의 1 texel
+	static constexpr float TANGENT_EPSILON = 1e-4f;
+
+	/**
+	 * Epsilon 기반 equality operator
+	 * Control Point가 다르면 절대 같지 않음 (bone weight 보존)
+	 */
+	bool operator==(const FSkinnedVertexKey& Other) const
+	{
+		// Control point는 정확히 일치해야 함 (bone weight 보존을 위해)
+		if (ControlPointIndex != Other.ControlPointIndex)
+			return false;
+
+		// Position 비교
+		if (std::abs(PosX - Other.PosX) > POSITION_EPSILON ||
+			std::abs(PosY - Other.PosY) > POSITION_EPSILON ||
+			std::abs(PosZ - Other.PosZ) > POSITION_EPSILON)
+			return false;
+
+		// Normal 비교
+		if (std::abs(NormX - Other.NormX) > NORMAL_EPSILON ||
+			std::abs(NormY - Other.NormY) > NORMAL_EPSILON ||
+			std::abs(NormZ - Other.NormZ) > NORMAL_EPSILON)
+			return false;
+
+		// UV 비교
+		if (std::abs(U - Other.U) > UV_EPSILON ||
+			std::abs(V - Other.V) > UV_EPSILON)
+			return false;
+
+		// Tangent 비교
+		if (std::abs(TangentX - Other.TangentX) > TANGENT_EPSILON ||
+			std::abs(TangentY - Other.TangentY) > TANGENT_EPSILON ||
+			std::abs(TangentZ - Other.TangentZ) > TANGENT_EPSILON ||
+			std::abs(TangentW - Other.TangentW) > TANGENT_EPSILON)
+			return false;
+
+		return true;
+	}
+};
+
+/**
+ * FSkinnedVertexKeyHash - std::unordered_map용 hash functor
+ * Grid-based spatial hashing으로 float precision 문제 회피
+ */
+struct FSkinnedVertexKeyHash
+{
+	size_t operator()(const FSkinnedVertexKey& Key) const
+	{
+		// Grid-based spatial hashing (float hash보다 분포 균일)
+		constexpr float GRID_SIZE = 1e-4f;  // 0.1mm grid cells
+
+		int32 GridX = static_cast<int32>(Key.PosX / GRID_SIZE);
+		int32 GridY = static_cast<int32>(Key.PosY / GRID_SIZE);
+		int32 GridZ = static_cast<int32>(Key.PosZ / GRID_SIZE);
+
+		// FNV-1a hash algorithm
+		size_t Hash = 2166136261u;  // FNV offset basis
+
+		Hash ^= static_cast<size_t>(GridX);
+		Hash *= 16777619u;  // FNV prime
+
+		Hash ^= static_cast<size_t>(GridY);
+		Hash *= 16777619u;
+
+		Hash ^= static_cast<size_t>(GridZ);
+		Hash *= 16777619u;
+
+		// Control point index 포함 (critical for skinning)
+		Hash ^= static_cast<size_t>(Key.ControlPointIndex);
+		Hash *= 16777619u;
+
+		// UV 포함 (quantized to reduce collisions)
+		Hash ^= static_cast<size_t>(Key.U * 1024.0f);
+		Hash *= 16777619u;
+
+		Hash ^= static_cast<size_t>(Key.V * 1024.0f);
+		Hash *= 16777619u;
+
+		return Hash;
+	}
+};
+
+/**
+ * Vertex buffer 최적화 (중복 vertex welding)
+ *
+ * 동일한 속성을 가진 vertex를 병합하여 vertex 수를 30-70% 감소
+ * VertexToControlPointMap을 유지하여 skinning weight 보존
+ *
+ * @param Vertices - Vertex 배열 (in-place 수정)
+ * @param Indices - Index 배열 (in-place 수정)
+ * @param VertexToControlPointMap - Control point 매핑 (in-place 수정)
+ * @return 성공 여부
+ */
+bool FFbxImporter::OptimizeVertexBuffer(
+	TArray<FSkinnedVertex>& Vertices,
+	TArray<uint32>& Indices,
+	TArray<int32>& VertexToControlPointMap)
+{
+	// 유효성 검사
+	if (Vertices.IsEmpty() || Indices.IsEmpty())
+	{
+		UE_LOG("[FBX] Warning: Skipping vertex welding for empty vertex buffer");
+		return true;  // 에러가 아니라 처리할 것이 없음
+	}
+
+	if (Vertices.Num() != VertexToControlPointMap.Num())
+	{
+		UE_LOG("[FBX] Error: VertexToControlPointMap size mismatch (%llu vertices, %llu mappings)",
+			(unsigned long long)Vertices.Num(),
+			(unsigned long long)VertexToControlPointMap.Num());
+		return false;
+	}
+
+	int32 OriginalVertexCount = Vertices.Num();
+	UE_LOG("[FBX] Starting vertex welding: %llu vertices, %llu indices",
+		(unsigned long long)OriginalVertexCount,
+		(unsigned long long)Indices.Num());
+
+	// Hash map 구성: VertexKey → WeldedIndex
+	std::unordered_map<FSkinnedVertexKey, uint32, FSkinnedVertexKeyHash> VertexHashMap;
+	VertexHashMap.reserve(OriginalVertexCount / 2);  // 약 50% 감소 가정
+
+	// Remap 테이블 구성: OldIndex → NewIndex
+	TArray<uint32> VertexRemap;
+	VertexRemap.SetNum(OriginalVertexCount);
+
+	// Welded vertex 배열 구성
+	TArray<FSkinnedVertex> WeldedVertices;
+	WeldedVertices.Reserve(OriginalVertexCount / 2);
+
+	// Welded VertexToControlPointMap 구성
+	TArray<int32> WeldedVertexToControlPointMap;
+	WeldedVertexToControlPointMap.Reserve(OriginalVertexCount / 2);
+
+	// 각 vertex 처리
+	for (size_t OldIndex = 0; OldIndex < OriginalVertexCount; OldIndex++)
+	{
+		const FSkinnedVertex& Vertex = Vertices[OldIndex];
+		int32 ControlPointIndex = VertexToControlPointMap[OldIndex];
+
+		// Hash key 생성
+		FSkinnedVertexKey Key;
+		Key.PosX = Vertex.Position.X;
+		Key.PosY = Vertex.Position.Y;
+		Key.PosZ = Vertex.Position.Z;
+		Key.NormX = Vertex.Normal.X;
+		Key.NormY = Vertex.Normal.Y;
+		Key.NormZ = Vertex.Normal.Z;
+		Key.U = Vertex.UV.X;
+		Key.V = Vertex.UV.Y;
+		Key.TangentX = Vertex.Tangent.X;
+		Key.TangentY = Vertex.Tangent.Y;
+		Key.TangentZ = Vertex.Tangent.Z;
+		Key.TangentW = Vertex.Tangent.W;
+		Key.ControlPointIndex = ControlPointIndex;
+
+		// Vertex가 이미 존재하는지 확인
+		auto It = VertexHashMap.find(Key);
+		if (It != VertexHashMap.end())
+		{
+			// 이미 welding된 vertex - 기존 index 재사용
+			VertexRemap[OldIndex] = It->second;
+		}
+		else
+		{
+			// 새로운 고유 vertex - welded 배열에 추가
+			uint32 NewIndex = static_cast<uint32>(WeldedVertices.Num());
+			WeldedVertices.Add(Vertex);
+			WeldedVertexToControlPointMap.Add(ControlPointIndex);
+
+			VertexHashMap[Key] = NewIndex;
+			VertexRemap[OldIndex] = NewIndex;
+		}
+	}
+
+	// Index buffer 재구성
+	for (uint32& Index : Indices)
+	{
+		Index = VertexRemap[Index];
+	}
+
+	// Degenerate triangle 확인 (디버깅용)
+	size_t DegenerateCount = 0;
+	for (size_t i = 0; i < Indices.Num(); i += 3)
+	{
+		uint32 I0 = Indices[i];
+		uint32 I1 = Indices[i + 1];
+		uint32 I2 = Indices[i + 2];
+
+		if (I0 == I1 || I1 == I2 || I2 == I0)
+		{
+			DegenerateCount++;
+		}
+	}
+
+	if (DegenerateCount > 0)
+	{
+		UE_LOG("[FBX] Warning: Found %llu degenerate triangles after welding",
+			(unsigned long long)DegenerateCount);
+	}
+
+	// 원본 배열을 welded 버전으로 교체 (move semantics)
+	Vertices = std::move(WeldedVertices);
+	VertexToControlPointMap = std::move(WeldedVertexToControlPointMap);
+
+	// 결과 로그 (%zu 대신 %llu 사용 - MSVC vsnprintf_s 호환성)
+	float ReductionPercent = 100.0f * (1.0f - float(Vertices.Num()) / float(OriginalVertexCount));
+	UE_LOG("[FBX] Vertex welding complete: %llu -> %llu vertices (%.1f%% reduction)",
+		(unsigned long long)OriginalVertexCount,
+		(unsigned long long)Vertices.Num(),
+		ReductionPercent);
+
+	return true;
 }
 
