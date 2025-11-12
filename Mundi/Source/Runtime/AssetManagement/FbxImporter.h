@@ -325,6 +325,21 @@ private:
 	 */
 	bool ExtractMaterials(FbxScene* InScene, USkeletalMesh* OutSkeletalMesh);
 
+	/**
+	 * Vertex buffer 최적화 (중복 vertex welding)
+	 * 동일한 속성을 가진 vertex를 병합하여 vertex 수 감소
+	 * VertexToControlPointMap을 유지하여 skinning weight 보존
+	 *
+	 * @param Vertices - Vertex 배열 (in-place 수정)
+	 * @param Indices - Index 배열 (in-place 수정)
+	 * @param VertexToControlPointMap - Control point 매핑 (in-place 수정)
+	 * @return 성공 여부
+	 */
+	bool OptimizeVertexBuffer(
+		TArray<FSkinnedVertex>& Vertices,
+		TArray<uint32>& Indices,
+		TArray<int32>& VertexToControlPointMap);
+
 	// === Helper 함수 ===
 
 	/**
