@@ -6,11 +6,12 @@
 3. [Winding Order 처리](#winding-order-처리)
 4. [Import 파이프라인](#import-파이프라인)
 5. [Static Mesh vs Skeletal Mesh](#static-mesh-vs-skeletal-mesh)
-6. [핵심 함수 레퍼런스](#핵심-함수-레퍼런스)
-7. [FFbxDataConverter 유틸리티 클래스](#ffbxdataconverter-유틸리티-클래스)
-8. [Import 옵션](#import-옵션)
-9. [Unreal Engine과의 차이점](#unreal-engine과의-차이점)
-10. [FBX Baking 시스템](#fbx-baking-시스템)
+6. [Blender FBX 특별 처리](#blender-fbx-특별-처리)
+7. [핵심 함수 레퍼런스](#핵심-함수-레퍼런스)
+8. [FFbxDataConverter 유틸리티 클래스](#ffbxdataconverter-유틸리티-클래스)
+9. [Import 옵션](#import-옵션)
+10. [Unreal Engine과의 차이점](#unreal-engine과의-차이점)
+11. [FBX Baking 시스템](#fbx-baking-시스템)
 
 ---
 
@@ -21,6 +22,7 @@ Mundi 엔진의 FBX Import 시스템은 Autodesk FBX SDK를 사용하여 FBX 파
 ### 지원 기능
 - ✅ **Static Mesh Import** - 단순 3D 모델
 - ✅ **Skeletal Mesh Import** - Skeleton + Skin Weights + Bind Pose (CPU Skinning)
+- ✅ **Blender FBX 자동 처리** - Armature 노드 스킵, _end Bone 처리
 - ✅ **Binary Caching** - 빠른 재로드를 위한 바이너리 캐시 (6-15× 성능 향상)
 - 🚧 **Animation Import** (향후 지원 예정)
 
@@ -97,7 +99,20 @@ if (Options.bForceFrontXAxis)
 }
 ```
 
-**역할**: Skeletal Mesh의 Bind Pose에만 적용되며, Static Mesh에는 영향 없음
+**적용 위치:**
+1. **ExtractSkeleton** (Line 450-461):
+   - Cluster에서 추출한 Global Bind Pose에 적용
+   - Parent와 Child 모두에 적용하여 Local Transform 계산
+   - Root Joint의 parent는 Identity (JointPost 적용 안함)
+
+2. **ExtractSkinWeights** (Line 1450):
+   - Cluster TransformLinkMatrix에 적용
+   - GlobalBindPoseMatrix와 InverseBindPoseMatrix 계산 시 사용
+
+**역할**:
+- Skeletal Mesh의 Bind Pose와 Skinning 계산에 적용
+- ExtractSkeleton과 ExtractSkinWeights가 동일한 coordinate space 사용
+- Static Mesh에는 영향 없음
 
 ### 2단계: Y축 반전 (FFbxDataConverter::ConvertPos)
 
@@ -205,8 +220,12 @@ deafultrasterizerdesc.DepthClipEnable = TRUE;
                      ▼
 ┌──────────────────────────────────────────────────────────────┐
 │ 3. ExtractSkeleton()                                         │
+│    - Blender FBX 감지 (FbxDocumentInfo)                     │
+│    - **Cluster에서 Bind Pose 수집 (UE5 Pattern)**           │
 │    - Bone Hierarchy 재귀적 추출                              │
-│    - Local Transform 저장                                    │
+│    - Armature 노드 자동 스킵 (Blender)                       │
+│    - **Cluster Bind Pose + JointPostConversionMatrix**      │
+│    - Local Transform 계산 및 저장                            │
 └────────────────────┬─────────────────────────────────────────┘
                      │
                      ▼
@@ -354,8 +373,61 @@ USkeleton* FFbxImporter::ExtractSkeleton(FbxNode* RootNode)
 {
     USkeleton* Skeleton = ObjectFactory::NewObject<USkeleton>();
 
+    // Blender FBX 감지
+    bool bIsBlenderFbx = false;
+    if (Scene)
+    {
+        FbxDocumentInfo* DocInfo = Scene->GetSceneInfo();
+        if (DocInfo)
+        {
+            FString Creator = DocInfo->Original_ApplicationName.Get().Buffer();
+            bIsBlenderFbx = (Creator.find("Blender") != FString::npos);
+        }
+    }
+
     // FbxNode* → Mundi Bone Index 매핑
     TMap<FbxNode*, int32> NodeToIndexMap;
+
+    // === CRITICAL: Cluster에서 Bind Pose 수집 (UE5 Pattern) ===
+    // Scene Pose가 아닌 실제 Skinning Bind Pose를 사용
+    TMap<FbxNode*, FbxAMatrix> NodeToGlobalBindPoseMap;
+
+    // Scene의 모든 Mesh → Skin → Cluster를 순회하며 Bind Pose 수집
+    if (Scene)
+    {
+        int32 GeometryCount = Scene->GetGeometryCount();
+        for (int32 GeometryIndex = 0; GeometryIndex < GeometryCount; ++GeometryIndex)
+        {
+            FbxGeometry* Geometry = Scene->GetGeometry(GeometryIndex);
+            if (!Geometry) continue;
+
+            int32 DeformerCount = Geometry->GetDeformerCount(FbxDeformer::eSkin);
+            for (int32 DeformerIndex = 0; DeformerIndex < DeformerCount; ++DeformerIndex)
+            {
+                FbxSkin* Skin = (FbxSkin*)Geometry->GetDeformer(DeformerIndex, FbxDeformer::eSkin);
+                if (!Skin) continue;
+
+                int32 ClusterCount = Skin->GetClusterCount();
+                for (int32 ClusterIndex = 0; ClusterIndex < ClusterCount; ++ClusterIndex)
+                {
+                    FbxCluster* Cluster = Skin->GetCluster(ClusterIndex);
+                    if (!Cluster) continue;
+
+                    FbxNode* Joint = Cluster->GetLink();
+                    if (!Joint) continue;
+
+                    // Cluster에서 Global Bind Pose Matrix 추출
+                    FbxAMatrix GlobalBindPose;
+                    Cluster->GetTransformLinkMatrix(GlobalBindPose);
+
+                    if (!NodeToGlobalBindPoseMap.Contains(Joint))
+                    {
+                        NodeToGlobalBindPoseMap.Add(Joint, GlobalBindPose);
+                    }
+                }
+            }
+        }
+    }
 
     // Bone Hierarchy 재귀적 추출
     std::function<void(FbxNode*, int32)> ExtractBoneHierarchy;
@@ -365,14 +437,66 @@ USkeleton* FFbxImporter::ExtractSkeleton(FbxNode* RootNode)
         if (Attr && Attr->GetAttributeType() == FbxNodeAttribute::eSkeleton)
         {
             FString BoneName = Node->GetName();
-            int32 CurrentIndex = Skeleton->AddBone(BoneName, ParentIndex);
 
-            // Local Transform 추출
-            FbxAMatrix LocalMatrix = Node->EvaluateLocalTransform();
+            // Blender Armature 노드 스킵
+            if (bIsBlenderFbx && _stricmp(BoneName.c_str(), "armature") == 0)
+            {
+                FbxNode* ParentNode = Node->GetParent();
+                FbxNode* GrandParent = ParentNode ? ParentNode->GetParent() : nullptr;
+
+                if (!GrandParent || GrandParent == Scene->GetRootNode())
+                {
+                    // Armature 노드는 스킵하되, 자식 노드들은 계속 처리
+                    for (int i = 0; i < Node->GetChildCount(); i++)
+                    {
+                        ExtractBoneHierarchy(Node->GetChild(i), ParentIndex);
+                    }
+                    return;
+                }
+            }
+
+            int32 CurrentIndex = Skeleton->AddBone(BoneName, ParentIndex);
+            NodeToIndexMap[Node] = CurrentIndex;
+
+            // === CRITICAL: Cluster Bind Pose 기반 Local Transform 계산 ===
+            FbxAMatrix LocalMatrix;
+
+            if (NodeToGlobalBindPoseMap.Contains(Node))
+            {
+                // Cluster 데이터 사용 (UE5 방식)
+                FbxAMatrix ChildGlobalBindPose = NodeToGlobalBindPoseMap[Node];
+
+                // JointPostConversionMatrix 적용 (ExtractSkinWeights와 coordinate space 일치)
+                FbxAMatrix JointPostMatrix = FFbxDataConverter::GetJointPostConversionMatrix();
+                ChildGlobalBindPose = ChildGlobalBindPose * JointPostMatrix;
+
+                FbxAMatrix ParentGlobalBindPose;
+                bool bIsRootJoint = false;
+
+                FbxNode* ParentFbxNode = Node->GetParent();
+                if (ParentFbxNode && NodeToGlobalBindPoseMap.Contains(ParentFbxNode))
+                {
+                    ParentGlobalBindPose = NodeToGlobalBindPoseMap[ParentFbxNode];
+                    ParentGlobalBindPose = ParentGlobalBindPose * JointPostMatrix;
+                }
+                else
+                {
+                    // Root Joint: 부모는 Identity (JointPost 적용 안함)
+                    ParentGlobalBindPose.SetIdentity();
+                    bIsRootJoint = true;
+                }
+
+                // Local = Parent^-1 × Child (Bind Pose 기준)
+                LocalMatrix = ParentGlobalBindPose.Inverse() * ChildGlobalBindPose;
+            }
+            else
+            {
+                // Fallback: Cluster 데이터가 없는 경우 Scene Pose 사용
+                LocalMatrix = Node->EvaluateLocalTransform();
+            }
+
             FTransform LocalTransform = ConvertFbxTransform(LocalMatrix);
             Skeleton->SetBindPoseTransform(CurrentIndex, LocalTransform);
-
-            NodeToIndexMap[Node] = CurrentIndex;
         }
 
         // 자식 노드 재귀 탐색
@@ -391,7 +515,9 @@ USkeleton* FFbxImporter::ExtractSkeleton(FbxNode* RootNode)
 
 **역할:**
 - FBX Node Hierarchy → Bone Hierarchy
-- 각 Bone의 Local Transform 추출 (부모 기준 상대 Transform)
+- **CRITICAL**: Cluster 기반 Bind Pose 사용 (Scene Pose 아님!)
+- Blender Armature 노드 자동 감지 및 스킵
+- JointPostConversionMatrix를 Parent/Child 모두에 적용하여 coordinate space 일치
 - Parent-Child 관계 유지
 
 #### Phase 4: ExtractMeshData
@@ -569,6 +695,9 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* FbxMeshPtr, USkeletalMesh* OutSke
         Cluster->GetTransformLinkMatrix(TransformLinkMatrix);
         Cluster->GetTransformMatrix(TransformMatrix);
 
+        // JointPostConversionMatrix 적용 (ExtractSkeleton과 coordinate space 일치)
+        TransformLinkMatrix = TransformLinkMatrix * FFbxDataConverter::GetJointPostConversionMatrix();
+
         // 첫 번째 Cluster 처리 시: Vertex를 Mesh Global Space로 변환
         if (!bMeshTransformExtracted)
         {
@@ -644,6 +773,168 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* FbxMeshPtr, USkeletalMesh* OutSke
 - Weight 정규화 (합이 1.0)
 
 **중요**: ExtractBindPose() 함수는 존재하지만, 실제로는 ExtractSkinWeights()에서 Cluster를 통해 Bind Pose를 직접 추출하는 방식이 더 정확하고 직접적입니다.
+
+---
+
+## Blender FBX 특별 처리
+
+Mundi 엔진은 Blender에서 Export한 FBX 파일을 자동으로 감지하고 특별 처리합니다.
+
+### Blender FBX의 특징
+
+Blender는 FBX Export 시 특수한 구조를 생성합니다:
+
+```
+Scene Root
+└── armature (eSkeleton, eNull)  ← Blender 전용 컨테이너 노드
+    ├── Bone_Root (eSkeleton)    ← 실제 Root Bone
+    ├── Bone_Spine (eSkeleton)
+    └── Bone_Head (eSkeleton)
+        └── Bone_Head_end (eSkeleton)  ← Leaf Bone (시각화용)
+```
+
+**문제점:**
+1. **Armature 노드**: 더미 컨테이너로 실제 Bone이 아님
+   - 이를 Bone[0]로 인식하면 모든 Bone Index가 1씩 shift됨
+   - Skinning Weight의 BoneIndex가 틀어짐
+
+2. **_end Bone**: Blender의 시각화용 Leaf Bone
+   - 실제 Skinning에 사용되지 않음
+   - Cluster 데이터가 없음
+
+### 자동 감지 및 처리
+
+#### 1. Blender FBX 감지
+
+```cpp
+// ExtractSkeleton() 시작 시
+bool bIsBlenderFbx = false;
+if (Scene)
+{
+    FbxDocumentInfo* DocInfo = Scene->GetSceneInfo();
+    if (DocInfo)
+    {
+        FString Creator = DocInfo->Original_ApplicationName.Get().Buffer();
+        bIsBlenderFbx = (Creator.find("Blender") != FString::npos);
+
+        if (bIsBlenderFbx)
+        {
+            UE_LOG("[FBX] Blender FBX detected: %s", Creator.c_str());
+        }
+    }
+}
+```
+
+**감지 방법:**
+- FBX 파일의 `FbxDocumentInfo::Original_ApplicationName` 확인
+- "Blender" 문자열 포함 여부 체크
+- 대소문자 무관 (find 사용)
+
+#### 2. Armature 노드 스킵
+
+```cpp
+// ExtractBoneHierarchy 내부
+if (bIsBlenderFbx && _stricmp(BoneName.c_str(), "armature") == 0)
+{
+    FbxNode* ParentNode = Node->GetParent();
+    FbxNode* GrandParent = ParentNode ? ParentNode->GetParent() : nullptr;
+
+    // Scene Root 바로 아래에 있는 "armature" 노드인 경우
+    if (!GrandParent || GrandParent == Scene->GetRootNode())
+    {
+        UE_LOG("[FBX] Skipping Blender armature container node: %s", BoneName.c_str());
+
+        // Armature 노드는 스킵하되, 자식 노드들은 계속 처리
+        for (int i = 0; i < Node->GetChildCount(); i++)
+        {
+            ExtractBoneHierarchy(Node->GetChild(i), ParentIndex);
+        }
+        return;
+    }
+}
+```
+
+**처리 로직:**
+1. Bone 이름이 "armature"인지 확인 (대소문자 무관)
+2. Scene Root의 직속 자식인지 확인 (깊이 체크)
+3. 조건 만족 시:
+   - 현재 노드는 Bone으로 추가하지 않음
+   - 자식 노드들은 현재 ParentIndex로 계속 처리
+   - 결과: Bone Index shift 방지
+
+#### 3. _end Bone 처리
+
+```cpp
+// Cluster Bind Pose 수집 시 자동 필터링
+if (NodeToGlobalBindPoseMap.Contains(Node))
+{
+    // Cluster 데이터 사용 (실제 Skinning에 사용되는 Bone)
+    // ...
+}
+else
+{
+    // Fallback: Cluster 데이터가 없는 경우 Scene Pose 사용
+    // _end Bone 등 Helper Bone 처리
+    LocalMatrix = Node->EvaluateLocalTransform();
+}
+```
+
+**처리 방식:**
+- `_end` Bone은 Cluster 데이터가 없음 (Skinning에 미사용)
+- NodeToGlobalBindPoseMap에 포함되지 않음
+- Fallback 경로로 처리 (Scene Pose 사용)
+- Bone Hierarchy는 유지되지만 Skinning에는 영향 없음
+
+### Blender Export 권장 설정
+
+Mundi 엔진과 최적의 호환성을 위한 Blender FBX Export 설정:
+
+```
+File → Export → FBX (.fbx)
+
+[Include]
+☑ Selected Objects (선택한 오브젝트만 Export)
+☑ Armature
+☑ Mesh
+
+[Transform]
+Scale: 1.0
+Forward: -Y Forward  ← Mundi와 일치
+Up: Z Up             ← Mundi와 일치
+
+[Geometry]
+☑ Apply Modifiers
+☑ Triangulate Faces  ← 중요!
+
+[Armature]
+☐ Add Leaf Bones     ← _end Bone 생성 안 함 (선택 사항)
+Primary Bone Axis: X Axis
+Secondary Bone Axis: Y Axis
+
+[Animation]
+☐ Baked Animation (Animation Export 시에만 필요)
+```
+
+**주요 설정 설명:**
+- **Forward/Up**: Mundi 좌표계와 일치하도록 설정
+- **Triangulate Faces**: FBX SDK Triangulation보다 정확함
+- **Add Leaf Bones**: 체크 해제 시 `_end` Bone 생성 안 됨 (권장)
+- **Bone Axis**: X Forward, Y Secondary (Blender 기본값)
+
+### UE5와의 비교
+
+| 기능 | Unreal Engine 5 | Mundi Engine |
+|------|-----------------|--------------|
+| **Blender 감지** | ✅ `FbxFileCreator.StartsWith("Blender")` | ✅ `Creator.find("Blender")` |
+| **Armature 스킵** | ✅ `Internal_GetRootSkeleton()` | ✅ ExtractBoneHierarchy 내부 |
+| **_end Bone 처리** | ✅ 자동 필터링 | ✅ Cluster 기반 자동 필터링 |
+| **Cluster Bind Pose** | ✅ FFbxJointMeshBindPoseGenerator | ✅ NodeToGlobalBindPoseMap |
+
+**구현 차이:**
+- UE5: 별도 함수 `Internal_GetRootSkeleton()`에서 Root 찾기 + Armature 스킵
+- Mundi: ExtractBoneHierarchy 내부에서 inline 처리 (더 간단)
+
+**동작은 동일:** 두 엔진 모두 Blender FBX를 올바르게 Import
 
 ---
 
@@ -1905,6 +2196,26 @@ catch (const std::exception& e)
 | | | - **FBX .fbm 텍스처 처리 최적화 문서화** |
 | | | - .fbm 폴더 자동 추출 텍스처의 타임스탬프 문제 설명 |
 | | | - 부모 FBX 파일 타임스탬프 기반 캐싱 전략 (7.5× 성능 향상) |
+| 4.0 | 2025-11-12 | **좌표계 변환 및 Blender FBX 처리 완전 재작성** |
+| | | - **CRITICAL FIX: Cluster 기반 Bind Pose 추출** |
+| | | - ExtractSkeleton에서 Scene Pose 대신 Cluster Bind Pose 사용 |
+| | | - NodeToGlobalBindPoseMap 생성 (UE5 FFbxJointMeshBindPoseGenerator 패턴) |
+| | | - **JointPostConversionMatrix Coordinate Space 일치** |
+| | | - ExtractSkeleton과 ExtractSkinWeights 모두에 JointPostConversionMatrix 적용 |
+| | | - Parent와 Child 모두에 적용하여 Local Transform 계산 (UE5 패턴) |
+| | | - Root Joint parent는 Identity (JointPost 적용 안함) |
+| | | - **Blender FBX 자동 감지 및 특별 처리** |
+| | | - FbxDocumentInfo::Original_ApplicationName 기반 Blender 감지 |
+| | | - Armature 노드 자동 스킵 (Bone Index shift 방지) |
+| | | - _end Bone Fallback 처리 (Cluster 없는 Helper Bone) |
+| | | - Blender Export 권장 설정 추가 |
+| | | - UE5 구현과의 상세 비교 섹션 추가 |
+| | | - **문서 섹션 재구성** |
+| | | - Phase 3: ExtractSkeleton 완전 재작성 (150+ 라인 코드 업데이트) |
+| | | - Joint Post-Conversion Matrix 적용 위치 명확화 |
+| | | - "Blender FBX 특별 처리" 섹션 추가 (160+ 라인) |
+| | | - ExtractSkinWeights JointPostConversionMatrix 적용 추가 |
+| | | - **수정 범위**: Phase 3, 좌표계 변환, 새 섹션 추가 |
 
 ---
 
