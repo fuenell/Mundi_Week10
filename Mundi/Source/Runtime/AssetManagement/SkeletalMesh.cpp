@@ -280,6 +280,7 @@ void USkeletalMesh::Load(const FString& InFilePath, ID3D11Device* InDevice, cons
 	GroupInfos = std::move(MeshData->GroupInfos);
 	MaterialNames = std::move(MeshData->MaterialNames);
 	Skeleton = MeshData->Skeleton;
+	CacheFilePath = std::move(MeshData->CacheFilePath);
 
 	VertexCount = static_cast<uint32>(Vertices.size());
 	IndexCount = static_cast<uint32>(Indices.size());

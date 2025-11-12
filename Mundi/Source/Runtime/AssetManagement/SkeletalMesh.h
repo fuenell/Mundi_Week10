@@ -95,6 +95,8 @@ struct FSkeletalMesh
 
 	TArray<FGroupInfo> GroupInfos;
 
+	// 캐시 파일 경로 (예: DerivedDataCache/Model/Fbx/Character.fbx.bin)
+	FString CacheFilePath;
 
 	// Skeleton 데이터
 	USkeleton* Skeleton = nullptr;
@@ -110,6 +112,7 @@ struct FSkeletalMesh
 		, PolygonMaterialIndices(std::move(Other.PolygonMaterialIndices))
 		, MaterialNames(std::move(Other.MaterialNames))
 		, GroupInfos(std::move(Other.GroupInfos))
+		, CacheFilePath(std::move(Other.CacheFilePath))
 		, Skeleton(Other.Skeleton)
 	{
 		Other.Skeleton = nullptr;
@@ -126,6 +129,7 @@ struct FSkeletalMesh
 			PolygonMaterialIndices = std::move(Other.PolygonMaterialIndices);
 			MaterialNames = std::move(Other.MaterialNames);
 			GroupInfos = std::move(Other.GroupInfos);
+			CacheFilePath = std::move(Other.CacheFilePath);
 			Skeleton = Other.Skeleton;
 			Other.Skeleton = nullptr;
 		}
@@ -229,6 +233,12 @@ public:
 	 * @return Group 개수
 	 */
 	uint64 GetMeshGroupCount() const { return GroupInfos.size(); }
+
+	/**
+	 * 캐시 파일 경로 가져오기
+	 * @return 캐시 파일 경로 (예: DerivedDataCache/Model/Fbx/Character.fbx.bin)
+	 */
+	const FString& GetCacheFilePath() const { return CacheFilePath; }
 
 	// === Mesh 데이터 관리 ===
 
@@ -382,6 +392,9 @@ private:
 private:
 	// Skeleton 참조
 	USkeleton* Skeleton = nullptr;
+
+	// 캐시 파일 경로 (예: DerivedDataCache/Model/Fbx/Character.fbx.bin)
+	FString CacheFilePath;
 
 	// Material 이름 (레거시 - 단일 Material)
 	FString MaterialName;
