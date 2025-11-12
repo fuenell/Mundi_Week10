@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "BoneDebugComponent.h"
 #include "SkeletalMeshComponent.h"
 #include "SkeletalMesh.h"
@@ -47,6 +47,8 @@ void UBoneDebugComponent::SetSkeletalMeshComponent(USkeletalMeshComponent* InCom
 
 void UBoneDebugComponent::RenderDebugVolume(URenderer* Renderer) const
 {
+	// --- 1. 유효성 검사 (Guard Clauses) ---
+
 	// Renderer 또는 SkeletalMeshComponent가 없으면 렌더링 안 함
 	if (!Renderer || !SkeletalMeshComponent)
 		return;
@@ -65,73 +67,114 @@ void UBoneDebugComponent::RenderDebugVolume(URenderer* Renderer) const
 	if (!Skeleton)
 		return;
 
-	// Component의 World Matrix 가져오기
-	FMatrix ComponentWorldMatrix = SkeletalMeshComponent->GetWorldMatrix();
+	int32 BoneCount = Skeleton->GetBoneCount();
+	if (BoneCount == 0)
+		return;
 
-	// 라인 배열 준비
+	// --- 2. 데이터 준비 ---
+
+	// Component의 World Matrix (최종 월드 변환용)
+	const FMatrix& ComponentWorldMatrix = SkeletalMeshComponent->GetWorldMatrix();
+
+	// (B⁻¹ * A)
+	// SkelComp의 Tick에서 계산된 '최종 스키닝 행렬' 배열을 가져옵니다.
+	const TArray<FMatrix>& BoneMatricesRef = SkeletalMeshComponent->GetBoneMatrices();
+
+	// 스키닝 행렬 배열이 스켈레톤과 크기가 맞는지 확인
+	if (BoneMatricesRef.Num() != BoneCount)
+	{
+		// 아직 Tick이 돌지 않았거나, 배열이 준비되지 않았습니다.
+		return;
+	}
+
+	// 디버그 라인을 저장할 임시 버퍼
 	TArray<FVector> StartPoints;
 	TArray<FVector> EndPoints;
 	TArray<FVector4> Colors;
 
-	int32 BoneCount = Skeleton->GetBoneCount();
+	// (디버깅 로그 - 필요한 경우 주석 해제)
+	// static bool bLoggedOnce = false;
+	// if (!bLoggedOnce)
+	// {
+	// 	UE_LOG("[BoneDebugComponent] Bone hierarchy for rendering:");
+	// 	for (int32 i = 0; i < BoneCount; i++)
+	// 	{
+	// 		const FBoneInfo& BoneInfo = Skeleton->GetBone(i);
+	// 		UE_LOG("  Bone[%d]: %s, ParentIndex=%d", i, BoneInfo.Name.c_str(), BoneInfo.ParentIndex);
+	// 	}
+	// 	bLoggedOnce = true;
+	// }
 
-	// 디버깅: 본 계층 구조 로그 (한 번만)
-	static bool bLoggedOnce = false;
-	if (!bLoggedOnce)
-	{
-		UE_LOG("[BoneDebugComponent] Bone hierarchy for rendering:");
-		for (int32 i = 0; i < BoneCount; i++)
-		{
-			const FBoneInfo& BoneInfo = Skeleton->GetBone(i);
-			UE_LOG("  Bone[%d]: %s, ParentIndex=%d", i, BoneInfo.Name.c_str(), BoneInfo.ParentIndex);
-		}
-		bLoggedOnce = true;
-	}
+	// --- 3. 뼈 순회 및 라이브 포즈 역산 (Reconstruction) ---
 
-	// 각 Bone에 대해 시각화
 	for (int32 BoneIndex = 0; BoneIndex < BoneCount; BoneIndex++)
 	{
 		const FBoneInfo& BoneInfo = Skeleton->GetBone(BoneIndex);
 
-		// Bone의 World 위치 계산 (Bind Pose 사용)
-		FMatrix BoneWorldMatrix = BoneInfo.GlobalBindPoseMatrix * ComponentWorldMatrix;
+		// [★핵심 로직: 라이브 포즈 역산★]
+		// A = B * (B⁻¹ * A)
+		// A = GlobalBindPoseMatrix * FinalSkinMatrix
+
+		// B (T-포즈 글로벌 행렬)
+		const FMatrix& GlobalBindPoseMatrix = BoneInfo.GlobalBindPoseMatrix;
+		// B⁻¹ * A (최종 스키닝 행렬)
+		const FMatrix& FinalSkinMatrix = BoneMatricesRef[BoneIndex];
+
+		// A (컴포넌트 로컬 공간 기준 "라이브 포즈" 행렬)
+		FMatrix BoneLocalAnimatedMatrix = GlobalBindPoseMatrix * FinalSkinMatrix;
+
+		// "라이브 월드 행렬" 계산 (로컬 * 월드)
+		FMatrix BoneWorldMatrix = BoneLocalAnimatedMatrix * ComponentWorldMatrix;
+
+		// 최종 월드 위치 추출
 		FVector BoneWorldPos = FVector(
 			BoneWorldMatrix.M[3][0],
 			BoneWorldMatrix.M[3][1],
 			BoneWorldMatrix.M[3][2]
 		);
 
-		// Joint Sphere 그리기
+		// --- 4. 그리기 (Joints) ---
 		if (bShowJoints)
 		{
 			GenerateJointSphere(BoneWorldPos, JointRadius,
 				StartPoints, EndPoints, Colors);
 		}
 
-		// Bone 팔면체 그리기 (유효한 부모가 있을 때만)
-		// 루트 본이 아니고(BoneIndex > 0), 부모 인덱스가 유효하고, 자기 자신이 아닐 때
-		// "_end" 본은 제외 (더미 엔드 포인트)
+		// --- 5. 그리기 (Bones) ---
+		// 루트 본(ParentIndex < 0)을 제외하고, 유효한 부모가 있는 뼈만 선을 그립니다.
 		if (bShowBones &&
-			BoneIndex > 0 &&
 			BoneInfo.ParentIndex >= 0 &&
 			BoneInfo.ParentIndex < BoneCount &&
-			BoneInfo.ParentIndex != BoneIndex &&
-			BoneInfo.Name.find("_end") == std::string::npos)
+			BoneInfo.Name.find("_end") == std::string::npos) // (End-Site 뼈 제외)
 		{
-			// 부모 본의 World 위치 계산
+			// 부모 본의 '라이브 월드 위치'도 동일하게 역산합니다.
+
+			// B_parent
 			const FBoneInfo& ParentBoneInfo = Skeleton->GetBone(BoneInfo.ParentIndex);
-			FMatrix ParentWorldMatrix = ParentBoneInfo.GlobalBindPoseMatrix * ComponentWorldMatrix;
+			const FMatrix& ParentGlobalBindPoseMatrix = ParentBoneInfo.GlobalBindPoseMatrix;
+			// (B⁻¹ * A)_parent
+			const FMatrix& ParentFinalSkinMatrix = BoneMatricesRef[BoneInfo.ParentIndex];
+
+			// A_parent = B_parent * (B⁻¹ * A)_parent
+			FMatrix ParentLocalAnimatedMatrix = ParentGlobalBindPoseMatrix * ParentFinalSkinMatrix;
+
+			// 최종 월드 행렬
+			FMatrix ParentWorldMatrix = ParentLocalAnimatedMatrix * ComponentWorldMatrix;
+
+			// 최종 월드 위치
 			FVector ParentWorldPos = FVector(
 				ParentWorldMatrix.M[3][0],
 				ParentWorldMatrix.M[3][1],
 				ParentWorldMatrix.M[3][2]
 			);
 
-			// 부모에서 현재 본으로 팔면체 그리기
+			// 부모에서 현재 본으로 팔면체(선) 그리기
 			GenerateBoneOctahedron(ParentWorldPos, BoneWorldPos, BoneScale,
 				StartPoints, EndPoints, Colors);
 		}
-	}
+	} // (End of for loop)
+
+	// --- 6. 최종 렌더링 호출 ---
 
 	// 모든 라인을 한 번에 렌더링
 	if (!StartPoints.empty())

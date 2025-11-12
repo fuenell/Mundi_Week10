@@ -4,6 +4,7 @@
 
 class USkeletalMesh;
 class USkeleton;
+class USkeletalMeshEditorWindow;
 
 /**
  * @brief Bone 계층 구조를 트리 형태로 표시하는 위젯
@@ -70,14 +71,7 @@ public:
 	 */
 	void ClearSelection();
 
-	// === 델리게이트 ===
-
-	/**
-	 * Bone이 선택되었을 때 호출되는 델리게이트
-	 * int32: 선택된 Bone 인덱스
-	 */
-	TDelegate<int32> OnBoneSelected;
-
+	void SetSkeletalMeshEditorWindow(USkeletalMeshEditorWindow* InSkeletalMeshEditorWindow) { SkeletalMeshEditorWindow = InSkeletalMeshEditorWindow; }
 
 private:
 	/**
@@ -104,4 +98,6 @@ private:
 
 	// Bone 가시성 (향후 확장용)
 	TArray<bool> BoneVisibility;
+
+	USkeletalMeshEditorWindow* SkeletalMeshEditorWindow;
 };

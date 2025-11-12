@@ -2,6 +2,7 @@
 #include "BoneDetailWidget.h"
 #include "SkeletalMesh.h"
 #include "Skeleton.h"
+#include "Windows/SkeletalMeshEditorWindow.h"
 #include "ImGui/imgui.h"
 #include "Vector.h"
 
@@ -228,7 +229,7 @@ void UBoneDetailWidget::ApplyBoneTransform()
 	// Skeleton에 적용
 	Skeleton->SetBindPoseTransform(CurrentBoneIndex, NewTransform);
 
-	OnBoneUpdated.Broadcast(CurrentBoneIndex);
+	SkeletalMeshEditorWindow->OnBoneUpdated.Broadcast(CurrentBoneIndex);
 	// TODO: SkeletalMeshComponent에 Bone Transform 업데이트 알림
 	// 현재는 Skeleton의 BindPose만 수정하고 있으므로,
 	// 실시간 프리뷰를 위해서는 SkeletalMeshComponent의 BoneMatrices를 업데이트해야 합니다.

@@ -62,15 +62,21 @@ public:
 	 */
 	USkeletalMesh* GetSkeletalMesh() const { return CurrentSkeletalMesh; }
 
+	// === 델리게이트 ===
+
+	TDelegate<int32> OnBoneSelected;
+
+	TDelegate<int32> OnBoneUpdated;
+
 private:
 	/**
 	 * Bone 선택 이벤트 처리
 	 * BoneHierarchyWidget에서 Bone이 선택되면 호출됩니다.
 	 * @param BoneIndex - 선택된 Bone 인덱스
 	 */
-	void OnBoneSelected(int32 BoneIndex);
+	void OnBoneSelectedEvent(int32 BoneIndex);
 	
-	void OnBoneUpdated(int32 BoneIndex);
+	void OnBoneUpdatedEvent(int32 BoneIndex);
 
 private:
 	// 현재 표시 중인 SkeletalMesh

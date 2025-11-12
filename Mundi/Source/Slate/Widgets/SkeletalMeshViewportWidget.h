@@ -15,6 +15,7 @@ class UWorld;
 class UBoneDebugComponent;
 class UBoneGizmoProxyComponent;
 class AGizmoActor;
+class USkeletalMeshEditorWindow;
 struct FBonePicking;
 
 // 스켈레탈 메시 뷰어의 뷰포트 위젯입니다.
@@ -62,6 +63,8 @@ public:
 	void SelectBone(int32 BoneIndex);
 	
 	void UpdateBone(int32 BoneIndex);
+
+	void SetSkeletalMeshEditorWindow(USkeletalMeshEditorWindow* InSkeletalMeshEditorWindow) { SkeletalMeshEditorWindow = InSkeletalMeshEditorWindow; }
 
 private:
 	/** RenderTarget 생성 (RTV, SRV, DSV) */
@@ -130,5 +133,7 @@ private:
 	int32 PickedBoneIndex = -1;
 
 	// Bone 시각화 활성화 여부
-	bool bBoneVisualizationEnabled = false;
+	bool bBoneVisualizationEnabled = true;
+
+	USkeletalMeshEditorWindow* SkeletalMeshEditorWindow;
 };

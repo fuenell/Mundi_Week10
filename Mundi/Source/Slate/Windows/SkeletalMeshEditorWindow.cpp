@@ -41,6 +41,8 @@ void USkeletalMeshEditorWindow::Initialize()
 	if (ViewportWidget != nullptr)
 	{
 		ViewportWidget->Initialize();
+
+		ViewportWidget->SetSkeletalMeshEditorWindow(this);
 	}
 
 	// Bone Hierarchy Widget 생성 (우측 상단 - Bone Tree)
@@ -49,8 +51,7 @@ void USkeletalMeshEditorWindow::Initialize()
 	{
 		HierarchyWidget->Initialize();
 
-		// Bone 선택 델리게이트 연결
-		HierarchyWidget->OnBoneSelected.AddDynamic(this, &USkeletalMeshEditorWindow::OnBoneSelected);
+		HierarchyWidget->SetSkeletalMeshEditorWindow(this);
 	}
 
 	// Bone Detail Widget 생성 (우측 하단 - Transform Editor)
@@ -59,7 +60,7 @@ void USkeletalMeshEditorWindow::Initialize()
 	{
 		DetailWidget->Initialize();
 
-		DetailWidget->OnBoneUpdated.AddDynamic(this, &USkeletalMeshEditorWindow::OnBoneUpdated);
+		DetailWidget->SetSkeletalMeshEditorWindow(this);
 	}
 
 	// Layout Widget 생성 및 설정
@@ -73,6 +74,11 @@ void USkeletalMeshEditorWindow::Initialize()
 		// Layout Widget을 UIWindow에 추가
 		AddWidget(LayoutWidget);
 	}
+
+	// Bone 선택 델리게이트 연결
+	OnBoneSelected.AddDynamic(this, &USkeletalMeshEditorWindow::OnBoneSelectedEvent);
+
+	OnBoneUpdated.AddDynamic(this, &USkeletalMeshEditorWindow::OnBoneUpdatedEvent);
 }
 
 void USkeletalMeshEditorWindow::Cleanup()
@@ -120,7 +126,7 @@ void USkeletalMeshEditorWindow::SetSkeletalMesh(USkeletalMesh* InMesh)
 	}
 }
 
-void USkeletalMeshEditorWindow::OnBoneSelected(int32 BoneIndex)
+void USkeletalMeshEditorWindow::OnBoneSelectedEvent(int32 BoneIndex)
 {
 	// DetailWidget에 선택된 Bone 정보 전달
 	if (DetailWidget != nullptr)
@@ -132,9 +138,14 @@ void USkeletalMeshEditorWindow::OnBoneSelected(int32 BoneIndex)
 	{
 		ViewportWidget->SelectBone(BoneIndex);
 	}
+
+	if (HierarchyWidget != nullptr)
+	{
+		HierarchyWidget->SetSelectedBoneIndex(BoneIndex);
+	}
 }
 
-void USkeletalMeshEditorWindow::OnBoneUpdated(int32 BoneIndex)
+void USkeletalMeshEditorWindow::OnBoneUpdatedEvent(int32 BoneIndex)
 {
 	if (ViewportWidget)
 	{

@@ -1,8 +1,9 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "BoneHierarchyWidget.h"
 #include "SkeletalMesh.h"
 #include "Skeleton.h"
 #include "ImGui/imgui.h"
+#include "Windows/SkeletalMeshEditorWindow.h"
 
 IMPLEMENT_CLASS(UBoneHierarchyWidget)
 
@@ -148,10 +149,8 @@ void UBoneHierarchyWidget::RenderBoneTree(int32 BoneIndex, USkeleton* Skeleton)
 	// 클릭 처리
 	if (ImGui::IsItemClicked())
 	{
-		SelectedBoneIndex = BoneIndex;
-
 		// 델리게이트 호출
-		OnBoneSelected.Broadcast(BoneIndex);
+		SkeletalMeshEditorWindow->OnBoneSelected.Broadcast(BoneIndex);	// SetSelectedBoneIndex 가 호출됨
 	}
 
 	// 자식 Bone 렌더링

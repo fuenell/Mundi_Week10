@@ -24,6 +24,7 @@
 #include "Gizmo/GizmoActor.h"
 #include "Picking.h"
 #include "SelectionManager.h"
+#include "Windows/SkeletalMeshEditorWindow.h"
 #include <d3d11.h>
 
 IMPLEMENT_CLASS(USkeletalMeshViewportWidget)
@@ -506,6 +507,8 @@ void USkeletalMeshViewportWidget::SetSkeletalMesh(USkeletalMesh* InMesh)
         {
             SkelMeshComp->SetSkeletalMesh(CurrentSkeletalMesh);
             bNeedsRedraw = true;  // 메시가 변경되었으므로 다시 렌더링
+
+            SetBoneVisualizationEnabled(bBoneVisualizationEnabled);
         }
     }
 }
@@ -739,7 +742,7 @@ void USkeletalMeshViewportWidget::HandleBonePicking(const FVector2D& ViewportSiz
         // Create gizmo for picked bone
         //CreateGizmoForBone(PickingResult);
 
-        SelectBone(PickingResult.BoneIndex);
+        SkeletalMeshEditorWindow->OnBoneSelected.Broadcast(PickingResult.BoneIndex);
     }
     else
     {
