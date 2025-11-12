@@ -171,9 +171,10 @@ void USkeletalMeshComponent::TickComponent(float DeltaTime)
 
 		// Root 본부터 시작 (부모 행렬은 단위 행렬)
 		int32 RootBoneIndex = Skeleton->GetRootBoneIndex();
+		const FBoneInfo& RootBoneInfo = Skeleton->GetBone(0);
 		if (RootBoneIndex >= 0)
 		{
-			UpdateBoneRecursive(RootBoneIndex, FMatrix::Identity());
+			UpdateBoneRecursive(RootBoneIndex, RootBoneInfo.GlobalBindPoseMatrix);
 		}
 	}
 	// === END TEST ===
