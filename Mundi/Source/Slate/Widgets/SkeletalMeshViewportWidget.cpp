@@ -19,6 +19,10 @@
 #include "Grid/GridActor.h"
 #include "ObjectFactory.h"
 #include "StaticMeshActor.h"
+#include "BoneDebugComponent.h"
+#include "BoneGizmoProxyComponent.h"
+#include "Gizmo/GizmoActor.h"
+#include "Picking.h"
 #include <d3d11.h>
 
 IMPLEMENT_CLASS(USkeletalMeshViewportWidget)
@@ -212,7 +216,7 @@ void USkeletalMeshViewportWidget::RenderWidget()
     // === STEP 2: PreviewWorld를 RTV에 렌더링 (변경이 있을 때만) ===
     if (bNeedsRedraw)
     {
-        UE_LOG("[SkeletalMeshViewport] Rendering PreviewWorld (bNeedsRedraw=true)");
+        //UE_LOG("[SkeletalMeshViewport] Rendering PreviewWorld (bNeedsRedraw=true)");
         if (!RenderPreviewWorldToRTV(Width, Height))
         {
             ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Failed to render");
@@ -220,7 +224,7 @@ void USkeletalMeshViewportWidget::RenderWidget()
             return;
         }
         bNeedsRedraw = false;  // 렌더링 완료
-        UE_LOG("[SkeletalMeshViewport] Rendering complete");
+        //UE_LOG("[SkeletalMeshViewport] Rendering complete");
     }
 
     // === STEP 3: SRV를 ImGui::Image로 표시 ===
@@ -364,7 +368,7 @@ bool USkeletalMeshViewportWidget::RenderPreviewWorldToRTV(int32 Width, int32 Hei
     ID3D11RenderTargetView* CheckRTV = nullptr;
     ID3D11DepthStencilView* CheckDSV = nullptr;
     Context->OMGetRenderTargets(1, &CheckRTV, &CheckDSV);
-    UE_LOG("[SkeletalMeshViewport] After OMSetRenderTargets: RTV=%p, DSV=%p", CheckRTV, CheckDSV);
+    //UE_LOG("[SkeletalMeshViewport] After OMSetRenderTargets: RTV=%p, DSV=%p", CheckRTV, CheckDSV);
     if (CheckRTV) CheckRTV->Release();
     if (CheckDSV) CheckDSV->Release();
 
@@ -375,64 +379,64 @@ bool USkeletalMeshViewportWidget::RenderPreviewWorldToRTV(int32 Width, int32 Hei
     Viewport.MaxDepth = 1.0f;
     Context->RSSetViewports(1, &Viewport);
 
-    UE_LOG("[SkeletalMeshViewport] About to call RenderSceneForView");
+    //UE_LOG("[SkeletalMeshViewport] About to call RenderSceneForView");
 
     // [DEBUG] PreviewWorld 상태 체크
     if (PreviewWorld)
     {
-        int32 ActorCount = PreviewWorld->GetActors().Num();
-        UE_LOG("[SkeletalMeshViewport] PreviewWorld has %d actors", ActorCount);
+        //int32 ActorCount = PreviewWorld->GetActors().Num();
+        //UE_LOG("[SkeletalMeshViewport] PreviewWorld has %d actors", ActorCount);
 
         // 라이트 체크
-        if (PreviewLight)
-        {
-            UDirectionalLightComponent* LightComp = PreviewLight->GetLightComponent();
-            if (LightComp)
-            {
-                UE_LOG("[SkeletalMeshViewport] DirectionalLight - Intensity: %.2f, Registered: %d",
-                    LightComp->GetIntensity(), LightComp->IsRegistered());
-            }
-        }
+        //if (PreviewLight)
+        //{
+        //    UDirectionalLightComponent* LightComp = PreviewLight->GetLightComponent();
+        //    if (LightComp)
+        //    {
+        //        UE_LOG("[SkeletalMeshViewport] DirectionalLight - Intensity: %.2f, Registered: %d",
+        //            LightComp->GetIntensity(), LightComp->IsRegistered());
+        //    }
+        //}
 
-        if (PreviewAmbientLight)
-        {
-            UAmbientLightComponent* AmbientComp = PreviewAmbientLight->GetLightComponent();
-            if (AmbientComp)
-            {
-                UE_LOG("[SkeletalMeshViewport] AmbientLight - Intensity: %.2f, Registered: %d",
-                    AmbientComp->GetIntensity(), AmbientComp->IsRegistered());
-            }
-        }
+        //if (PreviewAmbientLight)
+        //{
+        //    UAmbientLightComponent* AmbientComp = PreviewAmbientLight->GetLightComponent();
+        //    if (AmbientComp)
+        //    {
+        //        UE_LOG("[SkeletalMeshViewport] AmbientLight - Intensity: %.2f, Registered: %d",
+        //            AmbientComp->GetIntensity(), AmbientComp->IsRegistered());
+        //    }
+        //}
 
-        if (PreviewGrid)
-        {
-            UE_LOG("[SkeletalMeshViewport] Grid location: (%.1f, %.1f, %.1f)",
-                PreviewGrid->GetActorLocation().X, PreviewGrid->GetActorLocation().Y, PreviewGrid->GetActorLocation().Z);
+        //if (PreviewGrid)
+        //{
+        //    UE_LOG("[SkeletalMeshViewport] Grid location: (%.1f, %.1f, %.1f)",
+        //        PreviewGrid->GetActorLocation().X, PreviewGrid->GetActorLocation().Y, PreviewGrid->GetActorLocation().Z);
 
-            ULineComponent* LineComp = PreviewGrid->GetLineComponent();
-            if (LineComp)
-            {
-                UE_LOG("[SkeletalMeshViewport] Grid LineComponent - Registered: %d, LineCount: %d",
-                    LineComp->IsRegistered(), LineComp->GetLines().Num());
-            }
-        }
+        //    ULineComponent* LineComp = PreviewGrid->GetLineComponent();
+        //    if (LineComp)
+        //    {
+        //        UE_LOG("[SkeletalMeshViewport] Grid LineComponent - Registered: %d, LineCount: %d",
+        //            LineComp->IsRegistered(), LineComp->GetLines().Num());
+        //    }
+        //}
 
-        if (PreviewActor)
-        {
-            UE_LOG("[SkeletalMeshViewport] SkeletalMeshActor location: (%.1f, %.1f, %.1f)",
-                PreviewActor->GetActorLocation().X, PreviewActor->GetActorLocation().Y, PreviewActor->GetActorLocation().Z);
+        //if (PreviewActor)
+        //{
+        //    UE_LOG("[SkeletalMeshViewport] SkeletalMeshActor location: (%.1f, %.1f, %.1f)",
+        //        PreviewActor->GetActorLocation().X, PreviewActor->GetActorLocation().Y, PreviewActor->GetActorLocation().Z);
 
-            USkeletalMeshComponent* SkelComp = PreviewActor->GetSkeletalMeshComponent();
-            if (SkelComp && SkelComp->GetSkeletalMesh())
-            {
-                UE_LOG("[SkeletalMeshViewport] SkeletalMesh assigned: %s, Registered: %d",
-                    SkelComp->GetSkeletalMesh()->GetName().c_str(), SkelComp->IsRegistered());
-            }
-            else
-            {
-                UE_LOG("[SkeletalMeshViewport] WARNING: No SkeletalMesh assigned!");
-            }
-        }
+        //    USkeletalMeshComponent* SkelComp = PreviewActor->GetSkeletalMeshComponent();
+        //    if (SkelComp && SkelComp->GetSkeletalMesh())
+        //    {
+        //        UE_LOG("[SkeletalMeshViewport] SkeletalMesh assigned: %s, Registered: %d",
+        //            SkelComp->GetSkeletalMesh()->GetName().c_str(), SkelComp->IsRegistered());
+        //    }
+        //    else
+        //    {
+        //        UE_LOG("[SkeletalMeshViewport] WARNING: No SkeletalMesh assigned!");
+        //    }
+        //}
     }
 
     // === PreviewWorld를 렌더링 ===
@@ -441,8 +445,8 @@ bool USkeletalMeshViewportWidget::RenderPreviewWorldToRTV(int32 Width, int32 Hei
     {
         FVector CamLoc = CameraComp->GetWorldLocation();
         FQuat CamRot = CameraComp->GetWorldRotation();
-        UE_LOG("[SkeletalMeshViewport] Camera location: (%.1f, %.1f, %.1f), FOV: %.1f",
-            CamLoc.X, CamLoc.Y, CamLoc.Z, CameraComp->GetFOV());
+        //UE_LOG("[SkeletalMeshViewport] Camera location: (%.1f, %.1f, %.1f), FOV: %.1f",
+        //    CamLoc.X, CamLoc.Y, CamLoc.Z, CameraComp->GetFOV());
 
         FMinimalViewInfo ViewInfo;
         ViewInfo.ViewLocation = CamLoc;
@@ -537,7 +541,7 @@ void USkeletalMeshViewportWidget::HandleViewportInput(FVector2D ViewportSize)
             CameraComp->SetWorldRotation(FinalRotation);
 
             // 카메라 회전 각도 출력
-            UE_LOG("[SkeletalMeshViewport] Camera Rotation - Pitch: %.2f, Yaw: %.2f", CameraPitchDeg, CameraYawDeg);
+            // UE_LOG("[SkeletalMeshViewport] Camera Rotation - Pitch: %.2f, Yaw: %.2f", CameraPitchDeg, CameraYawDeg);
 
             bInputChanged = true;
         }
@@ -566,13 +570,26 @@ void USkeletalMeshViewportWidget::HandleViewportInput(FVector2D ViewportSize)
             FVector NewLocation = Location + Move;
             CameraComp->SetWorldLocation(NewLocation);
 
-            UE_LOG("[SkeletalMeshViewport] Camera Move - Location: (%.2f, %.2f, %.2f)",
-                NewLocation.X, NewLocation.Y, NewLocation.Z);
+            //UE_LOG("[SkeletalMeshViewport] Camera Move - Location: (%.2f, %.2f, %.2f)",
+            //    NewLocation.X, NewLocation.Y, NewLocation.Z);
 
             bInputChanged = true;
         }
     }
     
+    // === 좌클릭: 본 피킹 (본 시각화가 활성화된 경우만) ===
+    if (bBoneVisualizationEnabled && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+    {
+        // Get local mouse position within viewport
+        ImVec2 MousePos = ImGui::GetMousePos();
+        ImVec2 ViewportMin = ImGui::GetItemRectMin();
+        FVector2D LocalMousePos(MousePos.x - ViewportMin.x, MousePos.y - ViewportMin.y);
+
+        // Perform bone picking
+        HandleBonePicking(ViewportSize, LocalMousePos);
+        bInputChanged = true;
+    }
+
     // 입력이 있으면 다시 렌더링
     if (bInputChanged)
     {
@@ -586,4 +603,245 @@ void USkeletalMeshViewportWidget::ReleaseRenderTexture()
     if (SceneSRV) { SceneSRV->Release(); SceneSRV = nullptr; }
     if (SceneDSV) { SceneDSV->Release(); SceneDSV = nullptr; }
     if (DummyIdRTV) { DummyIdRTV->Release(); DummyIdRTV = nullptr; }
+}
+
+// ========================================
+// Bone Visualization & Picking
+// ========================================
+
+void USkeletalMeshViewportWidget::SetBoneVisualizationEnabled(bool bVisible)
+{
+    bBoneVisualizationEnabled = bVisible;
+
+    UE_LOG("[SkeletalMeshViewport] SetBoneVisualizationEnabled called: bVisible=%d", bVisible);
+
+    if (!PreviewActor)
+    {
+        UE_LOG("[SkeletalMeshViewport] ERROR: PreviewActor is null!");
+        return;
+    }
+
+    USkeletalMeshComponent* SkelMeshComp = PreviewActor->GetSkeletalMeshComponent();
+    if (!SkelMeshComp)
+    {
+        UE_LOG("[SkeletalMeshViewport] ERROR: SkeletalMeshComponent is null!");
+        return;
+    }
+
+    USkeletalMesh* SkeletalMesh = SkelMeshComp->GetSkeletalMesh();
+    if (!SkeletalMesh)
+    {
+        UE_LOG("[SkeletalMeshViewport] ERROR: SkeletalMesh is null!");
+        return;
+    }
+
+    USkeleton* Skeleton = SkeletalMesh->GetSkeleton();
+    if (!Skeleton)
+    {
+        UE_LOG("[SkeletalMeshViewport] ERROR: Skeleton is null!");
+        return;
+    }
+
+    UE_LOG("[SkeletalMeshViewport] SkeletalMesh has %d bones", Skeleton->GetBoneCount());
+
+    // BoneDebugComponent가 없으면 생성
+    if (!BoneDebugComponent && bVisible)
+    {
+        UE_LOG("[SkeletalMeshViewport] Creating BoneDebugComponent...");
+        BoneDebugComponent = NewObject<UBoneDebugComponent>();
+        if (BoneDebugComponent)
+        {
+            BoneDebugComponent->SetupAttachment(SkelMeshComp);
+            BoneDebugComponent->SetSkeletalMeshComponent(SkelMeshComp);
+            BoneDebugComponent->RegisterComponent(PreviewWorld);  // RegisterComponent를 호출해야 bRegistered=true가 됨
+            UE_LOG("[SkeletalMeshViewport] BoneDebugComponent created and attached successfully");
+            UE_LOG("[SkeletalMeshViewport] BoneDebugComponent registered: %d", BoneDebugComponent->IsRegistered());
+        }
+        else
+        {
+            UE_LOG("[SkeletalMeshViewport] ERROR: Failed to create BoneDebugComponent!");
+        }
+    }
+
+    // 시각화 활성화/비활성화
+    if (BoneDebugComponent)
+    {
+        BoneDebugComponent->SetBonesVisible(bVisible);
+        BoneDebugComponent->SetJointsVisible(bVisible);
+        UE_LOG("[SkeletalMeshViewport] BoneDebugComponent visibility set: Bones=%d, Joints=%d",
+            BoneDebugComponent->AreBonesVisible(), BoneDebugComponent->AreJointsVisible());
+    }
+
+    bNeedsRedraw = true;
+}
+
+bool USkeletalMeshViewportWidget::IsBoneVisualizationEnabled() const
+{
+    return bBoneVisualizationEnabled;
+}
+
+void USkeletalMeshViewportWidget::HandleBonePicking(const FVector2D& ViewportSize, const FVector2D& LocalMousePos)
+{
+    UE_LOG("[SkeletalMeshViewport] HandleBonePicking: MousePos=(%.2f, %.2f), ViewportSize=(%.2f, %.2f)",
+        LocalMousePos.X, LocalMousePos.Y, ViewportSize.X, ViewportSize.Y);
+
+    if (!PreviewActor || !PreviewCamera)
+    {
+        UE_LOG("[SkeletalMeshViewport] ERROR: PreviewActor or PreviewCamera is null!");
+        return;
+    }
+
+    USkeletalMeshComponent* SkelMeshComp = PreviewActor->GetSkeletalMeshComponent();
+    if (!SkelMeshComp)
+    {
+        UE_LOG("[SkeletalMeshViewport] ERROR: SkeletalMeshComponent is null!");
+        return;
+    }
+
+    // Generate ray from mouse position
+    const FMatrix View = PreviewCamera->GetViewMatrix();
+    const FMatrix Proj = PreviewCamera->GetProjectionMatrix();
+    const FVector CameraWorldPos = PreviewCamera->GetActorLocation();
+    const FVector CameraRight = PreviewCamera->GetRight();
+    const FVector CameraUp = PreviewCamera->GetUp();
+    const FVector CameraForward = PreviewCamera->GetForward();
+
+    FRay Ray = MakeRayFromViewport(View, Proj, CameraWorldPos, CameraRight, CameraUp, CameraForward,
+                                   LocalMousePos, ViewportSize);
+
+    UE_LOG("[SkeletalMeshViewport] Ray: Origin=(%.2f, %.2f, %.2f), Direction=(%.2f, %.2f, %.2f)",
+        Ray.Origin.X, Ray.Origin.Y, Ray.Origin.Z,
+        Ray.Direction.X, Ray.Direction.Y, Ray.Direction.Z);
+
+    // Perform bone picking using BoneDebugComponent's radius/scale if available
+    float JointRadius = 0.02f;  // BoneDebugComponent의 기본값과 동일
+    float BoneScale = 0.05f;    // BoneDebugComponent의 기본값과 동일
+    FBonePicking PickingResult = CPickingSystem::PerformBonePicking(SkelMeshComp, Ray, JointRadius, BoneScale);
+
+    if (PickingResult.IsValid())
+    {
+        UE_LOG("[SkeletalMeshViewport] Bone picked: Index=%d, Type=%d, Distance=%.2f",
+            PickingResult.BoneIndex,
+            static_cast<int32>(PickingResult.PickingType),
+            PickingResult.Distance);
+
+        // Create gizmo for picked bone
+        CreateGizmoForBone(PickingResult);
+    }
+    else
+    {
+        UE_LOG("[SkeletalMeshViewport] No bone picked");
+
+        // Destroy current gizmo
+        DestroyCurrentGizmo();
+    }
+}
+
+void USkeletalMeshViewportWidget::CreateGizmoForBone(const FBonePicking& PickingResult)
+{
+    UE_LOG("[SkeletalMeshViewport] CreateGizmoForBone: BoneIndex=%d", PickingResult.BoneIndex);
+
+    if (!PreviewWorld || !PreviewActor)
+    {
+        UE_LOG("[SkeletalMeshViewport] ERROR: PreviewWorld or PreviewActor is null!");
+        return;
+    }
+
+    USkeletalMeshComponent* SkelMeshComp = PreviewActor->GetSkeletalMeshComponent();
+    if (!SkelMeshComp)
+    {
+        UE_LOG("[SkeletalMeshViewport] ERROR: SkeletalMeshComponent is null!");
+        return;
+    }
+
+    // 같은 본을 다시 클릭한 경우 기즈모 유지
+    if (BoneGizmoProxyComponent && PickedBoneIndex == PickingResult.BoneIndex)
+    {
+        UE_LOG("[SkeletalMeshViewport] Same bone clicked - keeping existing gizmo");
+        return;
+    }
+
+    // 다른 본을 클릭한 경우 기존 기즈모 파괴
+    DestroyCurrentGizmo();
+    PickedBoneIndex = PickingResult.BoneIndex;
+
+    // Create BoneGizmoProxyComponent
+    UE_LOG("[SkeletalMeshViewport] Creating BoneGizmoProxyComponent...");
+    BoneGizmoProxyComponent = NewObject<UBoneGizmoProxyComponent>();
+
+    if (BoneGizmoProxyComponent)
+    {
+        BoneGizmoProxyComponent->SetupAttachment(PreviewActor->GetRootComponent());
+        BoneGizmoProxyComponent->SetTargetBone(SkelMeshComp, PickingResult.BoneIndex);
+        BoneGizmoProxyComponent->RegisterComponent(PreviewWorld);  // RegisterComponent 호출
+        UE_LOG("[SkeletalMeshViewport] BoneGizmoProxyComponent created and attached");
+
+        // Create Gizmo Actor
+        UE_LOG("[SkeletalMeshViewport] Spawning GizmoActor...");
+        CurrentGizmo = PreviewWorld->SpawnActor<AGizmoActor>();
+        if (CurrentGizmo)
+        {
+            UE_LOG("[SkeletalMeshViewport] GizmoActor spawned successfully");
+
+            // Attach gizmo root component to proxy component
+            USceneComponent* GizmoRoot = CurrentGizmo->GetRootComponent();
+            if (GizmoRoot)
+            {
+                GizmoRoot->SetupAttachment(BoneGizmoProxyComponent);
+                UE_LOG("[SkeletalMeshViewport] Gizmo root attached to proxy component");
+            }
+            else
+            {
+                UE_LOG("[SkeletalMeshViewport] WARNING: Gizmo root component is null!");
+            }
+
+            CurrentGizmo->SetMode(EGizmoMode::Translate); // Default to translate mode
+            UE_LOG("[SkeletalMeshViewport] Gizmo created for bone %d", PickingResult.BoneIndex);
+        }
+        else
+        {
+            UE_LOG("[SkeletalMeshViewport] ERROR: Failed to spawn GizmoActor!");
+        }
+
+        PickedBoneIndex = PickingResult.BoneIndex;
+        bNeedsRedraw = true;
+    }
+    else
+    {
+        UE_LOG("[SkeletalMeshViewport] ERROR: Failed to create BoneGizmoProxyComponent!");
+    }
+}
+
+void USkeletalMeshViewportWidget::DestroyCurrentGizmo()
+{
+    UE_LOG("[SkeletalMeshViewport] DestroyCurrentGizmo called");
+
+    // Destroy gizmo actor
+    if (CurrentGizmo)
+    {
+        UE_LOG("[SkeletalMeshViewport] Destroying GizmoActor...");
+        ObjectFactory::DeleteObject(CurrentGizmo);
+        CurrentGizmo = nullptr;
+    }
+
+    // Destroy proxy component - 언레지스터 후 삭제
+    if (BoneGizmoProxyComponent)
+    {
+        UE_LOG("[SkeletalMeshViewport] Destroying BoneGizmoProxyComponent...");
+
+        // 먼저 언레지스터
+        if (BoneGizmoProxyComponent->IsRegistered())
+        {
+            BoneGizmoProxyComponent->UnregisterComponent();
+            UE_LOG("[SkeletalMeshViewport] BoneGizmoProxyComponent unregistered");
+        }
+
+        // 그 다음 파괴
+        BoneGizmoProxyComponent->DestroyComponent();
+        BoneGizmoProxyComponent = nullptr;
+    }
+
+    PickedBoneIndex = -1;
+    bNeedsRedraw = true;
+    UE_LOG("[SkeletalMeshViewport] Gizmo destroyed");
 }

@@ -22,6 +22,9 @@
 #include"stdio.h"
 #include "WorldPartitionManager.h"
 #include "PlatformTime.h"
+#include "SkeletalMeshComponent.h"
+#include "SkeletalMesh.h"
+#include "Skeleton.h"
 
 FRay MakeRayFromMouse(const FMatrix& InView,
 	const FMatrix& InProj)
@@ -696,4 +699,190 @@ bool CPickingSystem::CheckActorPicking(const AActor* Actor, const FRay& Ray, flo
 	}
 
 	return false;
+}
+
+// ========================================
+// Bone Picking Implementation
+// ========================================
+
+float CalculatePointToRayDistance(const FVector& Point, const FRay& Ray, float& OutT)
+{
+	// P = RayOrigin + t * RayDirection
+	// Find the closest point on the ray to Point
+	FVector PointToOrigin = Point - Ray.Origin;
+	OutT = FVector::Dot(PointToOrigin, Ray.Direction);
+
+	// Clamp to positive T (only consider ray forward direction)
+	if (OutT < 0.0f)
+		OutT = 0.0f;
+
+	FVector ClosestPoint = Ray.Origin + Ray.Direction * OutT;
+	return FVector::Distance(Point, ClosestPoint);
+}
+
+bool IntersectRayOctahedron(const FRay& Ray,
+                            const FVector& StartPoint,
+                            const FVector& EndPoint,
+                            float Scale,
+                            float& OutT)
+{
+	// Bone direction vector
+	FVector Direction = EndPoint - StartPoint;
+	float Length = Direction.Size();
+
+	// Bone too short
+	if (Length < KINDA_SMALL_NUMBER)
+		return false;
+
+	Direction = Direction / Length; // Normalize
+	float Radius = Length * Scale;
+
+	// Create coordinate system perpendicular to bone direction
+	FVector Up = (std::abs(Direction.Z) < 0.9f) ?
+		FVector(0.0f, 0.0f, 1.0f) : FVector(1.0f, 0.0f, 0.0f);
+	FVector Right = FVector::Cross(Direction, Up).GetSafeNormal();
+	Up = FVector::Cross(Right, Direction).GetSafeNormal();
+
+	// Generate octahedron vertices (6 vertices: 2 apexes + 4 middle vertices)
+	FVector Mid = StartPoint + Direction * (Length * 0.5f);
+	FVector V0 = Mid + Right * Radius;       // Right
+	FVector V1 = Mid + Up * Radius;          // Up
+	FVector V2 = Mid - Right * Radius;       // Left
+	FVector V3 = Mid - Up * Radius;          // Down
+	FVector V4 = StartPoint;                  // Start apex
+	FVector V5 = EndPoint;                    // End apex
+
+	float MinDistance = FLT_MAX;
+	bool bHit = false;
+
+	// Test 8 triangular faces of octahedron
+	// Upper pyramid (4 faces)
+	float T;
+	if (IntersectRayTriangleMT(Ray, V5, V0, V1, T) && T < MinDistance) { MinDistance = T; bHit = true; }
+	if (IntersectRayTriangleMT(Ray, V5, V1, V2, T) && T < MinDistance) { MinDistance = T; bHit = true; }
+	if (IntersectRayTriangleMT(Ray, V5, V2, V3, T) && T < MinDistance) { MinDistance = T; bHit = true; }
+	if (IntersectRayTriangleMT(Ray, V5, V3, V0, T) && T < MinDistance) { MinDistance = T; bHit = true; }
+
+	// Lower pyramid (4 faces)
+	if (IntersectRayTriangleMT(Ray, V4, V1, V0, T) && T < MinDistance) { MinDistance = T; bHit = true; }
+	if (IntersectRayTriangleMT(Ray, V4, V2, V1, T) && T < MinDistance) { MinDistance = T; bHit = true; }
+	if (IntersectRayTriangleMT(Ray, V4, V3, V2, T) && T < MinDistance) { MinDistance = T; bHit = true; }
+	if (IntersectRayTriangleMT(Ray, V4, V0, V3, T) && T < MinDistance) { MinDistance = T; bHit = true; }
+
+	if (bHit)
+	{
+		OutT = MinDistance;
+		return true;
+	}
+
+	return false;
+}
+
+FBonePicking CPickingSystem::PerformBonePicking(USkeletalMeshComponent* SkeletalMeshComponent,
+                                                const FRay& Ray,
+                                                float JointRadius,
+                                                float BoneScale)
+{
+	FBonePicking Result;
+
+	if (!SkeletalMeshComponent)
+	{
+		UE_LOG("[BonePicking] ERROR: SkeletalMeshComponent is null");
+		return Result;
+	}
+
+	USkeletalMesh* SkeletalMesh = SkeletalMeshComponent->GetSkeletalMesh();
+	if (!SkeletalMesh)
+	{
+		UE_LOG("[BonePicking] ERROR: SkeletalMesh is null");
+		return Result;
+	}
+
+	USkeleton* Skeleton = SkeletalMesh->GetSkeleton();
+	if (!Skeleton)
+	{
+		UE_LOG("[BonePicking] ERROR: Skeleton is null");
+		return Result;
+	}
+
+	const TArray<FMatrix>& BoneMatrices = SkeletalMeshComponent->GetBoneMatrices();
+	if (BoneMatrices.empty())
+	{
+		UE_LOG("[BonePicking] ERROR: BoneMatrices is empty");
+		return Result;
+	}
+
+	FMatrix ComponentWorldMatrix = SkeletalMeshComponent->GetWorldMatrix();
+	int32 BoneCount = Skeleton->GetBoneCount();
+
+	UE_LOG("[BonePicking] Testing %d bones (JointRadius=%.3f, BoneScale=%.3f)",
+		BoneCount, JointRadius, BoneScale);
+
+	float MinDistance = FLT_MAX;
+
+	// Test all bones
+	for (int32 BoneIndex = 0; BoneIndex < BoneCount; ++BoneIndex)
+	{
+		const FBoneInfo& BoneInfo = Skeleton->GetBone(BoneIndex);
+
+		// Calculate bone world position
+		FMatrix BoneWorldMatrix = BoneInfo.GlobalBindPoseMatrix * ComponentWorldMatrix;
+		FVector BoneWorldPos = FVector(
+			BoneWorldMatrix.M[3][0],
+			BoneWorldMatrix.M[3][1],
+			BoneWorldMatrix.M[3][2]
+		);
+
+		// 1. Test Joint (Sphere) picking first - higher priority
+		float T;
+		float Distance = CalculatePointToRayDistance(BoneWorldPos, Ray, T);
+
+		if (Distance <= JointRadius && T < MinDistance)
+		{
+			MinDistance = T;
+			Result.BoneIndex = BoneIndex;
+			Result.PickingType = FBonePicking::EPickingType::Joint;
+			Result.PickingLocation = BoneWorldPos;
+			Result.Distance = T;
+		}
+
+		// 2. Test Bone (Octahedron) picking
+		if (BoneInfo.ParentIndex >= 0)
+		{
+			const FBoneInfo& ParentBone = Skeleton->GetBone(BoneInfo.ParentIndex);
+			FMatrix ParentWorldMatrix = ParentBone.GlobalBindPoseMatrix * ComponentWorldMatrix;
+			FVector ParentWorldPos = FVector(
+				ParentWorldMatrix.M[3][0],
+				ParentWorldMatrix.M[3][1],
+				ParentWorldMatrix.M[3][2]
+			);
+
+			float BoneT;
+			if (IntersectRayOctahedron(Ray, ParentWorldPos, BoneWorldPos, BoneScale, BoneT))
+			{
+				if (BoneT < MinDistance)
+				{
+					MinDistance = BoneT;
+					Result.BoneIndex = BoneIndex;
+					Result.PickingType = FBonePicking::EPickingType::Bone;
+					Result.PickingLocation = Ray.Origin + Ray.Direction * BoneT;
+					Result.Distance = BoneT;
+				}
+			}
+		}
+	}
+
+	if (Result.IsValid())
+	{
+		UE_LOG("[BonePicking] Bone picked: Index=%d, Type=%d, Distance=%.3f",
+			Result.BoneIndex,
+			static_cast<int32>(Result.PickingType),
+			Result.Distance);
+	}
+	else
+	{
+		UE_LOG("[BonePicking] No bone picked");
+	}
+
+	return Result;
 }

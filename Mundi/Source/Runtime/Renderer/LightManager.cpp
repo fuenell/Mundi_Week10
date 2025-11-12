@@ -282,18 +282,18 @@ void FLightManager::UpdateLightBuffer(D3D11RHI* RHIDevice)
 	{
 		bool bIsVisible = AmbientLightList[0]->IsVisible();
 		bool bActorVisible = AmbientLightList[0]->GetOwner()->IsActorVisible();
-		UE_LOG("[LightManager] THIS LightManager=%p", this);
-		UE_LOG("[LightManager] AmbientLight - Component=%p, GetWorld()=%p, Intensity=%.2f",
-			AmbientLightList[0],
-			AmbientLightList[0]->GetWorld(),
-			AmbientLightList[0]->GetIntensity());
-		UE_LOG("[LightManager] AmbientLight - IsVisible: %d, ActorVisible: %d", bIsVisible, bActorVisible);
+		//UE_LOG("[LightManager] THIS LightManager=%p", this);
+		//UE_LOG("[LightManager] AmbientLight - Component=%p, GetWorld()=%p, Intensity=%.2f",
+		//	AmbientLightList[0],
+		//	AmbientLightList[0]->GetWorld(),
+		//	AmbientLightList[0]->GetIntensity());
+		//UE_LOG("[LightManager] AmbientLight - IsVisible: %d, ActorVisible: %d", bIsVisible, bActorVisible);
 
 		if (bIsVisible && bActorVisible)
 		{
 			LightBuffer.AmbientLight = AmbientLightList[0]->GetLightInfo();
-			UE_LOG("[LightManager] AmbientLight info set - Intensity in Color: (%.2f, %.2f, %.2f)",
-				LightBuffer.AmbientLight.Color.R, LightBuffer.AmbientLight.Color.G, LightBuffer.AmbientLight.Color.B);
+			//UE_LOG("[LightManager] AmbientLight info set - Intensity in Color: (%.2f, %.2f, %.2f)",
+			//	LightBuffer.AmbientLight.Color.R, LightBuffer.AmbientLight.Color.G, LightBuffer.AmbientLight.Color.B);
 		}
 	}
 
@@ -301,15 +301,15 @@ void FLightManager::UpdateLightBuffer(D3D11RHI* RHIDevice)
 	{
 		bool bIsVisible = DIrectionalLightList[0]->IsVisible();
 		bool bActorVisible = DIrectionalLightList[0]->GetOwner()->IsActorVisible();
-		UE_LOG("[LightManager] DirectionalLight - IsVisible: %d, ActorVisible: %d", bIsVisible, bActorVisible);
+		//UE_LOG("[LightManager] DirectionalLight - IsVisible: %d, ActorVisible: %d", bIsVisible, bActorVisible);
 
 		if (bIsVisible && bActorVisible)
 		{
 			UDirectionalLightComponent* Light = DIrectionalLightList[0];
 			LightBuffer.DirectionalLight = Light->GetLightInfo(); // 기본 정보 (색상, 방향)
-			UE_LOG("[LightManager] DirectionalLight info set - Color: (%.2f, %.2f, %.2f), Direction: (%.2f, %.2f, %.2f)",
-				LightBuffer.DirectionalLight.Color.R, LightBuffer.DirectionalLight.Color.G, LightBuffer.DirectionalLight.Color.B,
-				LightBuffer.DirectionalLight.Direction.X, LightBuffer.DirectionalLight.Direction.Y, LightBuffer.DirectionalLight.Direction.Z);
+			//UE_LOG("[LightManager] DirectionalLight info set - Color: (%.2f, %.2f, %.2f), Direction: (%.2f, %.2f, %.2f)",
+			//	LightBuffer.DirectionalLight.Color.R, LightBuffer.DirectionalLight.Color.G, LightBuffer.DirectionalLight.Color.B,
+			//	LightBuffer.DirectionalLight.Direction.X, LightBuffer.DirectionalLight.Direction.Y, LightBuffer.DirectionalLight.Direction.Z);
 
 			// 섀도우 데이터 (CSM) 병합
 			if (Light->IsCastShadows() && ShadowDataCache2D.Contains(Light))

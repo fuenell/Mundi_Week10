@@ -18,6 +18,7 @@
 #include "Frustum.h"
 #include "WorldPartitionManager.h"
 #include "BVHierarchy.h"
+#include <functional>
 #include "SelectionManager.h"
 #include "StaticMeshComponent.h"
 #include "SkeletalMeshComponent.h"
@@ -60,9 +61,6 @@ FSceneRenderer::FSceneRenderer(UWorld* InWorld, FSceneView* InView, URenderer* I
 	TileLightCuller = std::make_unique<FTileLightCuller>();
 	uint32 TileSize = World->GetRenderSettings().GetTileSize();
 	TileLightCuller->Initialize(RHIDevice, TileSize);
-
-	// 라인 수집 시작
-	OwnerRenderer->BeginLineBatch();
 }
 
 FSceneRenderer::~FSceneRenderer()
@@ -90,15 +88,15 @@ void FSceneRenderer::Render()
 		View->RenderSettings->GetViewMode() == EViewMode::VMI_Lit_Gouraud ||
 		View->RenderSettings->GetViewMode() == EViewMode::VMI_Lit_Lambert)
 	{
-		if (View->bUseExternalRenderTarget)
-		{
-			UE_LOG("[SceneRenderer] Rendering Lit Path for External RenderTarget (ViewMode=%d)", (int)View->RenderSettings->GetViewMode());
-			UE_LOG("[SceneRenderer] World=%p, LightManager=%p", World, World->GetLightManager());
-			UE_LOG("[SceneRenderer] LightManager - DirLights: %d, AmbientLights: %d, PointLights: %d",
-				World->GetLightManager()->GetDirectionalLightList().Num(),
-				World->GetLightManager()->GetAmbientLightList().Num(),
-				World->GetLightManager()->GetPointLightList().Num());
-		}
+		//if (View->bUseExternalRenderTarget)
+		//{
+		//	UE_LOG("[SceneRenderer] Rendering Lit Path for External RenderTarget (ViewMode=%d)", (int)View->RenderSettings->GetViewMode());
+		//	UE_LOG("[SceneRenderer] World=%p, LightManager=%p", World, World->GetLightManager());
+		//	UE_LOG("[SceneRenderer] LightManager - DirLights: %d, AmbientLights: %d, PointLights: %d",
+		//		World->GetLightManager()->GetDirectionalLightList().Num(),
+		//		World->GetLightManager()->GetAmbientLightList().Num(),
+		//		World->GetLightManager()->GetPointLightList().Num());
+		//}
 		World->GetLightManager()->UpdateLightBuffer(RHIDevice);	//라이트 구조체 버퍼 업데이트, 바인딩
 		PerformTileLightCulling();	// 타일 기반 라이트 컬링 수행
 		RenderLitPath();
@@ -162,8 +160,8 @@ void FSceneRenderer::RenderLitPath()
 		ID3D11RenderTargetView* CheckRTVs[2] = { nullptr, nullptr };
 		ID3D11DepthStencilView* CheckDSV = nullptr;
 		RHIDevice->GetDeviceContext()->OMGetRenderTargets(2, CheckRTVs, &CheckDSV);
-		UE_LOG("[SceneRenderer] RenderLitPath: External RTV mode - RTV[0]=%p, RTV[1]=%p, DSV=%p",
-			CheckRTVs[0], CheckRTVs[1], CheckDSV);
+		//UE_LOG("[SceneRenderer] RenderLitPath: External RTV mode - RTV[0]=%p, RTV[1]=%p, DSV=%p",
+		//	CheckRTVs[0], CheckRTVs[1], CheckDSV);
 		if (CheckRTVs[0]) CheckRTVs[0]->Release();
 		if (CheckRTVs[1]) CheckRTVs[1]->Release();
 		if (CheckDSV) CheckDSV->Release();
@@ -344,8 +342,8 @@ void FSceneRenderer::RenderShadowMaps()
 		ID3D11RenderTargetView* CheckRTVs[2] = { nullptr, nullptr };
 		ID3D11DepthStencilView* CheckDSV = nullptr;
 		RHIDevice->GetDeviceContext()->OMGetRenderTargets(2, CheckRTVs, &CheckDSV);
-		UE_LOG("[SceneRenderer] RenderShadowMaps ENTRY: RTV[0]=%p, RTV[1]=%p, DSV=%p",
-			CheckRTVs[0], CheckRTVs[1], CheckDSV);
+		//UE_LOG("[SceneRenderer] RenderShadowMaps ENTRY: RTV[0]=%p, RTV[1]=%p, DSV=%p",
+		//	CheckRTVs[0], CheckRTVs[1], CheckDSV);
 		if (CheckRTVs[0]) CheckRTVs[0]->Release();
 		if (CheckRTVs[1]) CheckRTVs[1]->Release();
 		if (CheckDSV) CheckDSV->Release();
@@ -433,8 +431,8 @@ void FSceneRenderer::RenderShadowMaps()
 		ID3D11RenderTargetView* CheckRTVs[2] = { nullptr, nullptr };
 		ID3D11DepthStencilView* CheckDSV = nullptr;
 		RHIDevice->GetDeviceContext()->OMGetRenderTargets(2, CheckRTVs, &CheckDSV);
-		UE_LOG("[SceneRenderer] After 2D Atlas Rendering: RTV[0]=%p, RTV[1]=%p, DSV=%p",
-			CheckRTVs[0], CheckRTVs[1], CheckDSV);
+		//UE_LOG("[SceneRenderer] After 2D Atlas Rendering: RTV[0]=%p, RTV[1]=%p, DSV=%p",
+		//	CheckRTVs[0], CheckRTVs[1], CheckDSV);
 		if (CheckRTVs[0]) CheckRTVs[0]->Release();
 		if (CheckRTVs[1]) CheckRTVs[1]->Release();
 		if (CheckDSV) CheckDSV->Release();
@@ -494,8 +492,8 @@ void FSceneRenderer::RenderShadowMaps()
 		ID3D11RenderTargetView* CheckRTVs[2] = { nullptr, nullptr };
 		ID3D11DepthStencilView* CheckDSV = nullptr;
 		RHIDevice->GetDeviceContext()->OMGetRenderTargets(2, CheckRTVs, &CheckDSV);
-		UE_LOG("[SceneRenderer] After Cube Atlas Rendering: RTV[0]=%p, RTV[1]=%p, DSV=%p",
-			CheckRTVs[0], CheckRTVs[1], CheckDSV);
+		//UE_LOG("[SceneRenderer] After Cube Atlas Rendering: RTV[0]=%p, RTV[1]=%p, DSV=%p",
+		//	CheckRTVs[0], CheckRTVs[1], CheckDSV);
 		if (CheckRTVs[0]) CheckRTVs[0]->Release();
 		if (CheckRTVs[1]) CheckRTVs[1]->Release();
 		if (CheckDSV) CheckDSV->Release();
@@ -517,8 +515,8 @@ void FSceneRenderer::RenderShadowMaps()
 		ID3D11RenderTargetView* CheckRTVs[2] = { nullptr, nullptr };
 		ID3D11DepthStencilView* CheckDSV = nullptr;
 		RHIDevice->GetDeviceContext()->OMGetRenderTargets(2, CheckRTVs, &CheckDSV);
-		UE_LOG("[SceneRenderer] After RTV Unbind Check: RTV[0]=%p, RTV[1]=%p, DSV=%p",
-			CheckRTVs[0], CheckRTVs[1], CheckDSV);
+		//UE_LOG("[SceneRenderer] After RTV Unbind Check: RTV[0]=%p, RTV[1]=%p, DSV=%p",
+		//	CheckRTVs[0], CheckRTVs[1], CheckDSV);
 		if (CheckRTVs[0]) CheckRTVs[0]->Release();
 		if (CheckRTVs[1]) CheckRTVs[1]->Release();
 		if (CheckDSV) CheckDSV->Release();
@@ -537,8 +535,8 @@ void FSceneRenderer::RenderShadowMaps()
 		ID3D11RenderTargetView* CheckRTVs[2] = { nullptr, nullptr };
 		ID3D11DepthStencilView* CheckDSV = nullptr;
 		RHIDevice->GetDeviceContext()->OMGetRenderTargets(2, CheckRTVs, &CheckDSV);
-		UE_LOG("[SceneRenderer] RenderShadowMaps EXIT: RTV[0]=%p, RTV[1]=%p, DSV=%p",
-			CheckRTVs[0], CheckRTVs[1], CheckDSV);
+		//UE_LOG("[SceneRenderer] RenderShadowMaps EXIT: RTV[0]=%p, RTV[1]=%p, DSV=%p",
+		//	CheckRTVs[0], CheckRTVs[1], CheckDSV);
 		if (CheckRTVs[0]) CheckRTVs[0]->Release();
 		if (CheckRTVs[1]) CheckRTVs[1]->Release();
 		if (CheckDSV) CheckDSV->Release();
@@ -1275,19 +1273,16 @@ void FSceneRenderer::RenderEditorPrimitivesPass()
 // 경계, 외곽선 등 표시 (상호 작용, 피킹 X)
 void FSceneRenderer::RenderDebugPass()
 {
-	// [DEBUG] External RenderTarget 사용 시 디버그 정보
-	if (View->bUseExternalRenderTarget)
-	{
-		UE_LOG("[SceneRenderer] RenderDebugPass: EditorLines count = %d, SF_Grid = %d",
-			Proxies.EditorLines.Num(),
-			World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_Grid));
-	}
-
 	// External RenderTarget 사용 시 RTV 전환을 스킵
 	if (!View->bUseExternalRenderTarget)
 	{
 		RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTarget);
 	}
+
+	// ========================================
+	// Pass 1: 그리드 라인 렌더링 (Depth Test 활성화)
+	// ========================================
+	OwnerRenderer->BeginLineBatch(false); // Depth test 사용
 
 	// 그리드 라인 수집
 	for (ULineComponent* LineComponent : Proxies.EditorLines)
@@ -1298,27 +1293,78 @@ void FSceneRenderer::RenderDebugPass()
 		}
 	}
 
-	// 선택된 액터의 디버그 볼륨 렌더링
-	for (AActor* SelectedActor : World->GetSelectionManager()->GetSelectedActors())
-	{
-		for (USceneComponent* Component : SelectedActor->GetSceneComponents())
-		{
-			// 모든 컴포넌트에서 RenderDebugVolume 호출
-			// 각 컴포넌트는 필요한 경우 override하여 디버그 시각화 제공
-			Component->RenderDebugVolume(OwnerRenderer);
-		}
-	}
-
 	// Debug draw (BVH, Octree 등)
 	if (World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_BVHDebug) && World->GetPartitionManager())
 	{
 		if (FBVHierarchy* BVH = World->GetPartitionManager()->GetBVH())
 		{
-			BVH->DebugDraw(OwnerRenderer); // DebugDraw가 LineBatcher를 직접 받도록 수정 필요
+			BVH->DebugDraw(OwnerRenderer);
 		}
 	}
 
-	// 수집된 라인을 출력하고 정리
+	// 그리드 라인 렌더링 (Depth test 활성화)
+	OwnerRenderer->EndLineBatch(FMatrix::Identity());
+
+	// ========================================
+	// Pass 2: Bone 디버그 볼륨 렌더링 (Depth Test 비활성화)
+	// ========================================
+	OwnerRenderer->BeginLineBatch(true); // Depth test 무시
+
+	// 선택된 액터의 디버그 볼륨 렌더링
+	if (World->GetSelectionManager())
+	{
+		for (AActor* SelectedActor : World->GetSelectionManager()->GetSelectedActors())
+		{
+			if (!SelectedActor) continue;
+			for (USceneComponent* Component : SelectedActor->GetSceneComponents())
+			{
+				if (!Component) continue;
+				// 모든 컴포넌트에서 RenderDebugVolume 호출
+				// 각 컴포넌트는 필요한 경우 override하여 디버그 시각화 제공
+				Component->RenderDebugVolume(OwnerRenderer);
+			}
+		}
+	}
+
+	// External RenderTarget 사용 시 (PreviewWorld 등) 모든 액터의 컴포넌트 렌더링
+	if (View->bUseExternalRenderTarget)
+	{
+		// 컴포넌트 계층 구조를 재귀적으로 순회하는 람다
+		std::function<void(USceneComponent*)> RenderComponentRecursive = [&](USceneComponent* Component)
+		{
+			if (!Component || !Component->IsRegistered())
+				return;
+
+			// 현재 컴포넌트 렌더링
+			Component->RenderDebugVolume(OwnerRenderer);
+
+			// 자식 컴포넌트들도 재귀적으로 렌더링
+			// GetAttachChildren()이 참조를 반환하므로 순회 중 배열이 변경될 수 있음
+			// 복사본을 만들어서 순회
+			TArray<USceneComponent*> Children = Component->GetAttachChildren();
+			for (USceneComponent* Child : Children)
+			{
+				// Child가 유효한지 다시 확인 (순회 중 삭제되었을 수 있음)
+				if (Child && Child->IsRegistered())
+				{
+					RenderComponentRecursive(Child);
+				}
+			}
+		};
+
+		for (AActor* Actor : World->GetActors())
+		{
+			if (!Actor) continue;
+
+			// 루트 컴포넌트부터 재귀적으로 순회
+			if (USceneComponent* Root = Actor->GetRootComponent())
+			{
+				RenderComponentRecursive(Root);
+			}
+		}
+	}
+
+	// Bone 디버그 볼륨 렌더링 (Depth test 비활성화)
 	OwnerRenderer->EndLineBatch(FMatrix::Identity());
 }
 

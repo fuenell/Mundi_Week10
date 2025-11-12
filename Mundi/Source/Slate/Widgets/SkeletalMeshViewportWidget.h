@@ -12,6 +12,10 @@ class ADirectionalLightActor;
 class AAmbientLightActor;
 class AGridActor;
 class UWorld;
+class UBoneDebugComponent;
+class UBoneGizmoProxyComponent;
+class AGizmoActor;
+struct FBonePicking;
 
 // 스켈레탈 메시 뷰어의 뷰포트 위젯입니다.
 class USkeletalMeshViewportWidget : public UWidget
@@ -43,6 +47,17 @@ public:
 	 */
 	class USkeletalMesh* GetSkeletalMesh() const { return CurrentSkeletalMesh; }
 
+	/**
+	 * Bone 시각화 토글
+	 * @param bVisible - true: 시각화 활성화, false: 비활성화
+	 */
+	void SetBoneVisualizationEnabled(bool bVisible);
+
+	/**
+	 * Bone 시각화 상태 가져오기
+	 */
+	bool IsBoneVisualizationEnabled() const;
+
 private:
 	/** RenderTarget 생성 (RTV, SRV, DSV) */
 	bool CreateRenderTarget(int32 Width, int32 Height);
@@ -55,6 +70,15 @@ private:
 
 	/** 뷰포트 내의 ImGui 입력을 처리합니다. */
 	void HandleViewportInput(FVector2D ViewportSize);
+
+	/** 본 피킹 처리 */
+	void HandleBonePicking(const FVector2D& ViewportSize, const FVector2D& LocalMousePos);
+
+	/** 피킹된 본에 기즈모 생성 */
+	void CreateGizmoForBone(const FBonePicking& PickingResult);
+
+	/** 현재 기즈모 제거 */
+	void DestroyCurrentGizmo();
 
 private:
 	// --- Render-to-Texture 리소스 ---
@@ -83,4 +107,21 @@ private:
 	// 카메라 회전 상태 (입력 처리용)
 	float CameraYawDeg = 0.0f;
 	float CameraPitchDeg = 0.0f;
+
+	// --- Bone Visualization & Picking ---
+
+	// Bone 디버그 컴포넌트 (본 시각화)
+	UBoneDebugComponent* BoneDebugComponent = nullptr;
+
+	// Bone Gizmo Proxy 컴포넌트 (피킹된 본에 기즈모 부착)
+	UBoneGizmoProxyComponent* BoneGizmoProxyComponent = nullptr;
+
+	// 현재 활성화된 기즈모
+	AGizmoActor* CurrentGizmo = nullptr;
+
+	// 피킹된 본 인덱스 (-1 if no bone)
+	int32 PickedBoneIndex = -1;
+
+	// Bone 시각화 활성화 여부
+	bool bBoneVisualizationEnabled = false;
 };
