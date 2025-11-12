@@ -522,6 +522,25 @@ void USkeletalMeshViewportWidget::SetSkeletalMesh(USkeletalMesh* InMesh)
         if (SkelMeshComp)
         {
             SkelMeshComp->SetSkeletalMesh(CurrentSkeletalMesh);
+
+            // CRITICAL: Skeleton의 BindPoseRelativeTransform을 CustomBoneLocalTransform에 복사
+            // 사용자가 이전에 본을 수정했다면, 해당 변경사항이 BindPoseRelativeTransform에 저장되어 있음
+            USkeleton* Skeleton = CurrentSkeletalMesh->GetSkeleton();
+            if (Skeleton)
+            {
+                int32 BoneCount = Skeleton->GetBoneCount();
+                for (int32 BoneIndex = 0; BoneIndex < BoneCount; BoneIndex++)
+                {
+                    const FBoneInfo& BoneInfo = Skeleton->GetBone(BoneIndex);
+                    SkelMeshComp->SetBoneTransform(BoneIndex, BoneInfo.BindPoseRelativeTransform);
+                }
+            }
+
+            // CRITICAL: SetSkeletalMesh 후 본 행렬을 최신 상태로 업데이트
+            // CustomBoneLocalTransform이 있으면 반영되도록 함
+            SkelMeshComp->StartUpdateBoneRecursive();
+            SkelMeshComp->PerformCPUSkinning();
+
             bNeedsRedraw = true;  // 메시가 변경되었으므로 다시 렌더링
 
             SetBoneVisualizationEnabled(bBoneVisualizationEnabled);
@@ -728,6 +747,12 @@ void USkeletalMeshViewportWidget::HandleBonePicking(const FVector2D& ViewportSiz
         return;
     }
 
+    // CRITICAL: 피킹 전에 본 행렬이 최신 상태인지 확인
+    // 본을 수정한 후 피킹하면 BoneMatrices가 오래된 상태일 수 있으므로
+    // 명시적으로 업데이트합니다.
+    SkelMeshComp->StartUpdateBoneRecursive();
+    SkelMeshComp->PerformCPUSkinning();
+
     // Generate ray from mouse position
     const FMatrix View = PreviewCamera->GetViewMatrix();
 
@@ -808,11 +833,25 @@ void USkeletalMeshViewportWidget::UpdateGizmo(int32 BoneIndex)
 
 void USkeletalMeshViewportWidget::UpdateBone(int32 BoneIndex)
 {
-    FBoneInfo BoneInfo = PreviewActor->GetSkeletalMeshComponent()->GetSkeletalMesh()->GetSkeleton()->GetBone(BoneIndex);
-    PreviewActor->GetSkeletalMeshComponent()->SetBoneTransform(BoneIndex, BoneInfo.BindPoseRelativeTransform);
+    USkeletalMeshComponent* SkelMeshComp = PreviewActor->GetSkeletalMeshComponent();
+    USkeleton* Skeleton = SkelMeshComp->GetSkeletalMesh()->GetSkeleton();
 
-    PreviewActor->GetSkeletalMeshComponent()->StartUpdateBoneRecursive();
-    PreviewActor->GetSkeletalMeshComponent()->PerformCPUSkinning();
+    FBoneInfo BoneInfo = Skeleton->GetBone(BoneIndex);
+
+    // SetBoneTransform은 CustomBoneLocalTransform에 저장합니다
+    SkelMeshComp->SetBoneTransform(BoneIndex, BoneInfo.BindPoseRelativeTransform);
+
+    // 본 행렬 업데이트 (CustomBoneLocalTransform 반영)
+    SkelMeshComp->StartUpdateBoneRecursive();
+    SkelMeshComp->PerformCPUSkinning();
+
     UpdateGizmo(BoneIndex);
     bNeedsRedraw = true;    // 변경된 뼈를 반영해서 다시 그리기 위해
+}
+
+void USkeletalMeshViewportWidget::RecalculateGlobalBindPoseMatrixRecursive(USkeleton* Skeleton, int32 BoneIndex)
+{
+    // 이 함수는 더 이상 사용하지 않습니다.
+    // GlobalBindPoseMatrix는 FBX 원본 데이터를 유지해야 하며,
+    // 런타임 변환은 CustomBoneLocalTransform을 통해 처리됩니다.
 }

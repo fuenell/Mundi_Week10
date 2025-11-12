@@ -67,6 +67,8 @@ public:
 	void SetSkeletalMeshEditorWindow(USkeletalMeshEditorWindow* InSkeletalMeshEditorWindow) { SkeletalMeshEditorWindow = InSkeletalMeshEditorWindow; }
 
 private:
+	/** GlobalBindPoseMatrix를 재귀적으로 재계산 (BindPoseRelativeTransform 변경 시) */
+	void RecalculateGlobalBindPoseMatrixRecursive(class USkeleton* Skeleton, int32 BoneIndex);
 	/** RenderTarget 생성 (RTV, SRV, DSV) */
 	bool CreateRenderTarget(int32 Width, int32 Height);
 
