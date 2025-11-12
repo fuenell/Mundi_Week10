@@ -1372,7 +1372,6 @@ void FSceneRenderer::RenderDebugPass()
 
 void FSceneRenderer::RenderOverayEditorPrimitivesPass()
 {
-
 	// External RenderTarget을 사용하는 경우 RTV 전환을 스킵
 	// (이미 외부에서 설정된 RTV를 사용)
 	if (!View->bUseExternalRenderTarget)
@@ -1384,15 +1383,24 @@ void FSceneRenderer::RenderOverayEditorPrimitivesPass()
 	}
 	else
 	{
-		// 디버그: External RTV 사용 중
-		ID3D11RenderTargetView* CheckRTVs[2] = { nullptr, nullptr };
-		ID3D11DepthStencilView* CheckDSV = nullptr;
-		RHIDevice->GetDeviceContext()->OMGetRenderTargets(2, CheckRTVs, &CheckDSV);
-		UE_LOG("[SceneRenderer] RenderLitPath: External RTV mode - RTV[0]=%p, RTV[1]=%p, DSV=%p",
-			CheckRTVs[0], CheckRTVs[1], CheckDSV);
-		if (CheckRTVs[0]) CheckRTVs[0]->Release();
-		if (CheckRTVs[1]) CheckRTVs[1]->Release();
-		if (CheckDSV) CheckDSV->Release();
+		// 1. 현재 OM 스테이지에 바인딩된 뎁스 스텐실 뷰(DSV)를 가져오기 위한 포인터를 선언합니다.
+		ID3D11DepthStencilView* pCurrentDSV = nullptr;
+
+		// 2. OMGetRenderTargets를 호출하여 현재 DSV를 가져옵니다.
+		//    이 함수는 렌더 타겟 뷰(RTV)도 함께 가져올 수 있지만,
+		//    여기서는 DSV만 필요하므로 RTV 관련 인자(첫 번째, 두 번째)는 0과 nullptr을 전달합니다.
+		RHIDevice->GetDeviceContext()->OMGetRenderTargets(0, nullptr, &pCurrentDSV);
+
+		// 3. pCurrentDSV가 유효한지(즉, 현재 바인딩된 DSV가 있는지) 확인합니다.
+		if (pCurrentDSV != nullptr)
+		{
+			// 4. 유효하다면, 해당 DSV를 초기화합니다.
+			RHIDevice->GetDeviceContext()->ClearDepthStencilView(pCurrentDSV, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
+
+			// 5. [매우 중요] OMGetRenderTargets는 반환된 인터페이스의 참조 카운트를 증가시킵니다.
+			//    따라서 사용이 끝난 후 반드시 Release()를 호출하여 리소스 유출(Resource Leak)을 방지해야 합니다.
+			pCurrentDSV->Release();
+		}
 	}
 
 	for (UPrimitiveComponent* GizmoComp : Proxies.OverlayPrimitives)
