@@ -252,6 +252,20 @@ void USkeletalMeshViewportWidget::RenderWidget()
             ImVec2(1, 1)   // uv_max
         );
 
+        // 뷰포트 영역 위에서 마우스 입력이 발생하면 윈도우 이동 방지
+        if (ImGui::IsItemHovered())
+        {
+            // 마우스가 뷰포트 위에 있을 때 윈도우 이동 차단
+            ImGui::SetWindowFocus();
+
+            // 좌클릭이 발생하면 윈도우가 이동하지 않도록 입력 캡처
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseDown(ImGuiMouseButton_Left))
+            {
+                // 입력 소유권을 가져와서 윈도우 드래그 방지
+                ImGui::SetActiveID(ImGui::GetItemID(), ImGui::GetCurrentWindow());
+            }
+        }
+
         HandleViewportInput(FVector2D(ViewportSize.x, ViewportSize.y));
     }
     else

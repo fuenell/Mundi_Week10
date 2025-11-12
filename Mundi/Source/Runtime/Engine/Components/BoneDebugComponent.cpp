@@ -19,8 +19,8 @@ END_PROPERTIES()
 UBoneDebugComponent::UBoneDebugComponent()
 	: USceneComponent()
 	, SkeletalMeshComponent(nullptr)
-	, BoneColor(0.0f, 0.05f, 0.15f, 1.0f) // 거의 검은색에 가까운 매우 짙은 남색
-	, JointColor(0.0f, 0.05f, 0.15f, 1.0f) // 거의 검은색에 가까운 매우 짙은 남색
+	, BoneColor(0.0f, 0.05f, 0.05f, 1.0f) // 거의 검은색에 가까운 매우 짙은 남색
+	, JointColor(0.0f, 0.05f, 0.05f, 1.0f) // 거의 검은색에 가까운 매우 짙은 남색
 	, BoneScale(0.05f)
 	, JointRadius(0.02f)
 	, JointSegments(8)
