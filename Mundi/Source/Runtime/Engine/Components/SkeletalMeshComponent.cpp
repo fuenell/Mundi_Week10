@@ -118,7 +118,7 @@ void USkeletalMeshComponent::TickComponent(float DeltaTime)
 	if (Skeleton && Skeleton->GetBoneCount() > 0)
 	{
 		// Root 본 (인덱스 0)을 회전
-		int32 TestBoneIndex = 4;
+		int32 TestBoneIndex = 0;
 
 		// 한 바퀴 계속 회전 (360도)
 		float RotationRad = TestAnimationTime * 2.0f;  // 초당 2 라디안 회전 (약 114도/초)
