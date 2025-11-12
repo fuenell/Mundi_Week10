@@ -89,7 +89,16 @@ void FSceneRenderer::Render()
 		View->RenderSettings->GetViewMode() == EViewMode::VMI_Lit_Gouraud ||
 		View->RenderSettings->GetViewMode() == EViewMode::VMI_Lit_Lambert)
 	{
-		GWorld->GetLightManager()->UpdateLightBuffer(RHIDevice);	//라이트 구조체 버퍼 업데이트, 바인딩
+		if (View->bUseExternalRenderTarget)
+		{
+			UE_LOG("[SceneRenderer] Rendering Lit Path for External RenderTarget (ViewMode=%d)", (int)View->RenderSettings->GetViewMode());
+			UE_LOG("[SceneRenderer] World=%p, LightManager=%p", World, World->GetLightManager());
+			UE_LOG("[SceneRenderer] LightManager - DirLights: %d, AmbientLights: %d, PointLights: %d",
+				World->GetLightManager()->GetDirectionalLightList().Num(),
+				World->GetLightManager()->GetAmbientLightList().Num(),
+				World->GetLightManager()->GetPointLightList().Num());
+		}
+		World->GetLightManager()->UpdateLightBuffer(RHIDevice);	//라이트 구조체 버퍼 업데이트, 바인딩
 		PerformTileLightCulling();	// 타일 기반 라이트 컬링 수행
 		RenderLitPath();
 		RenderPostProcessingPasses();	// 후처리 체인 실행
@@ -112,7 +121,12 @@ void FSceneRenderer::Render()
 		RenderSceneDepthPath();
 	}
 	
-	if (!World->bPie)
+	// External RenderTarget 사용 시 그리드만 렌더링 (빌보드/기즈모 제외)
+	if (View->bUseExternalRenderTarget)
+	{
+		RenderDebugPass();	// 그리드만 렌더링
+	}
+	else if (!World->bPie)
 	{
 		//그리드와 디버그용 Primitive는 Post Processing 적용하지 않음.
 		RenderEditorPrimitivesPass();	// 빌보드, 기타 화살표 출력 (상호작용, 피킹 O)
@@ -135,7 +149,24 @@ void FSceneRenderer::Render()
 
 void FSceneRenderer::RenderLitPath()
 {
-	RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTargetWithId);
+	// External RenderTarget을 사용하는 경우 RTV 전환을 스킵
+	// (이미 외부에서 설정된 RTV를 사용)
+	if (!View->bUseExternalRenderTarget)
+	{
+		RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTargetWithId);
+	}
+	else
+	{
+		// 디버그: External RTV 사용 중
+		ID3D11RenderTargetView* CheckRTVs[2] = { nullptr, nullptr };
+		ID3D11DepthStencilView* CheckDSV = nullptr;
+		RHIDevice->GetDeviceContext()->OMGetRenderTargets(2, CheckRTVs, &CheckDSV);
+		UE_LOG("[SceneRenderer] RenderLitPath: External RTV mode - RTV[0]=%p, RTV[1]=%p, DSV=%p",
+			CheckRTVs[0], CheckRTVs[1], CheckDSV);
+		if (CheckRTVs[0]) CheckRTVs[0]->Release();
+		if (CheckRTVs[1]) CheckRTVs[1]->Release();
+		if (CheckDSV) CheckDSV->Release();
+	}
 
 	// Base Pass
 	RenderOpaquePass(View->RenderSettings->GetViewMode());
@@ -144,23 +175,39 @@ void FSceneRenderer::RenderLitPath()
 
 void FSceneRenderer::RenderWireframePath()
 {
-	// 깊이 버퍼 초기화 후 ID만 그리기
-	RHIDevice->RSSetState(ERasterizerMode::Solid);
-	RHIDevice->OMSetRenderTargets(ERTVMode::SceneIdTarget);
-	RenderOpaquePass(EViewMode::VMI_Unlit);
+	// External RenderTarget을 사용하는 경우 RTV 전환을 스킵
+	if (!View->bUseExternalRenderTarget)
+	{
+		// 깊이 버퍼 초기화 후 ID만 그리기
+		RHIDevice->RSSetState(ERasterizerMode::Solid);
+		RHIDevice->OMSetRenderTargets(ERTVMode::SceneIdTarget);
+		RenderOpaquePass(EViewMode::VMI_Unlit);
 
-	// Wireframe으로 그리기
-	RHIDevice->ClearDepthBuffer(1.0f, 0);
-	RHIDevice->RSSetState(ERasterizerMode::Wireframe);
-	RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTarget);
-	RenderOpaquePass(EViewMode::VMI_Unlit);
+		// Wireframe으로 그리기
+		RHIDevice->ClearDepthBuffer(1.0f, 0);
+		RHIDevice->RSSetState(ERasterizerMode::Wireframe);
+		RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTarget);
+		RenderOpaquePass(EViewMode::VMI_Unlit);
 
-	// 상태 복구
-	RHIDevice->RSSetState(ERasterizerMode::Solid);
+		// 상태 복구
+		RHIDevice->RSSetState(ERasterizerMode::Solid);
+	}
+	else
+	{
+		// External RenderTarget 사용 시 간단히 렌더링
+		RenderOpaquePass(EViewMode::VMI_Unlit);
+	}
 }
 
 void FSceneRenderer::RenderSceneDepthPath()
 {
+	// External RenderTarget을 사용하는 경우 간단히 렌더링
+	if (View->bUseExternalRenderTarget)
+	{
+		RenderOpaquePass(EViewMode::VMI_Unlit);
+		return;
+	}
+
 	// ✅ 디버그: SceneRTV 전환 전 viewport 확인
 	D3D11_VIEWPORT vpBefore;
 	UINT numVP = 1;
@@ -209,7 +256,7 @@ void FSceneRenderer::RenderSceneDepthPath()
 
 void FSceneRenderer::RenderShadowMaps()
 {
-	FLightManager* LightManager = GWorld->GetLightManager();
+	FLightManager* LightManager = World->GetLightManager();
 	if (!LightManager) return;
 
 	// 2. 그림자 캐스터(Caster) 메시 수집
@@ -290,6 +337,19 @@ void FSceneRenderer::RenderShadowMaps()
 		}
 	}
 
+	// [DEBUG] RTV 상태 체크 - RenderShadowMaps 진입 시점
+	if (View->bUseExternalRenderTarget)
+	{
+		ID3D11RenderTargetView* CheckRTVs[2] = { nullptr, nullptr };
+		ID3D11DepthStencilView* CheckDSV = nullptr;
+		RHIDevice->GetDeviceContext()->OMGetRenderTargets(2, CheckRTVs, &CheckDSV);
+		UE_LOG("[SceneRenderer] RenderShadowMaps ENTRY: RTV[0]=%p, RTV[1]=%p, DSV=%p",
+			CheckRTVs[0], CheckRTVs[1], CheckDSV);
+		if (CheckRTVs[0]) CheckRTVs[0]->Release();
+		if (CheckRTVs[1]) CheckRTVs[1]->Release();
+		if (CheckDSV) CheckDSV->Release();
+	}
+
 	// SF_Shadows와 관련 없이 IsOverrideCameraLightPerspective 를 사용하기 위해서 밑에서 처리
 	if (!World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_Shadows))
 	{
@@ -303,6 +363,8 @@ void FSceneRenderer::RenderShadowMaps()
 	LightManager->AllocateAtlasCubeSlices(RequestsCube); // FLightManager가 RequestsCube의 AssignedSliceIndex와 Size 업데이트
 
 	// --- 1단계: 2D 아틀라스 렌더링 (Spot + Directional) ---
+	// External RenderTarget을 사용하지 않는 경우에만 실행
+	if (!View->bUseExternalRenderTarget)
 	{
 		ID3D11DepthStencilView* AtlasDSV2D = LightManager->GetShadowAtlasDSV2D();
 		ID3D11RenderTargetView* VSMAtlasRTV2D = LightManager->GetVSMShadowAtlasRTV2D();
@@ -314,7 +376,7 @@ void FSceneRenderer::RenderShadowMaps()
 			RHIDevice->GetDeviceContext()->PSSetShaderResources(9, 2, NullSRV);
 			
 			float ClearColor[] = {1.0f, 1.0f, 0.0f, 0.0f};
-			EShadowAATechnique ShadowAAType = GWorld->GetRenderSettings().GetShadowAATechnique();
+			EShadowAATechnique ShadowAAType = World->GetRenderSettings().GetShadowAATechnique();
 			switch (ShadowAAType)
 			{
 			case EShadowAATechnique::PCF:
@@ -358,12 +420,28 @@ void FSceneRenderer::RenderShadowMaps()
 				LightManager->SetShadowMapData(Request.LightOwner, Request.SubViewIndex, Data);
 				// vsm srv unbind
 			}
+
 			ID3D11RenderTargetView* NullRTV[1] = { nullptr };
 			RHIDevice->OMSetCustomRenderTargets(1, NullRTV, DefaultDSV);
 		}
 	}
 
+	// [DEBUG] RTV 상태 체크 - 2D 아틀라스 렌더링 후
+	if (View->bUseExternalRenderTarget)
+	{
+		ID3D11RenderTargetView* CheckRTVs[2] = { nullptr, nullptr };
+		ID3D11DepthStencilView* CheckDSV = nullptr;
+		RHIDevice->GetDeviceContext()->OMGetRenderTargets(2, CheckRTVs, &CheckDSV);
+		UE_LOG("[SceneRenderer] After 2D Atlas Rendering: RTV[0]=%p, RTV[1]=%p, DSV=%p",
+			CheckRTVs[0], CheckRTVs[1], CheckDSV);
+		if (CheckRTVs[0]) CheckRTVs[0]->Release();
+		if (CheckRTVs[1]) CheckRTVs[1]->Release();
+		if (CheckDSV) CheckDSV->Release();
+	}
+
 	// --- 2단계: 큐브맵 아틀라스 렌더링 (Point) ---
+	// External RenderTarget을 사용하지 않는 경우에만 실행
+	if (!View->bUseExternalRenderTarget)
 	{
 		uint32 AtlasSizeCube = LightManager->GetShadowCubeArraySize();
 		uint32 MaxCubeSlices = LightManager->GetShadowCubeArrayCount(); // MaxCubeSlices는 FLightManager에서 가져옴
@@ -409,16 +487,61 @@ void FSceneRenderer::RenderShadowMaps()
 		}
 	}
 
+	// [DEBUG] RTV 상태 체크 - 큐브맵 아틀라스 렌더링 후
+	if (View->bUseExternalRenderTarget)
+	{
+		ID3D11RenderTargetView* CheckRTVs[2] = { nullptr, nullptr };
+		ID3D11DepthStencilView* CheckDSV = nullptr;
+		RHIDevice->GetDeviceContext()->OMGetRenderTargets(2, CheckRTVs, &CheckDSV);
+		UE_LOG("[SceneRenderer] After Cube Atlas Rendering: RTV[0]=%p, RTV[1]=%p, DSV=%p",
+			CheckRTVs[0], CheckRTVs[1], CheckDSV);
+		if (CheckRTVs[0]) CheckRTVs[0]->Release();
+		if (CheckRTVs[1]) CheckRTVs[1]->Release();
+		if (CheckDSV) CheckDSV->Release();
+	}
+
 	// --- 3. RHI 상태 복구 ---
 	RHIDevice->RSSetState(ERasterizerMode::Solid);
-	ID3D11RenderTargetView* nullRTV = nullptr;
-	RHIDevice->OMSetCustomRenderTargets(1, &nullRTV, nullptr);
+
+	// External RenderTarget 사용 시에는 RTV를 언바인딩하지 않음
+	if (!View->bUseExternalRenderTarget)
+	{
+		ID3D11RenderTargetView* nullRTV = nullptr;
+		RHIDevice->OMSetCustomRenderTargets(1, &nullRTV, nullptr);
+	}
+
+	// [DEBUG] RTV 상태 체크 - RTV 언바인딩 체크 후
+	if (View->bUseExternalRenderTarget)
+	{
+		ID3D11RenderTargetView* CheckRTVs[2] = { nullptr, nullptr };
+		ID3D11DepthStencilView* CheckDSV = nullptr;
+		RHIDevice->GetDeviceContext()->OMGetRenderTargets(2, CheckRTVs, &CheckDSV);
+		UE_LOG("[SceneRenderer] After RTV Unbind Check: RTV[0]=%p, RTV[1]=%p, DSV=%p",
+			CheckRTVs[0], CheckRTVs[1], CheckDSV);
+		if (CheckRTVs[0]) CheckRTVs[0]->Release();
+		if (CheckRTVs[1]) CheckRTVs[1]->Release();
+		if (CheckDSV) CheckDSV->Release();
+	}
+
 	//RHIDevice->RSSetViewport(); // 메인 뷰포트로 복구
 	// 4. 저장해둔 'OriginVP'로 뷰포트를 복구합니다. (이때는 주소(&)가 필요 없음)
 	RHIDevice->GetDeviceContext()->RSSetViewports(1, &OriginVP);
-	
+
 	// ViewProjBufferType 복구 (라이트 시점 Override 일 경우 마지막 라이트 시점으로 설정됨)
 	RHIDevice->SetAndUpdateConstantBuffer(ViewProjBufferType(OriginViewProjBuffer));
+
+	// [DEBUG] RTV 상태 체크 - RenderShadowMaps EXIT
+	if (View->bUseExternalRenderTarget)
+	{
+		ID3D11RenderTargetView* CheckRTVs[2] = { nullptr, nullptr };
+		ID3D11DepthStencilView* CheckDSV = nullptr;
+		RHIDevice->GetDeviceContext()->OMGetRenderTargets(2, CheckRTVs, &CheckDSV);
+		UE_LOG("[SceneRenderer] RenderShadowMaps EXIT: RTV[0]=%p, RTV[1]=%p, DSV=%p",
+			CheckRTVs[0], CheckRTVs[1], CheckDSV);
+		if (CheckRTVs[0]) CheckRTVs[0]->Release();
+		if (CheckRTVs[1]) CheckRTVs[1]->Release();
+		if (CheckDSV) CheckDSV->Release();
+	}
 }
 
 void FSceneRenderer::RenderShadowDepthPass(FShadowRenderRequest& ShadowRequest, const TArray<FMeshBatchElement>& InShadowBatches)
@@ -440,8 +563,8 @@ void FSceneRenderer::RenderShadowDepthPass(FShadowRenderRequest& ShadowRequest, 
 	// 2. 파이프라인 설정
 	RHIDevice->GetDeviceContext()->IASetInputLayout(ShaderVariant->InputLayout);
 	RHIDevice->GetDeviceContext()->VSSetShader(ShaderVariant->VertexShader, nullptr, 0);
-	
-	EShadowAATechnique ShadowAAType = GWorld->GetRenderSettings().GetShadowAATechnique();
+
+	EShadowAATechnique ShadowAAType = World->GetRenderSettings().GetShadowAATechnique();
 	switch (ShadowAAType)
 	{
 	case EShadowAATechnique::PCF:
@@ -590,6 +713,7 @@ void FSceneRenderer::GatherVisibleProxies()
 	const bool bDrawLight = World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_Lighting);
 	const bool bUseAntiAliasing = World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_FXAA);
 	const bool bUseBillboard = World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_Billboard);
+	const bool bDrawGrid = World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_Grid);
 
 	// Helper lambda to collect components from an actor
 	auto CollectComponentsFromActor = [&](AActor* Actor, bool bIsEditorActor)
@@ -618,6 +742,13 @@ void FSceneRenderer::GatherVisibleProxies()
 						Proxies.EditorLines.Add(LineComponent);
 					}
 
+					continue;
+				}
+
+				// LineComponent는 일반 Actor에서도 수집 (Grid ShowFlag 체크)
+				if (ULineComponent* LineComponent = Cast<ULineComponent>(Component); LineComponent && bDrawGrid)
+				{
+					Proxies.EditorLines.Add(LineComponent);
 					continue;
 				}
 
@@ -768,8 +899,8 @@ void FSceneRenderer::PerformTileLightCulling()
 	if (bTileCullingEnabled)
 	{
 		// PointLight와 SpotLight 정보 수집
-		TArray<FPointLightInfo>& PointLights = GWorld->GetLightManager()->GetPointLightInfoList();
-		TArray<FSpotLightInfo>& SpotLights = GWorld->GetLightManager()->GetSpotLightInfoList();
+		TArray<FPointLightInfo>& PointLights = World->GetLightManager()->GetPointLightInfoList();
+		TArray<FSpotLightInfo>& SpotLights = World->GetLightManager()->GetSpotLightInfoList();
 
 		// 타일 컬링 수행
 		TileLightCuller->CullLights(
@@ -963,6 +1094,10 @@ void FSceneRenderer::RenderDecalPass()
 
 void FSceneRenderer::RenderPostProcessingPasses()
 {
+	// External RenderTarget 사용 시 포스트 프로세싱은 스킵
+	if (View->bUseExternalRenderTarget)
+		return;
+
 	// Ensure first post-process pass samples from the current scene output
  	TArray<FPostProcessModifier> PostProcessModifiers = View->Modifiers;
 
@@ -1123,7 +1258,11 @@ void FSceneRenderer::RenderTileCullingDebug()
 // 빌보드, 에디터 화살표 그리기 (상호 작용, 피킹 O)
 void FSceneRenderer::RenderEditorPrimitivesPass()
 {
-	RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTargetWithId);
+	// External RenderTarget 사용 시 RTV 전환을 스킵
+	if (!View->bUseExternalRenderTarget)
+	{
+		RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTargetWithId);
+	}
 	for (UPrimitiveComponent* GizmoComp : Proxies.EditorPrimitives)
 	{
 		GizmoComp->CollectMeshBatches(MeshBatchElements, View);
@@ -1134,12 +1273,24 @@ void FSceneRenderer::RenderEditorPrimitivesPass()
 // 경계, 외곽선 등 표시 (상호 작용, 피킹 X)
 void FSceneRenderer::RenderDebugPass()
 {
-	RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTarget);
+	// [DEBUG] External RenderTarget 사용 시 디버그 정보
+	if (View->bUseExternalRenderTarget)
+	{
+		UE_LOG("[SceneRenderer] RenderDebugPass: EditorLines count = %d, SF_Grid = %d",
+			Proxies.EditorLines.Num(),
+			World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_Grid));
+	}
+
+	// External RenderTarget 사용 시 RTV 전환을 스킵
+	if (!View->bUseExternalRenderTarget)
+	{
+		RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTarget);
+	}
 
 	// 그리드 라인 수집
 	for (ULineComponent* LineComponent : Proxies.EditorLines)
 	{
-		if (GWorld->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_Grid))
+		if (World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_Grid))
 		{
 			LineComponent->CollectLineBatches(OwnerRenderer);
 		}
@@ -1171,6 +1322,10 @@ void FSceneRenderer::RenderDebugPass()
 
 void FSceneRenderer::RenderOverayEditorPrimitivesPass()
 {
+	// External RenderTarget 사용 시 오버레이 렌더링하지 않음 (기즈모 등)
+	if (View->bUseExternalRenderTarget)
+		return;
+
 	// 후처리된 최종 이미지 위에 원본 씬의 뎁스 버퍼를 사용하여 3D 오버레이를 렌더링합니다.
 	RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTargetWithId);
 
@@ -1352,6 +1507,10 @@ void FSceneRenderer::DrawMeshBatches(TArray<FMeshBatchElement>& InMeshBatches, b
 
 void FSceneRenderer::ApplyScreenEffectsPass()
 {
+	// External RenderTarget 사용 시 FXAA는 스킵
+	if (View->bUseExternalRenderTarget)
+		return;
+
 	if (!World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_FXAA))
 	{
 		return;
@@ -1415,6 +1574,10 @@ void FSceneRenderer::ApplyScreenEffectsPass()
 // 최종 결과물의 실제 BackBuffer에 그리는 함수
 void FSceneRenderer::CompositeToBackBuffer()
 {
+	// External RenderTarget 사용 시 BackBuffer 합성은 스킵
+	if (View->bUseExternalRenderTarget)
+		return;
+
 	// 1. 최종 결과물을 Source로 만들기 위해 스왑하고, 작업 후 SRV 슬롯 0을 자동 해제하는 가드 생성
 	FSwapGuard SwapGuard(RHIDevice, 0, 1);
 

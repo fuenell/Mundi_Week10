@@ -439,7 +439,7 @@ void AActor::SetActorIsVisible(bool bIsActive)
 	{
 		if (auto* Prim = Cast<UPrimitiveComponent>(Comp))
 		{
-			Prim->SetGenerateOverlapEvents(false);
+			Prim->SetGenerateOverlapEvents(bIsActive);
 		}
 	}
 	return RootComponent->SetVisibility(bIsActive);

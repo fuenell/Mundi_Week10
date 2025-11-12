@@ -278,25 +278,49 @@ void FLightManager::UpdateLightBuffer(D3D11RHI* RHIDevice)
 	// 3. CBuffer 업데이트 (Ambient, Directional)
 	FLightBufferType LightBuffer{}; // 셰이더의 CBuffer 'b1'과 일치해야 함
 
-	if (AmbientLightList.Num() > 0 && AmbientLightList[0]->IsVisible() && AmbientLightList[0]->GetOwner()->IsActorVisible())
+	if (AmbientLightList.Num() > 0)
 	{
-		LightBuffer.AmbientLight = AmbientLightList[0]->GetLightInfo();
+		bool bIsVisible = AmbientLightList[0]->IsVisible();
+		bool bActorVisible = AmbientLightList[0]->GetOwner()->IsActorVisible();
+		UE_LOG("[LightManager] THIS LightManager=%p", this);
+		UE_LOG("[LightManager] AmbientLight - Component=%p, GetWorld()=%p, Intensity=%.2f",
+			AmbientLightList[0],
+			AmbientLightList[0]->GetWorld(),
+			AmbientLightList[0]->GetIntensity());
+		UE_LOG("[LightManager] AmbientLight - IsVisible: %d, ActorVisible: %d", bIsVisible, bActorVisible);
+
+		if (bIsVisible && bActorVisible)
+		{
+			LightBuffer.AmbientLight = AmbientLightList[0]->GetLightInfo();
+			UE_LOG("[LightManager] AmbientLight info set - Intensity in Color: (%.2f, %.2f, %.2f)",
+				LightBuffer.AmbientLight.Color.R, LightBuffer.AmbientLight.Color.G, LightBuffer.AmbientLight.Color.B);
+		}
 	}
 
-	if (DIrectionalLightList.Num() > 0 && DIrectionalLightList[0]->IsVisible() && DIrectionalLightList[0]->GetOwner()->IsActorVisible())
+	if (DIrectionalLightList.Num() > 0)
 	{
-		UDirectionalLightComponent* Light = DIrectionalLightList[0];
-		LightBuffer.DirectionalLight = Light->GetLightInfo(); // 기본 정보 (색상, 방향)
+		bool bIsVisible = DIrectionalLightList[0]->IsVisible();
+		bool bActorVisible = DIrectionalLightList[0]->GetOwner()->IsActorVisible();
+		UE_LOG("[LightManager] DirectionalLight - IsVisible: %d, ActorVisible: %d", bIsVisible, bActorVisible);
 
-		// 섀도우 데이터 (CSM) 병합
-		if (Light->IsCastShadows() && ShadowDataCache2D.Contains(Light))
+		if (bIsVisible && bActorVisible)
 		{
-			const TArray<FShadowMapData>& Cascades = ShadowDataCache2D[Light];
-			int32 CascadeCount = FMath::Min(Cascades.Num(), CASCADED_MAX); // 최대 4개까지만 복사
+			UDirectionalLightComponent* Light = DIrectionalLightList[0];
+			LightBuffer.DirectionalLight = Light->GetLightInfo(); // 기본 정보 (색상, 방향)
+			UE_LOG("[LightManager] DirectionalLight info set - Color: (%.2f, %.2f, %.2f), Direction: (%.2f, %.2f, %.2f)",
+				LightBuffer.DirectionalLight.Color.R, LightBuffer.DirectionalLight.Color.G, LightBuffer.DirectionalLight.Color.B,
+				LightBuffer.DirectionalLight.Direction.X, LightBuffer.DirectionalLight.Direction.Y, LightBuffer.DirectionalLight.Direction.Z);
 
-			for (int32 i = 0; i < CascadeCount; ++i)
+			// 섀도우 데이터 (CSM) 병합
+			if (Light->IsCastShadows() && ShadowDataCache2D.Contains(Light))
 			{
-				LightBuffer.DirectionalLight.Cascades[i] = Cascades[i];
+				const TArray<FShadowMapData>& Cascades = ShadowDataCache2D[Light];
+				int32 CascadeCount = FMath::Min(Cascades.Num(), CASCADED_MAX); // 최대 4개까지만 복사
+
+				for (int32 i = 0; i < CascadeCount; ++i)
+				{
+					LightBuffer.DirectionalLight.Cascades[i] = Cascades[i];
+				}
 			}
 		}
 	}

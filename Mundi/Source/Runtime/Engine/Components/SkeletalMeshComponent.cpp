@@ -11,6 +11,7 @@
 #include "MeshBatchElement.h"
 #include "Material.h"
 #include "SceneView.h"
+#include "BoneDebugComponent.h"
 
 IMPLEMENT_CLASS(USkeletalMeshComponent)
 
@@ -23,6 +24,16 @@ USkeletalMeshComponent::USkeletalMeshComponent()
 {
 	// CPU Skinning을 위해 Tick 활성화
 	bCanEverTick = true;
+
+	// BoneDebugComponent 생성
+	BoneDebugComponent = NewObject<UBoneDebugComponent>();
+	if (BoneDebugComponent)
+	{
+		BoneDebugComponent->SetSkeletalMeshComponent(this);
+		BoneDebugComponent->SetupAttachment(this);
+		BoneDebugComponent->SetBonesVisible(false); // 기본값: 숨김
+		BoneDebugComponent->SetJointsVisible(false); // 기본값: 숨김
+	}
 }
 
 USkeletalMeshComponent::~USkeletalMeshComponent()
@@ -499,4 +510,28 @@ void USkeletalMeshComponent::DuplicateSubObjects()
 	{
 		MaterialSlots.push_back(Mat);
 	}
+
+	// BoneDebugComponent 복사
+	if (BoneDebugComponent)
+	{
+		BoneDebugComponent->DuplicateSubObjects();
+	}
+}
+
+void USkeletalMeshComponent::SetShowBoneDebug(bool bShow)
+{
+	if (BoneDebugComponent)
+	{
+		BoneDebugComponent->SetBonesVisible(bShow);
+		BoneDebugComponent->SetJointsVisible(bShow);
+	}
+}
+
+bool USkeletalMeshComponent::IsShowBoneDebug() const
+{
+	if (BoneDebugComponent)
+	{
+		return BoneDebugComponent->AreBonesVisible() || BoneDebugComponent->AreJointsVisible();
+	}
+	return false;
 }

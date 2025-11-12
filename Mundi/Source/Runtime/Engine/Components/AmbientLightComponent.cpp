@@ -29,7 +29,10 @@ void UAmbientLightComponent::UpdateLightData()
 {
 	Super::UpdateLightData();
 	// 환경광 특화 업데이트 로직
-	GWorld->GetLightManager()->UpdateLight(this);
+	if (UWorld* World = GetWorld())
+	{
+		World->GetLightManager()->UpdateLight(this);
+	}
 }
 
 void UAmbientLightComponent::OnTransformUpdated()
@@ -49,7 +52,11 @@ void UAmbientLightComponent::OnRegister(UWorld* InWorld)
 
 void UAmbientLightComponent::OnUnregister()
 {
-	GWorld->GetLightManager()->DeRegisterLight(this);
+	// 등록했던 World에서 해제 (GWorld가 아님!)
+	if (UWorld* World = GetWorld())
+	{
+		World->GetLightManager()->DeRegisterLight(this);
+	}
 }
 
 void UAmbientLightComponent::Serialize(const bool bInIsLoading, JSON& InOutHandle)
