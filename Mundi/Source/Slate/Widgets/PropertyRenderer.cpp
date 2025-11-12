@@ -1171,14 +1171,16 @@ bool UPropertyRenderer::RenderSkeletalMeshProperty(const FProperty& Prop, void* 
 		}
 		else
 		{
+			FString WindwoTitle = "Skeletal Mesh Viewer - " + CurrentMesh->GetFilePath();
+
 			// UUIManager에게 "Skeletal Mesh Viewer" 창이 이미 있는지 확인
-			UUIWindow* FoundWindow = UI.FindUIWindow("Skeletal Mesh Viewer");
+			UUIWindow* FoundWindow = UI.FindUIWindow(WindwoTitle);
 
 			if (FoundWindow)
 			{
 				// 이미 존재하면: 보이게 하고 포커스
 				FoundWindow->SetWindowState(EUIWindowState::Visible);
-				ImGui::SetWindowFocus("Skeletal Mesh Viewer");
+				ImGui::SetWindowFocus(WindwoTitle.c_str());
 
 				// SkeletalMesh 업데이트
 				USkeletalMeshEditorWindow* EditorWindow = static_cast<USkeletalMeshEditorWindow*>(FoundWindow);
@@ -1188,6 +1190,8 @@ bool UPropertyRenderer::RenderSkeletalMeshProperty(const FProperty& Prop, void* 
 			{
 				// 존재하지 않으면: 생성하고 등록
 				USkeletalMeshEditorWindow* EditorWindow = new USkeletalMeshEditorWindow();
+
+				EditorWindow->SetWindowTitle(WindwoTitle);
 
 				// RegisterUIWindow가 내부적으로 Window->Initialize()를 호출
 				UI.RegisterUIWindow(EditorWindow);
