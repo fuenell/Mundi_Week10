@@ -825,6 +825,14 @@ FBonePicking CPickingSystem::PerformBonePicking(USkeletalMeshComponent* Skeletal
 	{
 		const FBoneInfo& BoneInfo = Skeleton->GetBone(BoneIndex);
 
+		// CRITICAL: "_end" 본은 터미네이터 본으로 피킹 불가능
+		// Mixamo/Blender FBX에서 본 체인의 끝을 표시하는 용도로만 사용됨
+		// 실제 Skinning에 사용되지 않고 시각화도 안 되므로 피킹 스킵
+		if (BoneInfo.Name.find("_end") != std::string::npos)
+		{
+			continue;  // 이 본은 피킹 대상에서 제외
+		}
+
 		// Calculate bone world position
 		FMatrix BoneWorldMatrix = BoneInfo.GlobalBindPoseMatrix * ComponentWorldMatrix;
 		FVector BoneWorldPos = FVector(

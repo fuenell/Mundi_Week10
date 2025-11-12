@@ -139,8 +139,8 @@ public:
     // Perform bone picking on a skeletal mesh component
     static FBonePicking PerformBonePicking(USkeletalMeshComponent* SkeletalMeshComponent,
                                            const FRay& Ray,
-                                           float JointRadius = 0.02f,
-                                           float BoneScale = 0.05f);
+                                           float JointRadius = 1.0f,
+                                           float BoneScale = 0.2f);
 
     static uint32 GetPickCount() { return TotalPickCount; }
     static uint64 GetLastPickTime() { return LastPickTime; }

@@ -716,11 +716,22 @@ void USkeletalMeshViewportWidget::HandleBonePicking(const FVector2D& ViewportSiz
 
     // Generate ray from mouse position
     const FMatrix View = PreviewCamera->GetViewMatrix();
-    const FMatrix Proj = PreviewCamera->GetProjectionMatrix();
+
+    // CRITICAL: 뷰포트의 실제 Aspect Ratio를 사용해야 정확함
+    // 전체 화면 크기가 아닌 뷰포트 크기 기준으로 Projection Matrix 생성
+    float ViewportAspectRatio = ViewportSize.X / ViewportSize.Y;
+    const FMatrix Proj = PreviewCamera->GetProjectionMatrix(ViewportAspectRatio);
+
     const FVector CameraWorldPos = PreviewCamera->GetActorLocation();
-    const FVector CameraRight = PreviewCamera->GetRight();
-    const FVector CameraUp = PreviewCamera->GetUp();
-    const FVector CameraForward = PreviewCamera->GetForward();
+
+    // CRITICAL: View Matrix에서 직접 카메라 벡터 추출
+    // View Matrix는 YUpToZUp 변환을 포함하므로,
+    // Camera의 GetRight/Up/Forward와 좌표계가 다름
+    // View Matrix의 역행렬에서 카메라 basis 벡터를 추출해야 정확함
+    FMatrix ViewInv = View.InverseAffine();
+    const FVector CameraRight(ViewInv.M[0][0], ViewInv.M[0][1], ViewInv.M[0][2]);
+    const FVector CameraUp(ViewInv.M[1][0], ViewInv.M[1][1], ViewInv.M[1][2]);
+    const FVector CameraForward(ViewInv.M[2][0], ViewInv.M[2][1], ViewInv.M[2][2]);
 
     FRay Ray = MakeRayFromViewport(View, Proj, CameraWorldPos, CameraRight, CameraUp, CameraForward,
                                    LocalMousePos, ViewportSize);
