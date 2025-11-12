@@ -19,8 +19,8 @@ END_PROPERTIES()
 UBoneDebugComponent::UBoneDebugComponent()
 	: USceneComponent()
 	, SkeletalMeshComponent(nullptr)
-	, BoneColor(0.0f, 0.15f, 0.4f, 1.0f) // 짙은 남색 (Dark Navy Blue)
-	, JointColor(0.0f, 0.15f, 0.4f, 1.0f) // 짙은 남색 (Dark Navy Blue)
+	, BoneColor(0.0f, 0.05f, 0.15f, 1.0f) // 거의 검은색에 가까운 매우 짙은 남색
+	, JointColor(0.0f, 0.05f, 0.15f, 1.0f) // 거의 검은색에 가까운 매우 짙은 남색
 	, BoneScale(0.05f)
 	, JointRadius(0.02f)
 	, JointSegments(8)
@@ -223,16 +223,16 @@ void UBoneDebugComponent::RenderDebugVolume(URenderer* Renderer) const
 				ParentWorldMatrix.M[3][2]
 			);
 
-			// 본 색상 결정 (부모가 피킹된 본이면 주황색)
+			// 본 색상 결정
 			FVector4 BoneColorToUse = CurrentBoneColor;
 			if (BoneInfo.ParentIndex == PickedBoneIndex)
 			{
-				// 피킹된 본이 소유한 본 -> 초록색 (이미 CurrentBoneColor가 초록색)
+				// 피킹된 조인트가 소유한 본 -> 초록색
 				BoneColorToUse = SelectedColor;
 			}
-			else if (BoneInfo.ParentIndex == ParentOfPickedBone && ParentOfPickedBone >= 0)
+			else if (BoneIndex == PickedBoneIndex && ParentOfPickedBone >= 0)
 			{
-				// 피킹된 본의 부모가 소유한 본 -> 주황색
+				// 피킹된 조인트로 연결되는 부모 본 (부모 조인트에서 피킹된 조인트로 가는 본) -> 주황색
 				BoneColorToUse = ParentBoneColor;
 			}
 
