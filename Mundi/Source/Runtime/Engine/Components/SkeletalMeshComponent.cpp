@@ -113,77 +113,15 @@ void USkeletalMeshComponent::TickComponent(float DeltaTime)
 	// 최상위 본을 Y축 기준으로 한 바퀴 계속 회전
 	static float TestAnimationTime = 0.0f;
 	TestAnimationTime += DeltaTime;
+	// 한 바퀴 계속 회전 (360도)
+	float RotationRad = TestAnimationTime * 2.0f;  // 초당 2 라디안 회전 (약 114도/초)
 
-	USkeleton* Skeleton = GetSkeleton();
-	if (Skeleton && Skeleton->GetBoneCount() > 0)
-	{
-		// Root 본 (인덱스 0)을 회전
-		int32 TestBoneIndex = 0;
+	FMatrix RotationMatrix = FQuat::MakeFromEulerZYX(FVector(0, 0, RadiansToDegrees(RotationRad))).ToMatrix();
+	FMatrix RotationMatrix1 = FQuat::MakeFromEulerZYX(FVector(RadiansToDegrees(RotationRad), 0, 0)).ToMatrix();
 
-		// 한 바퀴 계속 회전 (360도)
-		float RotationRad = TestAnimationTime * 2.0f;  // 초당 2 라디안 회전 (약 114도/초)
+	MoveBone(0, RotationMatrix);
 
-		FMatrix RotationMatrix = FQuat::MakeFromEulerZYX(FVector(0, 0, RadiansToDegrees(RotationRad))).ToMatrix();
 
-		// 모든 본을 재귀적으로 업데이트 (Root부터)
-		std::function<void(int32, const FMatrix&)> UpdateBoneRecursive;
-		UpdateBoneRecursive = [&](int32 BoneIndex, const FMatrix& ParentAnimatedTransform)
-		{
-			if (BoneIndex < 0 || BoneIndex >= Skeleton->GetBoneCount())
-				return;
-
-			const FBoneInfo& CurrentBoneInfo = Skeleton->GetBone(BoneIndex);
-
-			// 1. [수정됨] 뼈의 '로컬 T-포즈'를 FTransform에서 FMatrix로 변환합니다.
-			//    (FTransform에 ToMatrix() 같은 함수가 있다고 가정합니다)
-			FMatrix LocalTransform = CurrentBoneInfo.BindPoseTransform.ToMatrix();
-
-			// 2. [수정됨] '테스트 애니메이션'을 '로컬 T-포즈'에 적용합니다.
-			//    (이것이 "새로운 로컬 포즈"가 됩니다)
-			if (BoneIndex == TestBoneIndex)
-			{
-				// 로컬 회전을 적용합니다.
-				// 순서: RotationMatrix * LocalTransform
-				LocalTransform = LocalTransform * RotationMatrix;
-			}
-
-			// 3. [수정됨] '새로운 글로벌 포즈'를 계산합니다.
-			//    World_Child = Local_Child * World_Parent
-			FMatrix CurrentAnimatedTransform = LocalTransform * ParentAnimatedTransform;
-
-			// 4. (기존과 동일 - 올바른 로직)
-			// 최종 스키닝 행렬을 계산합니다.
-			// SkinMatrix = InverseBindPose(Global) * Animated(Global)
-			if (BoneIndex < BoneMatrices.size())
-			{
-				BoneMatrices[BoneIndex] = CurrentBoneInfo.InverseBindPoseMatrix * CurrentAnimatedTransform;
-			}
-
-			// 5. (기존과 동일 - 올바른 로직)
-			// 모든 자식 본 재귀 업데이트
-			TArray<int32> ChildBones = Skeleton->GetChildBones(BoneIndex);
-			for (int32 ChildIndex : ChildBones)
-			{
-				// 자식에게는 방금 계산한 '새로운 글로벌 포즈'를 부모 행렬로 넘겨줍니다.
-				UpdateBoneRecursive(ChildIndex, CurrentAnimatedTransform);
-			}
-		};
-
-		// Root 본부터 시작 (부모 행렬은 단위 행렬)
-		int32 RootBoneIndex = Skeleton->GetRootBoneIndex();
-		const FBoneInfo& RootBoneInfo = Skeleton->GetBone(0);
-		if (RootBoneIndex >= 0)
-		{
-			UpdateBoneRecursive(RootBoneIndex, RootBoneInfo.GlobalBindPoseMatrix);
-		}
-	}
-	// === END TEST ===
-
-	// Bone Transform 업데이트는 위에서 수동으로 했으므로 스킵
-	// if (bNeedsBoneTransformUpdate)
-	// {
-	// 	UpdateBoneTransforms();
-	// }
 
 	// CPU Skinning 수행
 	PerformCPUSkinning();
@@ -486,6 +424,78 @@ FAABB USkeletalMeshComponent::GetWorldAABB() const
 	FVector WorldMin = FVector(WorldMin4.X, WorldMin4.Y, WorldMin4.Z);
 	FVector WorldMax = FVector(WorldMax4.X, WorldMax4.Y, WorldMax4.Z);
 	return FAABB(WorldMin, WorldMax);
+}
+
+void USkeletalMeshComponent::MoveBone(int TargetBoneIndex, FMatrix Matrix)
+{
+	USkeleton* Skeleton = GetSkeleton();
+	if (Skeleton && Skeleton->GetBoneCount() > 0)
+	{
+		// 모든 본을 재귀적으로 업데이트 (Root부터)
+		std::function<void(int32, const FMatrix&)> UpdateBoneRecursive;
+
+		UpdateBoneRecursive = [&](int32 BoneIndex, const FMatrix& ParentAnimatedTransform)
+			{
+			if (BoneIndex < 0 || BoneIndex >= Skeleton->GetBoneCount())
+				return;
+
+
+			const FBoneInfo& CurrentBoneInfo = Skeleton->GetBone(BoneIndex);
+
+			FMatrix LocalTransform = CurrentBoneInfo.BindPoseTransform.ToMatrix();
+
+			// 들어온 본이 TargetBoneIndex와 같을 때만 TRS행렬을 적용. 이 후 자식들은 회전 행렬이 적용된 부모의 행렬로 계산됨
+			if (BoneIndex == TargetBoneIndex)
+			{
+				LocalTransform = LocalTransform * Matrix;
+			}
+			
+			// 로컬 행렬에 부모 행렬을 곱해서 본의 모델위치를 복구 
+			FMatrix CurrentAnimatedTransform = LocalTransform * ParentAnimatedTransform;
+
+			// 4. (기존과 동일 - 올바른 로직)
+			// 최종 스키닝 행렬을 계산합니다.
+			// SkinMatrix = InverseBindPose(Global) * Animated(Global)
+			if (BoneIndex < BoneMatrices.size())
+			{
+				BoneMatrices[BoneIndex] = CurrentBoneInfo.InverseBindPoseMatrix * CurrentAnimatedTransform;
+			}
+
+			// 5. (기존과 동일 - 올바른 로직)
+			// 모든 자식 본 재귀 업데이트
+			TArray<int32> ChildBones = Skeleton->GetChildBones(BoneIndex);
+			for (int32 ChildIndex : ChildBones)
+			{
+				// 자식에게는 방금 계산한 '새로운 글로벌 포즈'를 부모 행렬로 넘겨줍니다.
+				UpdateBoneRecursive(ChildIndex, CurrentAnimatedTransform);
+			}
+		};
+
+		// 루트 본부터 시작 (부모 행렬은 단위 행렬)
+		const FBoneInfo& RootBoneInfo = Skeleton->GetBone(0);
+
+		if (TargetBoneIndex >= 0)
+		{
+			UpdateBoneRecursive(0, RootBoneInfo.GlobalBindPoseMatrix);
+		}
+	}
+	// === END TEST ===
+
+	// Bone Transform 업데이트는 위에서 수동으로 했으므로 스킵
+	// if (bNeedsBoneTransformUpdate)
+	// {
+	// 	UpdateBoneTransforms();
+	// }
+
+	// CPU Skinning 수행
+	PerformCPUSkinning();
+
+	// GPU Buffer 업데이트
+	if (SkeletalMesh->UsesDynamicBuffer() && !SkinnedVertices.empty())
+	{
+		ID3D11DeviceContext* Context = UResourceManager::GetInstance().GetContext();
+		SkeletalMesh->UpdateVertexBuffer(Context, SkinnedVertices);
+	}
 }
 
 void USkeletalMeshComponent::MarkWorldPartitionDirty()

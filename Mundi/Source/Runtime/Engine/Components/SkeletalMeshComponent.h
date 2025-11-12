@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "SkinnedMeshComponent.h"
 
 class UBoneDebugComponent;
@@ -124,6 +124,9 @@ public:
 	
 	void DuplicateSubObjects() override;
 	DECLARE_DUPLICATE(USkeletalMeshComponent)
+
+
+	void MoveBone(int BoneIndex, FMatrix Matrix);
 
 protected:
 	void MarkWorldPartitionDirty();
