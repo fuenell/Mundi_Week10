@@ -833,8 +833,22 @@ FBonePicking CPickingSystem::PerformBonePicking(USkeletalMeshComponent* Skeletal
 			continue;  // 이 본은 피킹 대상에서 제외
 		}
 
-		// Calculate bone world position
-		FMatrix BoneWorldMatrix = BoneInfo.GlobalBindPoseMatrix * ComponentWorldMatrix;
+		// [★핵심 로직: 라이브 포즈 역산★]
+		// A = B * (B⁻¹ * A)
+		// A = GlobalBindPoseMatrix * FinalSkinMatrix
+
+		// B (T-포즈 글로벌 행렬)
+		const FMatrix& GlobalBindPoseMatrix = BoneInfo.GlobalBindPoseMatrix;
+		// B⁻¹ * A (최종 스키닝 행렬)
+		const FMatrix& FinalSkinMatrix = BoneMatrices[BoneIndex];
+
+		// A (컴포넌트 로컬 공간 기준 "라이브 포즈" 행렬)
+		FMatrix BoneLocalAnimatedMatrix = GlobalBindPoseMatrix * FinalSkinMatrix;
+
+		// "라이브 월드 행렬" 계산 (로컬 * 월드)
+		FMatrix BoneWorldMatrix = BoneLocalAnimatedMatrix * ComponentWorldMatrix;
+
+		// 최종 월드 위치 추출
 		FVector BoneWorldPos = FVector(
 			BoneWorldMatrix.M[3][0],
 			BoneWorldMatrix.M[3][1],
@@ -858,7 +872,13 @@ FBonePicking CPickingSystem::PerformBonePicking(USkeletalMeshComponent* Skeletal
 		if (BoneInfo.ParentIndex >= 0)
 		{
 			const FBoneInfo& ParentBone = Skeleton->GetBone(BoneInfo.ParentIndex);
-			FMatrix ParentWorldMatrix = ParentBone.GlobalBindPoseMatrix * ComponentWorldMatrix;
+
+			// 부모 본도 동일한 방식으로 라이브 포즈 역산
+			const FMatrix& ParentGlobalBindPoseMatrix = ParentBone.GlobalBindPoseMatrix;
+			const FMatrix& ParentFinalSkinMatrix = BoneMatrices[BoneInfo.ParentIndex];
+			FMatrix ParentLocalAnimatedMatrix = ParentGlobalBindPoseMatrix * ParentFinalSkinMatrix;
+			FMatrix ParentWorldMatrix = ParentLocalAnimatedMatrix * ComponentWorldMatrix;
+
 			FVector ParentWorldPos = FVector(
 				ParentWorldMatrix.M[3][0],
 				ParentWorldMatrix.M[3][1],
