@@ -849,13 +849,6 @@ void USkeletalMeshViewportWidget::HandleBonePicking(const FVector2D& ViewportSiz
             static_cast<int32>(PickingResult.PickingType),
             PickingResult.Distance);
 
-        // Update picked bone index in BoneDebugComponent for highlighting
-        if (BoneDebugComponent)
-        {
-            BoneDebugComponent->SetPickedBoneIndex(PickingResult.BoneIndex);
-            bNeedsRedraw = true;  // Request redraw for highlighting
-        }
-
         // Create gizmo for picked bone
         //CreateGizmoForBone(PickingResult);
 
@@ -865,23 +858,26 @@ void USkeletalMeshViewportWidget::HandleBonePicking(const FVector2D& ViewportSiz
     {
         UE_LOG("[SkeletalMeshViewport] No bone picked");
 
-        // Clear picked bone index in BoneDebugComponent
-        if (BoneDebugComponent)
-        {
-            BoneDebugComponent->SetPickedBoneIndex(-1);
-            bNeedsRedraw = true;  // Request redraw to clear highlighting
-        }
-
         SkeletalMeshEditorWindow->OnBoneSelected.Broadcast(-1);
-        // Destroy current gizmo
-        //DestroyCurrentGizmo();
     }
+}
+
+void USkeletalMeshViewportWidget::SetSelectedBone(int32 BoneIndex)
+{
+    CurrentBoneIndex = BoneIndex;
+    UpdateGizmo(CurrentBoneIndex);
+
+    // Update picked bone index in BoneDebugComponent for highlighting
+    if (BoneDebugComponent)
+    {
+        BoneDebugComponent->SetPickedBoneIndex(CurrentBoneIndex);
+    }
+    bNeedsRedraw = true;  // Request redraw for highlighting
 }
 
 // 기즈모 표시
 void USkeletalMeshViewportWidget::UpdateGizmo(int32 BoneIndex)
 {
-    CurrentBoneIndex = BoneIndex;
     if (BoneIndex != -1)
     {
         FBoneInfo BoneInfo = PreviewActor->GetSkeletalMeshComponent()->GetSkeleton()->GetBone(BoneIndex);
@@ -894,7 +890,6 @@ void USkeletalMeshViewportWidget::UpdateGizmo(int32 BoneIndex)
         PreviewWorld->GetSelectionManager()->SelectComponent(nullptr);
     }
     PreviewWorld->GetGizmoActor()->Tick(0);
-    bNeedsRedraw = true;    // 기즈모 위치를 다시 그려야 하기 때문에
 }
 
 void USkeletalMeshViewportWidget::UpdateBone(int32 BoneIndex)

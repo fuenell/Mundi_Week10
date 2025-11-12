@@ -60,6 +60,8 @@ public:
 	bool IsBoneVisualizationEnabled() const;
 
 	// 선택된 본 기즈모 표시
+	void SetSelectedBone(int32 BoneIndex);
+
 	void UpdateGizmo(int32 BoneIndex);
 	
 	void UpdateBone(int32 BoneIndex);

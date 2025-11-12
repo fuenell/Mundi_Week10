@@ -124,6 +124,8 @@ void USkeletalMeshEditorWindow::SetSkeletalMesh(USkeletalMesh* InMesh)
 	{
 		DetailWidget->SetSkeletalMesh(InMesh);
 	}
+
+	OnBoneSelected.Broadcast(-1);
 }
 
 void USkeletalMeshEditorWindow::OnBoneSelectedEvent(int32 BoneIndex)
@@ -136,7 +138,7 @@ void USkeletalMeshEditorWindow::OnBoneSelectedEvent(int32 BoneIndex)
 
 	if (ViewportWidget)
 	{
-		ViewportWidget->UpdateGizmo(BoneIndex);
+		ViewportWidget->SetSelectedBone(BoneIndex);
 	}
 
 	if (HierarchyWidget != nullptr)
