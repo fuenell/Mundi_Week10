@@ -871,9 +871,13 @@ FBonePicking CPickingSystem::PerformBonePicking(USkeletalMeshComponent* Skeletal
 				if (BoneT < MinDistance)
 				{
 					MinDistance = BoneT;
-					Result.BoneIndex = BoneIndex;
-					Result.PickingType = FBonePicking::EPickingType::Bone;
-					Result.PickingLocation = Ray.Origin + Ray.Direction * BoneT;
+					// CRITICAL: Unreal Engine 방식 - Bone을 클릭하면 부모 Joint 선택
+					// Bone은 부모→자식 사이를 연결하는 시각화
+					// Bone을 클릭하면 그 Bone을 "소유한" 부모 Joint를 선택
+					// 예: Spine Bone 클릭 → Spine Joint 선택 (Pelvis가 아닌)
+					Result.BoneIndex = BoneInfo.ParentIndex;  // 부모 Joint 선택!
+					Result.PickingType = FBonePicking::EPickingType::Joint;
+					Result.PickingLocation = ParentWorldPos;  // 부모 Joint 위치
 					Result.Distance = BoneT;
 				}
 			}

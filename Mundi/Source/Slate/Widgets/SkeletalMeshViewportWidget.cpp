@@ -752,6 +752,13 @@ void USkeletalMeshViewportWidget::HandleBonePicking(const FVector2D& ViewportSiz
             static_cast<int32>(PickingResult.PickingType),
             PickingResult.Distance);
 
+        // Update picked bone index in BoneDebugComponent for highlighting
+        if (BoneDebugComponent)
+        {
+            BoneDebugComponent->SetPickedBoneIndex(PickingResult.BoneIndex);
+            bNeedsRedraw = true;  // Request redraw for highlighting
+        }
+
         // Create gizmo for picked bone
         //CreateGizmoForBone(PickingResult);
 
@@ -760,6 +767,13 @@ void USkeletalMeshViewportWidget::HandleBonePicking(const FVector2D& ViewportSiz
     else
     {
         UE_LOG("[SkeletalMeshViewport] No bone picked");
+
+        // Clear picked bone index in BoneDebugComponent
+        if (BoneDebugComponent)
+        {
+            BoneDebugComponent->SetPickedBoneIndex(-1);
+            bNeedsRedraw = true;  // Request redraw to clear highlighting
+        }
 
         // Destroy current gizmo
         //DestroyCurrentGizmo();

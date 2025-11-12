@@ -96,6 +96,19 @@ public:
 	 */
 	bool AreJointsVisible() const { return bShowJoints; }
 
+	// === Bone Highlighting ===
+
+	/**
+	 * 피킹된 본 인덱스 설정 (하이라이팅용)
+	 * @param InBoneIndex - 피킹된 본 인덱스 (-1: 선택 없음)
+	 */
+	void SetPickedBoneIndex(int32 InBoneIndex) { PickedBoneIndex = InBoneIndex; }
+
+	/**
+	 * 피킹된 본 인덱스 조회
+	 */
+	int32 GetPickedBoneIndex() const { return PickedBoneIndex; }
+
 	// === Duplication ===
 
 	void DuplicateSubObjects() override;
@@ -107,6 +120,7 @@ private:
 	 * @param Start - Bone 시작 위치 (부모)
 	 * @param End - Bone 끝 위치 (자식)
 	 * @param Scale - 팔면체 크기 비율
+	 * @param Color - 본 색상 (하이라이팅용)
 	 * @param OutStartPoints - 라인 시작점 배열 (출력)
 	 * @param OutEndPoints - 라인 끝점 배열 (출력)
 	 * @param OutColors - 라인 색상 배열 (출력)
@@ -115,6 +129,7 @@ private:
 		const FVector& Start,
 		const FVector& End,
 		float Scale,
+		const FVector4& Color,
 		TArray<FVector>& OutStartPoints,
 		TArray<FVector>& OutEndPoints,
 		TArray<FVector4>& OutColors) const;
@@ -123,6 +138,7 @@ private:
 	 * Joint Sphere 와이어프레임 생성
 	 * @param Center - Sphere 중심 위치
 	 * @param Radius - Sphere 반지름
+	 * @param Color - 조인트 색상 (하이라이팅용)
 	 * @param OutStartPoints - 라인 시작점 배열 (출력)
 	 * @param OutEndPoints - 라인 끝점 배열 (출력)
 	 * @param OutColors - 라인 색상 배열 (출력)
@@ -130,6 +146,7 @@ private:
 	void GenerateJointSphere(
 		const FVector& Center,
 		float Radius,
+		const FVector4& Color,
 		TArray<FVector>& OutStartPoints,
 		TArray<FVector>& OutEndPoints,
 		TArray<FVector4>& OutColors) const;
@@ -164,4 +181,20 @@ private:
 
 	// Joint 표시 여부
 	bool bShowJoints = true;
+
+	// === Highlight State ===
+
+	// 피킹된 본 인덱스 (-1: 선택 없음)
+	int32 PickedBoneIndex = -1;
+
+	// === Highlight Colors ===
+
+	// 선택된 조인트와 본 색상 (초록색)
+	FVector4 SelectedColor = FVector4(0.0f, 1.0f, 0.0f, 1.0f);
+
+	// 부모 본 색상 (주황색)
+	FVector4 ParentBoneColor = FVector4(1.0f, 0.5f, 0.0f, 1.0f);
+
+	// 자식 조인트와 본 색상 (흰색)
+	FVector4 ChildColor = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
 };

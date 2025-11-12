@@ -19,8 +19,8 @@ END_PROPERTIES()
 UBoneDebugComponent::UBoneDebugComponent()
 	: USceneComponent()
 	, SkeletalMeshComponent(nullptr)
-	, BoneColor(0.0f, 1.0f, 0.0f, 1.0f) // 녹색
-	, JointColor(1.0f, 0.0f, 0.0f, 1.0f) // 빨간색
+	, BoneColor(0.0f, 0.15f, 0.4f, 1.0f) // 짙은 남색 (Dark Navy Blue)
+	, JointColor(0.0f, 0.15f, 0.4f, 1.0f) // 짙은 남색 (Dark Navy Blue)
 	, BoneScale(0.05f)
 	, JointRadius(0.02f)
 	, JointSegments(8)
@@ -105,7 +105,45 @@ void UBoneDebugComponent::RenderDebugVolume(URenderer* Renderer) const
 	// 	bLoggedOnce = true;
 	// }
 
-	// --- 3. 뼈 순회 및 라이브 포즈 역산 (Reconstruction) ---
+	// --- 3. 하이라이팅 정보 준비 ---
+
+	// 피킹된 본의 부모 인덱스
+	int32 ParentOfPickedBone = -1;
+	if (PickedBoneIndex >= 0 && PickedBoneIndex < BoneCount)
+	{
+		const FBoneInfo& PickedBoneInfo = Skeleton->GetBone(PickedBoneIndex);
+		ParentOfPickedBone = PickedBoneInfo.ParentIndex;
+	}
+
+	// 자식 본 목록 구축 (피킹된 본의 모든 자손을 찾기 위해)
+	TArray<bool> IsChildOfPicked;
+	IsChildOfPicked.resize(BoneCount, false);
+
+	if (PickedBoneIndex >= 0 && PickedBoneIndex < BoneCount)
+	{
+		// BFS로 모든 자식 본을 찾습니다
+		TArray<int32> Queue;
+		Queue.push_back(PickedBoneIndex);
+
+		while (!Queue.empty())
+		{
+			int32 CurrentIndex = Queue[0];
+			Queue.erase(Queue.begin());
+
+			// 모든 본을 순회하며 현재 본의 자식을 찾습니다
+			for (int32 i = 0; i < BoneCount; i++)
+			{
+				const FBoneInfo& BoneInfo = Skeleton->GetBone(i);
+				if (BoneInfo.ParentIndex == CurrentIndex)
+				{
+					IsChildOfPicked[i] = true;
+					Queue.push_back(i);
+				}
+			}
+		}
+	}
+
+	// --- 4. 뼈 순회 및 라이브 포즈 역산 (Reconstruction) ---
 
 	for (int32 BoneIndex = 0; BoneIndex < BoneCount; BoneIndex++)
 	{
@@ -133,14 +171,31 @@ void UBoneDebugComponent::RenderDebugVolume(URenderer* Renderer) const
 			BoneWorldMatrix.M[3][2]
 		);
 
-		// --- 4. 그리기 (Joints) ---
+		// --- 5. 색상 결정 (하이라이팅) ---
+		FVector4 CurrentJointColor = JointColor;
+		FVector4 CurrentBoneColor = BoneColor;
+
+		// 피킹된 본인 경우 -> 초록색
+		if (BoneIndex == PickedBoneIndex)
+		{
+			CurrentJointColor = SelectedColor;
+			CurrentBoneColor = SelectedColor;
+		}
+		// 피킹된 본의 자식인 경우 -> 흰색
+		else if (IsChildOfPicked[BoneIndex])
+		{
+			CurrentJointColor = ChildColor;
+			CurrentBoneColor = ChildColor;
+		}
+
+		// --- 6. 그리기 (Joints) ---
 		if (bShowJoints)
 		{
-			GenerateJointSphere(BoneWorldPos, JointRadius,
+			GenerateJointSphere(BoneWorldPos, JointRadius, CurrentJointColor,
 				StartPoints, EndPoints, Colors);
 		}
 
-		// --- 5. 그리기 (Bones) ---
+		// --- 7. 그리기 (Bones) ---
 		// 루트 본(ParentIndex < 0)을 제외하고, 유효한 부모가 있는 뼈만 선을 그립니다.
 		if (bShowBones &&
 			BoneInfo.ParentIndex >= 0 &&
@@ -168,13 +223,26 @@ void UBoneDebugComponent::RenderDebugVolume(URenderer* Renderer) const
 				ParentWorldMatrix.M[3][2]
 			);
 
+			// 본 색상 결정 (부모가 피킹된 본이면 주황색)
+			FVector4 BoneColorToUse = CurrentBoneColor;
+			if (BoneInfo.ParentIndex == PickedBoneIndex)
+			{
+				// 피킹된 본이 소유한 본 -> 초록색 (이미 CurrentBoneColor가 초록색)
+				BoneColorToUse = SelectedColor;
+			}
+			else if (BoneInfo.ParentIndex == ParentOfPickedBone && ParentOfPickedBone >= 0)
+			{
+				// 피킹된 본의 부모가 소유한 본 -> 주황색
+				BoneColorToUse = ParentBoneColor;
+			}
+
 			// 부모에서 현재 본으로 팔면체(선) 그리기
-			GenerateBoneOctahedron(ParentWorldPos, BoneWorldPos, BoneScale,
+			GenerateBoneOctahedron(ParentWorldPos, BoneWorldPos, BoneScale, BoneColorToUse,
 				StartPoints, EndPoints, Colors);
 		}
 	} // (End of for loop)
 
-	// --- 6. 최종 렌더링 호출 ---
+	// --- 8. 최종 렌더링 호출 ---
 
 	// 모든 라인을 한 번에 렌더링
 	if (!StartPoints.empty())
@@ -187,6 +255,7 @@ void UBoneDebugComponent::GenerateBoneOctahedron(
 	const FVector& Start,
 	const FVector& End,
 	float Scale,
+	const FVector4& Color,
 	TArray<FVector>& OutStartPoints,
 	TArray<FVector>& OutEndPoints,
 	TArray<FVector4>& OutColors) const
@@ -216,27 +285,28 @@ void UBoneDebugComponent::GenerateBoneOctahedron(
 	FVector V3 = Mid - Up * Radius;
 
 	// 중간 사각형 링
-	OutStartPoints.push_back(V0); OutEndPoints.push_back(V1); OutColors.push_back(BoneColor);
-	OutStartPoints.push_back(V1); OutEndPoints.push_back(V2); OutColors.push_back(BoneColor);
-	OutStartPoints.push_back(V2); OutEndPoints.push_back(V3); OutColors.push_back(BoneColor);
-	OutStartPoints.push_back(V3); OutEndPoints.push_back(V0); OutColors.push_back(BoneColor);
+	OutStartPoints.push_back(V0); OutEndPoints.push_back(V1); OutColors.push_back(Color);
+	OutStartPoints.push_back(V1); OutEndPoints.push_back(V2); OutColors.push_back(Color);
+	OutStartPoints.push_back(V2); OutEndPoints.push_back(V3); OutColors.push_back(Color);
+	OutStartPoints.push_back(V3); OutEndPoints.push_back(V0); OutColors.push_back(Color);
 
 	// 시작점으로 향하는 피라미드
-	OutStartPoints.push_back(Start); OutEndPoints.push_back(V0); OutColors.push_back(BoneColor);
-	OutStartPoints.push_back(Start); OutEndPoints.push_back(V1); OutColors.push_back(BoneColor);
-	OutStartPoints.push_back(Start); OutEndPoints.push_back(V2); OutColors.push_back(BoneColor);
-	OutStartPoints.push_back(Start); OutEndPoints.push_back(V3); OutColors.push_back(BoneColor);
+	OutStartPoints.push_back(Start); OutEndPoints.push_back(V0); OutColors.push_back(Color);
+	OutStartPoints.push_back(Start); OutEndPoints.push_back(V1); OutColors.push_back(Color);
+	OutStartPoints.push_back(Start); OutEndPoints.push_back(V2); OutColors.push_back(Color);
+	OutStartPoints.push_back(Start); OutEndPoints.push_back(V3); OutColors.push_back(Color);
 
 	// 끝점으로 향하는 피라미드
-	OutStartPoints.push_back(End); OutEndPoints.push_back(V0); OutColors.push_back(BoneColor);
-	OutStartPoints.push_back(End); OutEndPoints.push_back(V1); OutColors.push_back(BoneColor);
-	OutStartPoints.push_back(End); OutEndPoints.push_back(V2); OutColors.push_back(BoneColor);
-	OutStartPoints.push_back(End); OutEndPoints.push_back(V3); OutColors.push_back(BoneColor);
+	OutStartPoints.push_back(End); OutEndPoints.push_back(V0); OutColors.push_back(Color);
+	OutStartPoints.push_back(End); OutEndPoints.push_back(V1); OutColors.push_back(Color);
+	OutStartPoints.push_back(End); OutEndPoints.push_back(V2); OutColors.push_back(Color);
+	OutStartPoints.push_back(End); OutEndPoints.push_back(V3); OutColors.push_back(Color);
 }
 
 void UBoneDebugComponent::GenerateJointSphere(
 	const FVector& Center,
 	float Radius,
+	const FVector4& Color,
 	TArray<FVector>& OutStartPoints,
 	TArray<FVector>& OutEndPoints,
 	TArray<FVector4>& OutColors) const
@@ -269,7 +339,7 @@ void UBoneDebugComponent::GenerateJointSphere(
 
 			OutStartPoints.push_back(p0);
 			OutEndPoints.push_back(p1);
-			OutColors.push_back(JointColor);
+			OutColors.push_back(Color);
 		}
 	}
 }
