@@ -474,8 +474,74 @@ USkeleton* FFbxImporter::ExtractSkeleton(FbxNode* RootNode)
 		return nullptr;
 	}
 
+	// Blender FBX 감지
+	bool bIsBlenderFbx = false;
+	if (Scene)
+	{
+		FbxDocumentInfo* DocInfo = Scene->GetSceneInfo();
+		if (DocInfo)
+		{
+			FString Creator = DocInfo->Original_ApplicationName.Get().Buffer();
+			bIsBlenderFbx = (Creator.find("Blender") != FString::npos);
+
+			if (bIsBlenderFbx)
+			{
+				UE_LOG("[FBX] Blender FBX detected: %s", Creator.c_str());
+			}
+		}
+	}
+
 	// FbxNode* → Mundi Bone Index 매핑 (FBX 노드 포인터를 키로 사용)
 	TMap<FbxNode*, int32> NodeToIndexMap;
+
+	// === UE5 Pattern: Cluster에서 Bind Pose 추출 (FFbxJointMeshBindPoseGenerator) ===
+	// FbxNode* → Global Bind Pose Matrix 매핑
+	// Scene Pose가 아닌 실제 Skinning Bind Pose를 사용해야 함
+	TMap<FbxNode*, FbxAMatrix> NodeToGlobalBindPoseMap;
+
+	// Scene의 모든 Mesh → Skin → Cluster를 순회하며 Bind Pose 수집
+	if (Scene)
+	{
+		int32 GeometryCount = Scene->GetGeometryCount();
+		for (int32 GeometryIndex = 0; GeometryIndex < GeometryCount; ++GeometryIndex)
+		{
+			FbxGeometry* Geometry = Scene->GetGeometry(GeometryIndex);
+			if (!Geometry) continue;
+
+			// Skin Deformer 찾기
+			int32 DeformerCount = Geometry->GetDeformerCount(FbxDeformer::eSkin);
+			for (int32 DeformerIndex = 0; DeformerIndex < DeformerCount; ++DeformerIndex)
+			{
+				FbxSkin* Skin = (FbxSkin*)Geometry->GetDeformer(DeformerIndex, FbxDeformer::eSkin);
+				if (!Skin) continue;
+
+				// Cluster (Bone) 찾기
+				int32 ClusterCount = Skin->GetClusterCount();
+				for (int32 ClusterIndex = 0; ClusterIndex < ClusterCount; ++ClusterIndex)
+				{
+					FbxCluster* Cluster = Skin->GetCluster(ClusterIndex);
+					if (!Cluster) continue;
+
+					FbxNode* Joint = Cluster->GetLink();
+					if (!Joint) continue;
+
+					// Cluster에서 Global Bind Pose Matrix 추출
+					// 이것이 Skinning 시 사용된 실제 Bind Pose
+					FbxAMatrix GlobalBindPose;
+					Cluster->GetTransformLinkMatrix(GlobalBindPose);
+
+					// 이미 저장되지 않은 경우에만 추가 (첫 번째 mesh의 데이터 사용)
+					if (!NodeToGlobalBindPoseMap.Contains(Joint))
+					{
+						NodeToGlobalBindPoseMap.Add(Joint, GlobalBindPose);
+						UE_LOG("[FBX] Collected bind pose for joint: %s", Joint->GetName());
+					}
+				}
+			}
+		}
+
+		UE_LOG("[FBX] Collected %d joint bind poses from clusters", NodeToGlobalBindPoseMap.Num());
+	}
 
 	// 재귀적으로 Skeleton 노드 추출
 	std::function<void(FbxNode*, int32)> ExtractBoneHierarchy;
@@ -491,8 +557,33 @@ USkeleton* FFbxImporter::ExtractSkeleton(FbxNode* RootNode)
 
 		if (Attr && Attr->GetAttributeType() == FbxNodeAttribute::eSkeleton)
 		{
-			// Bone으로 추가
 			FString BoneName = Node->GetName();
+
+			// Blender Armature 노드 스킵 (UE5 방식)
+			if (bIsBlenderFbx)
+			{
+				// "armature" 이름의 루트 컨테이너 노드 체크
+				if (_stricmp(BoneName.c_str(), "armature") == 0)
+				{
+					FbxNode* ParentNode = Node->GetParent();
+					FbxNode* GrandParent = ParentNode ? ParentNode->GetParent() : nullptr;
+
+					// Scene Root 바로 아래에 있는 "armature" 노드인 경우
+					if (!GrandParent || GrandParent == Scene->GetRootNode())
+					{
+						UE_LOG("[FBX] Skipping Blender armature container node: %s", BoneName.c_str());
+
+						// Armature 노드는 스킵하되, 자식 노드들은 계속 처리
+						for (int i = 0; i < Node->GetChildCount(); i++)
+						{
+							ExtractBoneHierarchy(Node->GetChild(i), ParentIndex);
+						}
+						return;
+					}
+				}
+			}
+
+			// Bone으로 추가
 			CurrentIndex = Skeleton->AddBone(BoneName, ParentIndex);
 
 			if (CurrentIndex >= 0)
@@ -500,8 +591,63 @@ USkeleton* FFbxImporter::ExtractSkeleton(FbxNode* RootNode)
 				// 매핑 저장
 				NodeToIndexMap[Node] = CurrentIndex;
 
-				// Local Transform 추출
-				FbxAMatrix LocalMatrix = Node->EvaluateLocalTransform();
+				// === UE5 Pattern: Cluster Bind Pose 기반 Local Transform 계산 ===
+				// Scene Pose (EvaluateLocalTransform)가 아닌
+				// 실제 Skinning Bind Pose (Cluster->GetTransformLinkMatrix)를 사용해야 함
+				//
+				// 이유: Artist가 Skinning 후 Pose를 변경했을 수 있음
+				//       Scene Pose ≠ Skinning Bind Pose
+				//       → Scene Pose 사용 시 bone 방향이 틀림
+				FbxAMatrix LocalMatrix;
+
+				if (NodeToGlobalBindPoseMap.Contains(Node))
+				{
+					// Cluster 데이터 사용 (UE5 방식)
+					FbxAMatrix ChildGlobalBindPose = NodeToGlobalBindPoseMap[Node];
+
+					// === CRITICAL FIX: JointPostConversionMatrix 적용 ===
+					// ExtractSkinWeights와 coordinate space 일치시키기 위함
+					// UE5 Pattern: FbxMesh.cpp Line 2257 - Cluster 데이터 읽은 후 즉시 적용
+					FbxAMatrix JointPostMatrix = FFbxDataConverter::GetJointPostConversionMatrix();
+					ChildGlobalBindPose = ChildGlobalBindPose * JointPostMatrix;
+
+					FbxAMatrix ParentGlobalBindPose;
+					bool bIsRootJoint = false;
+
+					// 부모 노드의 Global Bind Pose 찾기
+					FbxNode* ParentFbxNode = Node->GetParent();
+					if (ParentFbxNode && NodeToGlobalBindPoseMap.Contains(ParentFbxNode))
+					{
+						ParentGlobalBindPose = NodeToGlobalBindPoseMap[ParentFbxNode];
+
+						// === CRITICAL FIX: 부모에도 JointPostConversionMatrix 적용 ===
+						// Parent와 Child 모두 같은 coordinate space에 있어야 함
+						ParentGlobalBindPose = ParentGlobalBindPose * JointPostMatrix;
+					}
+					else
+					{
+						// 부모가 없거나 Cluster에 없으면 Identity (Root Joint)
+						// UE5 Pattern: FbxScene.cpp Line 239 - Root parent는 Identity (JointPost 적용 안함)
+						ParentGlobalBindPose.SetIdentity();
+						bIsRootJoint = true;
+					}
+
+					// Local = Parent^-1 × Child (Global Bind Pose 기준)
+					// 이제 Parent와 Child 모두 JointPostConversionMatrix 적용된 상태
+					// ExtractSkinWeights의 GlobalBindPose와 coordinate space 일치
+					LocalMatrix = ParentGlobalBindPose.Inverse() * ChildGlobalBindPose;
+
+					UE_LOG("[FBX] Using cluster bind pose for bone: %s %s",
+						BoneName.c_str(), bIsRootJoint ? "(root joint)" : "");
+				}
+				else
+				{
+					// Fallback: Cluster 데이터가 없는 경우 Scene Pose 사용
+					// (Helper bone, IK bone 등 Skinning에 사용되지 않는 bone)
+					LocalMatrix = Node->EvaluateLocalTransform();
+
+					UE_LOG("[FBX] Using scene pose for bone (no cluster): %s", BoneName.c_str());
+				}
 
 				// FbxAMatrix → FTransform 변환
 				FTransform LocalTransform = ConvertFbxTransform(LocalMatrix);
@@ -1401,6 +1547,9 @@ bool FFbxImporter::ExtractSkinWeights(FbxMesh* Mesh, FSkeletalMesh& OutMeshData)
 		// Cluster->GetTransformLinkMatrix()는 Bind Pose 시점의 Bone Global Transform
 		FbxAMatrix TransformLinkMatrix;
 		Cluster->GetTransformLinkMatrix(TransformLinkMatrix);  // Bone Global at Bind Pose
+
+		// JointPostConversionMatrix 적용 (UE5 방식)
+		TransformLinkMatrix = TransformLinkMatrix * FFbxDataConverter::GetJointPostConversionMatrix();
 
 		// UNREAL ENGINE 방식: Global Bind Pose Matrix 저장 (Y축 반전 적용)
 		// ConvertFbxMatrixWithYAxisFlip() 사용하여 Y축 선택적 반전
