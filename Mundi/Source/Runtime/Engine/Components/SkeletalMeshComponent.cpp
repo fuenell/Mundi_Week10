@@ -7,6 +7,7 @@
 #include "ResourceManager.h"
 #include "World.h"
 #include "WorldPartitionManager.h"
+#include "RenderSettings.h"
 #include "JsonSerializer.h"
 #include "MeshBatchElement.h"
 #include "Material.h"
@@ -121,8 +122,6 @@ void USkeletalMeshComponent::TickComponent(float DeltaTime)
 
 	MoveBone(0, RotationMatrix);
 
-
-
 	// CPU Skinning 수행
 	PerformCPUSkinning();
 
@@ -189,6 +188,13 @@ void USkeletalMeshComponent::SetBoneTransform(int32 BoneIndex, const FTransform&
 void USkeletalMeshComponent::PerformCPUSkinning()
 {
 	if (!SkeletalMesh || !bEnableCPUSkinning)
+	{
+		return;
+	}
+
+	// Show Flag 체크: Skeletal Mesh가 렌더링되지 않으면 CPU Skinning도 건너뛰기
+	UWorld* World = GetWorld();
+	if (World && !World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_SkeletalMeshes))
 	{
 		return;
 	}
@@ -486,16 +492,6 @@ void USkeletalMeshComponent::MoveBone(int TargetBoneIndex, FMatrix Matrix)
 	// {
 	// 	UpdateBoneTransforms();
 	// }
-
-	// CPU Skinning 수행
-	PerformCPUSkinning();
-
-	// GPU Buffer 업데이트
-	if (SkeletalMesh->UsesDynamicBuffer() && !SkinnedVertices.empty())
-	{
-		ID3D11DeviceContext* Context = UResourceManager::GetInstance().GetContext();
-		SkeletalMesh->UpdateVertexBuffer(Context, SkinnedVertices);
-	}
 }
 
 void USkeletalMeshComponent::MarkWorldPartitionDirty()
