@@ -6,6 +6,7 @@
 
 class UStaticMeshComponent;
 class AGizmoActor;
+class USkeletalMeshComponent;
 // Forward Declarations
 class AActor;
 class ACameraActor;
@@ -54,6 +55,48 @@ bool IntersectRayTriangleMT(const FRay& InRay,
                             const FVector& InC,
                             float& OutT);
 
+// Calculate distance from point to ray
+// Returns the minimum distance and the parametric T value on the ray
+float CalculatePointToRayDistance(const FVector& Point, const FRay& Ray, float& OutT);
+
+// Ray-Octahedron intersection for bone picking
+// Returns true if ray intersects the octahedron (bone shape)
+bool IntersectRayOctahedron(const FRay& Ray,
+                            const FVector& StartPoint,
+                            const FVector& EndPoint,
+                            float Scale,
+                            float& OutT);
+
+/**
+ * Bone Picking Result
+ * - 본 피킹 결과를 담는 구조체
+ */
+struct FBonePicking
+{
+    // Picking Type
+    enum class EPickingType
+    {
+        None,       // No picking
+        Joint,      // Joint (Sphere) picked
+        Bone        // Bone (Octahedron) picked
+    };
+
+    // Picked bone index (-1 if no bone picked)
+    int32 BoneIndex = -1;
+
+    // Picking type
+    EPickingType PickingType = EPickingType::None;
+
+    // Picking location in world space
+    FVector PickingLocation = FVector::Zero();
+
+    // Distance along the ray
+    float Distance = FLT_MAX;
+
+    // Check if picking is valid
+    bool IsValid() const { return BoneIndex >= 0 && PickingType != EPickingType::None; }
+};
+
 /**
  * PickingSystem
  * - 액터 피킹 관련 로직을 담당하는 클래스
@@ -92,6 +135,12 @@ public:
     /** === 헬퍼 함수들 === */
     static bool CheckActorPicking(const AActor* Actor, const FRay& Ray, float& OutDistance);
 
+    /** === 본 피킹 === */
+    // Perform bone picking on a skeletal mesh component
+    static FBonePicking PerformBonePicking(USkeletalMeshComponent* SkeletalMeshComponent,
+                                           const FRay& Ray,
+                                           float JointRadius = 0.02f,
+                                           float BoneScale = 0.05f);
 
     static uint32 GetPickCount() { return TotalPickCount; }
     static uint64 GetLastPickTime() { return LastPickTime; }

@@ -19,8 +19,16 @@ void USkeletalMeshEditorLayoutWidget::RenderWidget()
 	// === 좌측 패널: Viewport ===
 	ImGui::BeginChild("ViewportPanel", ImVec2(LeftWidth, 0), true, ImGuiWindowFlags_NoScrollbar);
 	{
+		// Bone 시각화 토글 버튼
 		if (ViewportWidget != nullptr)
 		{
+			bool bBoneVisualizationEnabled = ViewportWidget->IsBoneVisualizationEnabled();
+			if (ImGui::Checkbox("Show Bones", &bBoneVisualizationEnabled))
+			{
+				ViewportWidget->SetBoneVisualizationEnabled(bBoneVisualizationEnabled);
+			}
+			ImGui::Separator();
+
 			ViewportWidget->RenderWidget();
 		}
 		else

@@ -47,28 +47,54 @@ void UBoneDebugComponent::SetSkeletalMeshComponent(USkeletalMeshComponent* InCom
 
 void UBoneDebugComponent::RenderDebugVolume(URenderer* Renderer) const
 {
+	UE_LOG("[BoneDebugComponent] RenderDebugVolume called");
+
 	// Renderer 또는 SkeletalMeshComponent가 없으면 렌더링 안 함
 	if (!Renderer || !SkeletalMeshComponent)
+	{
+		if (!Renderer)
+			UE_LOG("[BoneDebugComponent] RenderDebugVolume: Renderer is null");
+		if (!SkeletalMeshComponent)
+			UE_LOG("[BoneDebugComponent] RenderDebugVolume: SkeletalMeshComponent is null");
 		return;
+	}
 
 	// Bone/Joint가 모두 숨겨져 있으면 렌더링 안 함
 	if (!bShowBones && !bShowJoints)
+	{
+		UE_LOG("[BoneDebugComponent] RenderDebugVolume: Both bones and joints are hidden");
 		return;
+	}
 
+	UE_LOG("[BoneDebugComponent] Getting SkeletalMesh...");
 	// SkeletalMesh 가져오기
 	USkeletalMesh* SkeletalMesh = SkeletalMeshComponent->GetSkeletalMesh();
 	if (!SkeletalMesh)
+	{
+		UE_LOG("[BoneDebugComponent] RenderDebugVolume: SkeletalMesh is null");
 		return;
+	}
 
+	UE_LOG("[BoneDebugComponent] Getting Skeleton...");
 	// Skeleton 가져오기
 	USkeleton* Skeleton = SkeletalMesh->GetSkeleton();
 	if (!Skeleton)
+	{
+		UE_LOG("[BoneDebugComponent] RenderDebugVolume: Skeleton is null");
 		return;
+	}
 
+	UE_LOG("[BoneDebugComponent] Getting BoneMatrices...");
 	// BoneMatrices 가져오기
 	const TArray<FMatrix>& BoneMatrices = SkeletalMeshComponent->GetBoneMatrices();
 	if (BoneMatrices.empty())
+	{
+		UE_LOG("[BoneDebugComponent] RenderDebugVolume: BoneMatrices is empty");
 		return;
+	}
+
+	UE_LOG("[BoneDebugComponent] RenderDebugVolume: Rendering bones (Count=%d, ShowBones=%d, ShowJoints=%d)",
+		Skeleton->GetBoneCount(), bShowBones, bShowJoints);
 
 	// Component의 World Matrix 가져오기
 	FMatrix ComponentWorldMatrix = SkeletalMeshComponent->GetWorldMatrix();
@@ -119,7 +145,12 @@ void UBoneDebugComponent::RenderDebugVolume(URenderer* Renderer) const
 	// 모든 라인을 한 번에 렌더링
 	if (!StartPoints.empty())
 	{
+		UE_LOG("[BoneDebugComponent] Adding %d lines to renderer", StartPoints.size());
 		Renderer->AddLines(StartPoints, EndPoints, Colors);
+	}
+	else
+	{
+		UE_LOG("[BoneDebugComponent] WARNING: No lines generated!");
 	}
 }
 
