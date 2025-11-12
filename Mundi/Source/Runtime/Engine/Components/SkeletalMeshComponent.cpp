@@ -310,15 +310,15 @@ void USkeletalMeshComponent::TickComponent(float DeltaTime)
 
 	// === TEST: Root 본 회전 애니메이션 ===
 	// 최상위 본을 Y축 기준으로 한 바퀴 계속 회전
-	static float TestAnimationTime = 0.0f;
-	TestAnimationTime += DeltaTime;
+
 	// 한 바퀴 계속 회전 (360도)
-	float RotationRad = TestAnimationTime * 2.0f;  // 초당 2 라디안 회전 (약 114도/초)
+	float RotationRad = DeltaTime * 1.0f;  // 초당 2 라디안 회전 (약 114도/초)
 
 	FMatrix RotationMatrix = FQuat::MakeFromEulerZYX(FVector(0, 0, RadiansToDegrees(RotationRad))).ToMatrix();
 	FMatrix RotationMatrix1 = FQuat::MakeFromEulerZYX(FVector(RadiansToDegrees(RotationRad), 0, 0)).ToMatrix();
 
 	MoveBone(0, RotationMatrix);
+	MoveBone(1, RotationMatrix1);
 
 	if (bNeedsBoneTransformUpdate)
 	{
