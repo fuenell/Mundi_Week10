@@ -47,7 +47,6 @@ void USkeletalMeshComponent::SetSkeletalMesh(USkeletalMesh* InSkeletalMesh)
 
 	// Material 슬롯 초기화
 	MaterialSlots.Empty();
-	CustomBoneLocalTransform.clear();
 	if (SkeletalMesh)
 	{
 		// Static Mesh Component와 동일한 패턴: GroupInfos 기반 Material 자동 설정
@@ -107,6 +106,9 @@ void USkeletalMeshComponent::ResetBoneTransforms()
 	{
 		return;
 	}
+	
+	// 로컬 트랜스폼 초기화
+	CustomBoneLocalTransform.clear();
 
 	// Bone Matrices 초기화
 	BoneMatrices.resize(BoneCount);
@@ -583,6 +585,13 @@ void USkeletalMeshComponent::Serialize(const bool bInIsLoading, JSON& InOutHandl
 {
 	Super::Serialize(bInIsLoading, InOutHandle);
 	// SkeletalMesh 리소스는 리플렉션 시스템이 자동으로 직렬화함
+
+	// Scene 로드 후 BoneMatrices 초기화
+	// SetSkeletalMesh()를 거치지 않고 직렬화되므로 명시적으로 ResetBoneTransforms() 호출 필요
+	if (bInIsLoading && SkeletalMesh && SkeletalMesh->GetSkeleton())
+	{
+		ResetBoneTransforms();
+	}
 }
 
 void USkeletalMeshComponent::SetShowBoneDebug(bool bShow)
