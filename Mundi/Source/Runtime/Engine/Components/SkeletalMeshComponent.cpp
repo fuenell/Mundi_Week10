@@ -336,7 +336,8 @@ void USkeletalMeshComponent::StartUpdateBoneRecursive()
 	USkeleton* Skeleton = GetSkeleton();
 	const FBoneInfo& CurrentBoneInfo = Skeleton->GetBone(0);
 
-	UpdateBoneRecursive(0, CurrentBoneInfo.GlobalBindPoseMatrix);
+	// UpdateBoneRecursive(0, CurrentBoneInfo.GlobalBindPoseMatrix);
+	UpdateBoneRecursive(0, FMatrix::Identity());
 }
 
 void USkeletalMeshComponent::PerformCPUSkinning()
