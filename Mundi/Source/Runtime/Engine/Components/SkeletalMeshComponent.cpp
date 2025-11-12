@@ -34,6 +34,7 @@ USkeletalMeshComponent::USkeletalMeshComponent()
 		BoneDebugComponent->SetupAttachment(this);
 		BoneDebugComponent->SetBonesVisible(false); // 기본값: 숨김
 		BoneDebugComponent->SetJointsVisible(false); // 기본값: 숨김
+		BoneDebugComponent->SetEditability(false); // 기본값: 숨김
 	}
 }
 
