@@ -202,7 +202,7 @@ void UUIWindow::RenderWidget() const
 	}
 }
 
-void UUIWindow::Update() const
+void UUIWindow::Update(float DeltaTime) const
 {
 	for (size_t i = 0; i < Widgets.size(); ++i)
 	{
@@ -211,7 +211,7 @@ void UUIWindow::Update() const
 		{
 			try
 			{
-				Widget->Update();
+				Widget->Update(DeltaTime);
 			}
 			catch (...)
 			{

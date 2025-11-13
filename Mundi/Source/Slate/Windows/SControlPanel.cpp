@@ -36,8 +36,8 @@ void SControlPanel::OnRender()
 	
 }
 
-void SControlPanel::OnUpdate(float deltaSecond)
+void SControlPanel::OnUpdate(float DeltaTime)
 {
-    SceneWindow->Update();
-    ControlPanelWidget->Update();
+    SceneWindow->Update(DeltaTime);
+    ControlPanelWidget->Update(DeltaTime);
 }

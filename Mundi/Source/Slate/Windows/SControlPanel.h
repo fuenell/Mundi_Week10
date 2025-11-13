@@ -12,7 +12,7 @@ public:
 
     void Initialize();
     virtual void OnRender() override;
-    virtual void OnUpdate(float deltaSecond) override;
+    virtual void OnUpdate(float DeltaTime) override;
 
 private:
     UControlPanelWindow* ControlPanelWidget;

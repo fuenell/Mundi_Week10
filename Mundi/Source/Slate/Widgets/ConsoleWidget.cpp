@@ -72,7 +72,7 @@ void UConsoleWidget::Initialize()
 	UE_LOG("This message should appear in the console widget");
 }
 
-void UConsoleWidget::Update()
+void UConsoleWidget::Update(float DeltaTime)
 {
 	// Console doesn't need per-frame updates
 }

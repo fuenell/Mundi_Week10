@@ -219,18 +219,18 @@ void USlateManager::Render()
     }
 }
 
-void USlateManager::Update(float DeltaSeconds)
+void USlateManager::Update(float DeltaTime)
 {
     ProcessInput();
     // MainToolbar 업데이트
-    MainToolbar->Update();
+    MainToolbar->Update(DeltaTime);
 
     if (TopPanel)
     {
         // 툴바 높이만큼 아래로 이동 (50px)
         const float toolbarHeight = 50.0f;
         TopPanel->Rect = FRect(0, toolbarHeight, CLIENTWIDTH, CLIENTHEIGHT);
-        TopPanel->OnUpdate(DeltaSeconds);
+        TopPanel->OnUpdate(DeltaTime);
     }
 }
 

@@ -78,3 +78,10 @@ void USkeletalMeshEditorLayoutWidget::RenderWidget()
 	}
 	ImGui::EndGroup();
 }
+
+void USkeletalMeshEditorLayoutWidget::Update(float DeltaTime)
+{
+	ViewportWidget->Update(DeltaTime);
+	HierarchyWidget->Update(DeltaTime);
+	DetailWidget->Update(DeltaTime);
+}

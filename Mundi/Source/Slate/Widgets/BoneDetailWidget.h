@@ -36,7 +36,7 @@ public:
 	/**
 	 * 위젯 업데이트
 	 */
-	void Update() override;
+	void Update(float DeltaTime) override;
 
 	// === SkeletalMesh 관리 ===
 

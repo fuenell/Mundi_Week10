@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "SConsolePanel.h"
 #include "ConsoleWindow.h"
 #include "ImGui/imgui.h"
@@ -61,10 +61,10 @@ void SConsolePanel::OnRender()
 	ImGui::PopStyleVar(3);
 }
 
-void SConsolePanel::OnUpdate(float DeltaSeconds)
+void SConsolePanel::OnUpdate(float DeltaTime)
 {
 	if (ConsoleWindow)
 	{
-		ConsoleWindow->Update();
+		ConsoleWindow->Update(DeltaTime);
 	}
 }

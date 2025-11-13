@@ -178,14 +178,14 @@ void USkeletalMeshViewportWidget::Initialize()
     }
 }
 
-void USkeletalMeshViewportWidget::Update()
+void USkeletalMeshViewportWidget::Update(float DeltaTime)
 {
-    UWidget::Update();
+    UWidget::Update(DeltaTime);
 
     // PreviewWorld 틱 (애니메이션 등을 위해)
     if (PreviewWorld)
     {
-        // TODO: PreviewWorld->Tick(DeltaTime); 필요 시 추가
+        PreviewWorld->Tick(DeltaTime);
     }
 }
 
@@ -560,7 +560,7 @@ void USkeletalMeshViewportWidget::HandleViewportInput(FVector2D ViewportSize)
 
     bool bInputChanged = false;
     const float MouseSensitivity = 0.25f;  // CameraActor와 동일
-    const float CameraMoveSpeed = 0.05f;    // 이동 속도
+    const float CameraMoveSpeed = 5.0f;    // 이동 속도
     
     // === 우클릭: 회전 + WASD 이동 ===
     if (ImGui::IsMouseDown(ImGuiMouseButton_Right))
@@ -617,7 +617,7 @@ void USkeletalMeshViewportWidget::HandleViewportInput(FVector2D ViewportSize)
         {
             Move = Move.GetNormalized() * CameraMoveSpeed;
             FVector Location = CameraComp->GetWorldLocation();
-            FVector NewLocation = Location + Move;
+            FVector NewLocation = Location + (Move * PreviewWorld->GetDeltaTime(EDeltaTime::Game));
             CameraComp->SetWorldLocation(NewLocation);
 
             //UE_LOG("[SkeletalMeshViewport] Camera Move - Location: (%.2f, %.2f, %.2f)",

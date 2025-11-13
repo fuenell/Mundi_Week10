@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "Widget.h"
 
 class USkeletalMeshViewportWidget;
@@ -21,6 +21,7 @@ public:
 	virtual ~USkeletalMeshEditorLayoutWidget() = default;
 
 	void RenderWidget() override;
+	void Update(float DeltaTime) override;
 
 	// Widget 설정
 	void SetViewportWidget(USkeletalMeshViewportWidget* InWidget) { ViewportWidget = InWidget; }

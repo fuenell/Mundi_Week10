@@ -38,7 +38,7 @@ void SDetailsWindow::OnRender()
     ImGui::End();
 }
 
-void SDetailsWindow::OnUpdate(float deltaSecond)
+void SDetailsWindow::OnUpdate(float DeltaTime)
 {
-    DetailsWidget->Update();
+    DetailsWidget->Update(DeltaTime);
 }

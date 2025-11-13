@@ -38,7 +38,7 @@ public:
 
     // 렌더/업데이트/입력 전달
     void Render();
-    void Update(float deltaSecond);
+    void Update(float DeltaTime);
     void ProcessInput();
 
     void OnMouseMove(FVector2D MousePos);

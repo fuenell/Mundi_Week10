@@ -137,7 +137,7 @@ public:
 	void ClampWindow();
 
 	void RenderWidget() const;
-	void Update() const;
+	void Update(float DeltaTime) const;
 	// Render
 	void RenderWindow();
 

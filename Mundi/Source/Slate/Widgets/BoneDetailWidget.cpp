@@ -126,9 +126,9 @@ void UBoneDetailWidget::RenderWidget()
 	}
 }
 
-void UBoneDetailWidget::Update()
+void UBoneDetailWidget::Update(float DeltaTime)
 {
-	Super::Update();
+	Super::Update(DeltaTime);
 }
 
 void UBoneDetailWidget::SetSkeletalMesh(USkeletalMesh* InMesh)

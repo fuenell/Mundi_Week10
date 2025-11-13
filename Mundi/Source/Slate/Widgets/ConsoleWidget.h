@@ -13,7 +13,7 @@ public:
 	DECLARE_CLASS(UConsoleWidget, UWidget)
 
 	void Initialize() override;
-	void Update() override;
+	void Update(float DeltaTime) override;
 	void RenderWidget() override;
 
 	// Console specific methods

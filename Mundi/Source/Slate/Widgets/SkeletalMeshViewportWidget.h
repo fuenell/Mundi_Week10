@@ -34,7 +34,7 @@ public:
 	void RenderWidget() override;
 
 	// 위젯 업데이트 (입력 처리 등)
-	void Update() override;
+	void Update(float DeltaTime) override;
 
 	/**
 	 * 표시할 SkeletalMesh 설정

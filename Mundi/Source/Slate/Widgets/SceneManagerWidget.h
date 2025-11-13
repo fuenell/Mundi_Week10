@@ -22,7 +22,7 @@ public:
     DECLARE_CLASS(USceneManagerWidget, UWidget)
     
     void Initialize() override;
-    void Update() override;
+    void Update(float DeltaTime) override;
     void RenderWidget() override;
 
     // Special Member Functions

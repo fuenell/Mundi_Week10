@@ -81,9 +81,9 @@ void UBoneHierarchyWidget::RenderWidget()
 	ImGui::EndChild();
 }
 
-void UBoneHierarchyWidget::Update()
+void UBoneHierarchyWidget::Update(float DeltaTime)
 {
-	Super::Update();
+	Super::Update(DeltaTime);
 }
 
 void UBoneHierarchyWidget::SetSkeletalMesh(USkeletalMesh* InMesh)
