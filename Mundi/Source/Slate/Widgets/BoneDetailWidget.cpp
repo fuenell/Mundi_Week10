@@ -319,3 +319,8 @@ FMatrix UBoneDetailWidget::ComposeMatrix(const FVector& Position, const FVector&
 	// FTransform → FMatrix
 	return Transform.ToMatrix();
 }
+
+void UBoneDetailWidget::UpdateBone(int32 BoneIndex)
+{
+	LoadBoneTransform();
+}

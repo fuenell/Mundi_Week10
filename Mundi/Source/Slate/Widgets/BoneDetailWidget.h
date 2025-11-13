@@ -73,6 +73,8 @@ public:
 
 	void SetSkeletalMeshEditorWindow(USkeletalMeshEditorWindow* InSkeletalMeshEditorWindow) { SkeletalMeshEditorWindow = InSkeletalMeshEditorWindow; }
 
+	void UpdateBone(int32 BoneIndex);
+
 private:
 	/**
 	 * Bone Transform 데이터를 로드하여 편집용 변수에 저장

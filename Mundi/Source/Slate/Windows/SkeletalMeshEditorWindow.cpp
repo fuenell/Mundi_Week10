@@ -153,4 +153,8 @@ void USkeletalMeshEditorWindow::OnBoneUpdatedEvent(int32 BoneIndex)
 	{
 		ViewportWidget->UpdateBone(BoneIndex);
 	}
+	if (DetailWidget)
+	{
+		DetailWidget->UpdateBone(BoneIndex);
+	}
 }
